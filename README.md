@@ -1,6 +1,6 @@
 # 梅花小民
 # M5Stack Paper S3 — Chinese Book Reader & Almanac Calendar
-
+![alt text](assets/s3cover.jpg)
 A feature-rich Chinese e-ink application for the **M5Stack Paper S3** (ESP32-S3, 540×960 4-bit grayscale e-ink display). Combines a traditional Chinese book reader with a full-featured Chinese almanac calendar (農民曆/老黃曆), weather dashboard, Cangjie input method, and more.
 
 ## Features
