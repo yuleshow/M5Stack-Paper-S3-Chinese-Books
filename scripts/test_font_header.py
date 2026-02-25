@@ -10,8 +10,11 @@ M5ReadPaper binary font format (from their code):
   - style_name: 64 bytes (char array)
 """
 
+import os
 import struct
 import sys
+
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 def read_bin_font_header(filepath):
     """Read M5ReadPaper binary font header"""

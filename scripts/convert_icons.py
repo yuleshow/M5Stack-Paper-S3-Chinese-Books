@@ -4,8 +4,10 @@
 import os
 import sys
 
-ICON_DIR = os.path.join(os.path.dirname(__file__), "assets", "icons")
-OUT_DIR = os.path.join(os.path.dirname(__file__), "src", "icons")
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
+ICON_DIR = os.path.join("assets", "icons")
+OUT_DIR = os.path.join("src", "icons")
 
 # Icons to embed
 ICONS = [

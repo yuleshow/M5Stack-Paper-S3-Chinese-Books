@@ -5,6 +5,8 @@ from PIL import Image
 import io
 import os
 
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
 img = Image.open('assets/sleeping.jpg').convert('L')
 print(f'Original size: {img.size}')
 

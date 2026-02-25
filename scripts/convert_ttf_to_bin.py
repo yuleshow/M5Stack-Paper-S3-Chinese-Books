@@ -9,6 +9,8 @@ import struct
 import sys
 import os
 
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
 def get_common_chinese_chars():
     """Get common Traditional Chinese characters for e-books"""
     chars = set()

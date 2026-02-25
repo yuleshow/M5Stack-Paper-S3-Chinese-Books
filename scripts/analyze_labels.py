@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Analyze labels.jpg to find text positions."""
+import os
 from PIL import Image
+
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 img = Image.open('assets/labels.jpg').convert('L')
 w, h = img.size

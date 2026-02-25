@@ -9,7 +9,10 @@ Reference: https://github.com/sxwnl/sxwnl (by 許劍偉)
 """
 
 import math
+import os
 import sys
+
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 # ===== Constants =====
 PI2 = 2 * math.pi

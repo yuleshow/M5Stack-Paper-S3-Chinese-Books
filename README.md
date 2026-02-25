@@ -1,6 +1,8 @@
 # 梅花小民
 # M5Stack Paper S3 — Chinese Book Reader & Almanac Calendar
 ![alt text](assets/s3cover.jpg)
+
+## Overview
 A feature-rich Chinese e-ink application for the **M5Stack Paper S3** (ESP32-S3, 540×960 4-bit grayscale e-ink display). Combines a traditional Chinese book reader with a full-featured Chinese almanac calendar (農民曆/老黃曆), weather dashboard, Cangjie input method, and more.
 
 ## Features
@@ -151,9 +153,9 @@ Get a free API key at [OpenWeatherMap](https://openweathermap.org/api).
 
 ### Pre-Rendered Bitmap Font System
 
-All static Chinese UI text is **pre-rendered at build time** into 4-bit grayscale bitmap C headers using `convert_labels.py`. This eliminates runtime font rendering for UI elements, providing instant text display on the e-ink screen.
+All static Chinese UI text is **pre-rendered at build time** into 4-bit grayscale bitmap C headers using `scripts/convert_labels.py`. This eliminates runtime font rendering for UI elements, providing instant text display on the e-ink screen.
 
-- `convert_labels.py` renders ~1200 label strings at various sizes → individual `.h` files in `src/labels/`
+- `scripts/convert_labels.py` renders ~1200 label strings at various sizes → individual `.h` files in `src/labels/`
 - `findLabelBitmap()` provides O(1) lookup by text + size
 - `drawSystemText()` tries bitmap first, falls back to TTF rendering
 
@@ -175,7 +177,7 @@ All static Chinese UI text is **pre-rendered at build time** into 4-bit grayscal
 | `web_server_handler.cpp` | HTTP file manager |
 | `usb_msc_handler.cpp` | USB Mass Storage mode |
 | `dashboard.cpp` | Welcome screen and 2×4 icon dashboard |
-| `convert_labels.py` | Build tool: renders Chinese strings to bitmap headers |
+| `scripts/convert_labels.py` | Build tool: renders Chinese strings to bitmap headers |
 
 ### Build Stats
 
@@ -188,7 +190,7 @@ All static Chinese UI text is **pre-rendered at build time** into 4-bit grayscal
 If you modify UI strings or add new labels, regenerate the bitmap headers:
 
 ```bash
-python3 convert_labels.py
+python3 scripts/convert_labels.py
 ```
 
 Requires Python 3 with `Pillow` and a TTF font (default: `assets/fonts/GenYoMinTW-Regular.ttf`).

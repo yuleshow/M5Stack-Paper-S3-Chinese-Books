@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
+import os
 import struct
+
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 # Characters from the user's text
 test_text = "《西遊記》吳承恩（明）第一回靈根育孕源流出心性修持大道生詩曰混沌未分天地亂茫茫渺渺無人見自從盤古破鴻蒙開闢從茲清濁辨覆載羣生仰至仁明萬物皆成善欲知造化會元功須看西遊釋厄傳蓋聞天地之數有十二萬九千六百歲爲一元將一元分爲十二會乃子醜寅卯辰巳午未申酉"

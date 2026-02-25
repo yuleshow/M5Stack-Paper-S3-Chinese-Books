@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Analyze the Cangjie5 dictionary and generate binary lookup table."""
+import os
 import re
 from collections import Counter, defaultdict
 
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
 entries = []
 in_data = False
-with open('cangjie5.dict.yaml', 'r', encoding='utf-8') as f:
+with open('data/cangjie5.dict.yaml', 'r', encoding='utf-8') as f:
     for line in f:
         if line.strip() == '...':
             in_data = True

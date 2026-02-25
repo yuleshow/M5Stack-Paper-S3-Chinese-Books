@@ -23,10 +23,12 @@ import re
 import hashlib
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 FONT_PATH = os.path.expanduser("~/Library/Fonts/GenYoMinTW-Regular.ttf")
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "labels")
+OUT_DIR = os.path.join("src", "labels")
 
 # All static UI labels extracted from source code.
 # Format: (text, font_size, var_suffix)

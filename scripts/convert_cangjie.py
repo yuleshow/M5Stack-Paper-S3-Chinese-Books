@@ -10,13 +10,16 @@ Binary format:
     - code: 5 bytes (lowercase a-z, null-padded)
     - unicode: uint16_t little-endian (BMP codepoint)
 
-Usage: python3 convert_cangjie.py cangjie5.dict.yaml assets/cangjie5.bin
+Usage: python3 convert_cangjie.py data/cangjie5.dict.yaml assets/cangjie5.bin
 """
 
+import os
 import struct
 import re
 import sys
 from collections import defaultdict
+
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 
 def parse_cangjie_yaml(yaml_path):
@@ -103,7 +106,7 @@ def generate_binary(entries, output_path):
 
 def main():
     if len(sys.argv) < 3:
-        print(f"Usage: {sys.argv[0]} <cangjie5.dict.yaml> <output.bin>")
+        print(f"Usage: {sys.argv[0]} <data/cangjie5.dict.yaml> <output.bin>")
         sys.exit(1)
 
     yaml_path = sys.argv[1]

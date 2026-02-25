@@ -5,6 +5,8 @@ from PIL import Image
 import io
 import os
 
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+
 # Load and convert to grayscale (e-ink is grayscale anyway)
 img = Image.open('assets/s3cover.jpg').convert('L')
 

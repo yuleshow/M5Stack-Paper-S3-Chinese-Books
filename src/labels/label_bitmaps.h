@@ -1,5 +1,5 @@
 // Auto-generated master label bitmap header
-// Do not edit — regenerate with convert_labels.py
+// Do not edit — regenerate with scripts/convert_labels.py
 #pragma once
 
 #include <pgmspace.h>
