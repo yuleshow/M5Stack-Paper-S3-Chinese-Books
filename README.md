@@ -195,7 +195,7 @@ Requires Python 3 with `Pillow` and a TTF font (default: `assets/fonts/GenYoMinT
 
 ## License
 
-This project is provided as-is for educational and personal use.
+This project is licensed under the [GNU General Public License v2.0](LICENSE).
 
 ## Acknowledgments
 
