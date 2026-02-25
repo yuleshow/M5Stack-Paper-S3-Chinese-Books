@@ -1,0 +1,14 @@
+# M5Stack Paper S3 Configuration
+
+[wifi]
+ssid=YOUR_WIFI_SSID
+password=YOUR_WIFI_PASSWORD
+
+[time]
+timezone=PST8PDT
+gmtoffset=-28800
+
+[weather]
+apikey=YOUR_OPENWEATHERMAP_API_KEY
+city=Pasadena,CA,US
+units=metric
