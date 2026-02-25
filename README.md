@@ -199,7 +199,7 @@ This project is licensed under the [GNU General Public License v2.0](LICENSE).
 
 ## Acknowledgments
 
-- [壽星天文曆 (sxwnl)](https://github.com/yuangu/sxwnl) by 許劍偉 — Chinese astronomical calendar algorithms
+- [壽星天文曆 (sxwnl)](https://github.com/sxwnl) by 許劍偉 — Chinese astronomical calendar algorithms
 - [OpenFontRender](https://github.com/takkaO/OpenFontRender) by takkaO — TTF font rendering for embedded systems
 - [M5Unified](https://github.com/m5stack/M5Unified) by M5Stack — Hardware abstraction library
 - [OpenWeatherMap](https://openweathermap.org/) — Weather data API
