@@ -358,7 +358,7 @@ extern int todoDatePickerMonth;
 extern int todoDatePickerReturnPage;
 
 // Shopping
-static const int MAX_SHOPPING = 50;
+static const int MAX_SHOPPING = 100;
 extern ShoppingItem shoppingList[MAX_SHOPPING];
 extern int shoppingCount;
 extern int currentShoppingPage;

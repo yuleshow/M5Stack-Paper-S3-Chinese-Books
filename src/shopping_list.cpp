@@ -238,7 +238,7 @@ void loadShoppingList() {
               int runStart = pos;
               while (pos < itemsStr.length()) {
                 unsigned char cb = (unsigned char)itemsStr.charAt(pos);
-                if (cb < 0x80 && isalpha(cb)) break;
+                if (cb < 0x80 && (isalpha(cb) || cb == ',')) break;
                 pos++;
               }
               String cjkRun = itemsStr.substring(runStart, pos);
@@ -255,6 +255,14 @@ void loadShoppingList() {
                   sp = spacePos + 1;
                 }
                 item.trim();
+                // Strip trailing ASCII punctuation (commas, periods) from CJK items
+                while (item.length() > 0) {
+                  char lastCh = item.charAt(item.length() - 1);
+                  if (lastCh == ',' || lastCh == '.' || lastCh == ';') {
+                    item = item.substring(0, item.length() - 1);
+                    item.trim();
+                  } else break;
+                }
                 if (item.length() > 0) {
                   tempItems[tempCount].groupName = groupName;
                   tempItems[tempCount].itemName = item;
