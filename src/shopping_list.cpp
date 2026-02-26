@@ -167,6 +167,22 @@ void loadShoppingList() {
   
   Serial.println("Loading shopping list...");
   
+  // Log file size for diagnostics
+  {
+    File checkFile;
+    if (sdMutex != NULL) {
+      xSemaphoreTake(sdMutex, portMAX_DELAY);
+      checkFile = SD.open("/shopping_list.csv");
+      xSemaphoreGive(sdMutex);
+    } else {
+      checkFile = SD.open("/shopping_list.csv");
+    }
+    if (checkFile) {
+      Serial.printf("CSV file size: %d bytes\n", checkFile.size());
+      checkFile.close();
+    }
+  }
+  
   File csvFile;
   if (sdMutex != NULL) {
     xSemaphoreTake(sdMutex, portMAX_DELAY);
@@ -222,6 +238,9 @@ void loadShoppingList() {
         if (fieldIdx >= 4) {
           String groupName = fields[2];
           String itemsStr = fields[3];
+          
+          Serial.printf("CSV group=[%s] items=[%s] (%d bytes)\n", 
+            groupName.c_str(), itemsStr.c_str(), itemsStr.length());
           
           // Smart mixed-language parser:
           // - CJK sections: split by space
@@ -570,6 +589,11 @@ void drawShoppingList() {
   int columnX = displayWidth - rightMargin;  // Start from right side
   int maxColumnX = displayWidth - rightMargin;  // Track rightmost position for pagination
   
+  Serial.printf("Draw shopping: fontSizePt=%d, colSpacing=%d, grpSpacing=%d, displayW=%d\n",
+    fontSizePt, columnSpacing, groupSpacing, displayWidth);
+  Serial.printf("Draw shopping: page=%d, startItem=%d/%d items\n", 
+    currentShoppingPage, shoppingPageStarts[currentShoppingPage], shoppingCount);
+  
   // Nav bar and page indicator drawn AFTER pagination is calculated (see below)
   
   // Use dynamic page breaks - start from the item index for this page
@@ -827,6 +851,9 @@ bgWidth, groupTextHeight + bgPadding * 2,
       lastRenderedItem = i;  // Track this as successfully rendered
     }
   }
+  
+  Serial.printf("Draw shopping: rendered %d items (idx %d to %d), final columnX=%d\n",
+    itemsRendered, startItem, lastRenderedItem, columnX);
   
   // Page indicator next to right arrow, larger font
   M5.Display.setFont(&fonts::efontTW_24);
