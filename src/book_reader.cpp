@@ -31,6 +31,7 @@ int loadReadingPosition() {
 void saveBookmarks() {
   if (!sdCardAvailable || currentBookPath.isEmpty()) return;
   String bmPath = currentBookPath + ".bm";
+  ScopedSDLock lock;
   File f = SD.open(bmPath, FILE_WRITE);
   if (!f) return;
   for (int i = 0; i < bookmarkCount; i++) {
@@ -45,6 +46,7 @@ void loadBookmarks() {
   bookmarkCount = 0;
   if (!sdCardAvailable || currentBookPath.isEmpty()) return;
   String bmPath = currentBookPath + ".bm";
+  ScopedSDLock lock;
   if (!SD.exists(bmPath)) return;
   File f = SD.open(bmPath, FILE_READ);
   if (!f) return;

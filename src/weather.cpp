@@ -255,6 +255,13 @@ bool fetchWeather() {
   weatherData.feelsLike = jsonGetValue(body, "feels_like").toFloat();
   weatherData.humidity = jsonGetValue(body, "humidity").toInt();
   weatherData.windSpeed = jsonGetValue(body, "speed").toFloat();
+  weatherData.fetchedUnits = weatherConfig.units;  // Remember API fetch units
+  // Save originals for drift-free unit toggle
+  weatherData.origTempCurrent = weatherData.tempCurrent;
+  weatherData.origTempMin     = weatherData.tempMin;
+  weatherData.origTempMax     = weatherData.tempMax;
+  weatherData.origFeelsLike   = weatherData.feelsLike;
+  weatherData.origWindSpeed   = weatherData.windSpeed;
   weatherData.pressure = jsonGetValue(body, "pressure").toInt();
   weatherData.visibility = jsonGetValue(body, "visibility").toInt();
   weatherData.description = jsonGetValue(body, "description");
@@ -327,6 +334,9 @@ bool fetchWeather() {
         }
 
         weatherData.forecastCount++;
+        // Save original forecast values for drift-free toggle
+        weatherData.origForecast[idx].tempMin = weatherData.forecast[idx].tempMin;
+        weatherData.origForecast[idx].tempMax = weatherData.forecast[idx].tempMax;
       }
     }
     Serial.printf("Forecast: %d days loaded\n", weatherData.forecastCount);
@@ -847,5 +857,6 @@ void redrawWeatherUnits() {
     drawSystemTextCentered(unitLabel, NAV_NEXT_X + 32, NAV_Y + 18, 28);
   }
 
+  M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Restore quality mode
   M5.Display.display();
 }

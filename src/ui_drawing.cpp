@@ -133,16 +133,16 @@ void drawBatteryIndicator() {
   bool charging = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
   
   int w = M5.Display.width();
-  int bx = w - 52;  // battery icon x — closer to right edge
+  int bx = w - 46;  // battery icon x
   int by = 6;       // battery icon y
-  int bw = 40;      // battery body width
-  int bh = 20;      // battery body height
+  int bw = 34;      // battery body width
+  int bh = 18;      // battery body height
   
   // Battery body outline
   M5.Display.drawRect(bx, by, bw, bh, TFT_BLACK);
   M5.Display.drawRect(bx + 1, by + 1, bw - 2, bh - 2, TFT_BLACK);  // thicker outline
   // Battery tip (positive terminal)
-  M5.Display.fillRect(bx + bw, by + 5, 4, bh - 10, TFT_BLACK);
+  M5.Display.fillRect(bx + bw, by + 4, 4, bh - 8, TFT_BLACK);
   
   // Fill level
   int fillW = (bw - 6) * batLevel / 100;
@@ -150,27 +150,32 @@ void drawBatteryIndicator() {
     M5.Display.fillRect(bx + 3, by + 3, fillW, bh - 6, TFT_BLACK);
   }
   
-  // Percentage text — use OFR TTF for smooth rendering
+  // Percentage text — always at fixed position, 24px gap left of battery
   char batStr[8];
-  if (charging) {
-    snprintf(batStr, sizeof(batStr), "%d%%+", batLevel);
-  } else {
-    snprintf(batStr, sizeof(batStr), "%d%%", batLevel);
-  }
+  snprintf(batStr, sizeof(batStr), "%d%%", batLevel);
+  int textRightEdge = bx - 42;
   if (ofrFontLoaded) {
-    ofr.setFontSize(20);
+    ofr.setFontSize(18);
     ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-    // Right-align: measure width then position left of battery icon
     int tw = ofr.getTextWidth(batStr);
-    ofr.drawString(batStr, bx - 24 - tw, by + 1, TFT_BLACK, TFT_WHITE);
+    ofr.drawString(batStr, textRightEdge - tw, by + 1, TFT_BLACK, TFT_WHITE);
   } else {
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1.5);
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setTextDatum(TR_DATUM);
-    M5.Display.drawString(batStr, bx - 24, by);
+    M5.Display.drawString(batStr, textRightEdge, by);
     M5.Display.setTextDatum(TL_DATUM);
     M5.Display.setTextSize(1);
+  }
+  
+  // Charging indicator: bold "+" in the gap between text and battery
+  if (charging) {
+    int cx = bx - 10;  // closer to battery icon
+    int cy = by + bh / 2;
+    // Draw a thick plus sign
+    M5.Display.fillRect(cx - 5, cy - 1, 10, 3, TFT_BLACK);  // horizontal bar
+    M5.Display.fillRect(cx - 1, cy - 5, 3, 10, TFT_BLACK);  // vertical bar
   }
 }
 

@@ -80,7 +80,7 @@ void saveShoppingList() {
   }
 
   // Group items by groupName and write one CSV line per group
-  // CSV format: number,group,group,item1 item2 item3
+  // Mixed format: CJK items space-separated, English items comma-separated
   int groupNum = 0;
   String currentGroup = "";
   for (int i = 0; i < shoppingCount; i++) {
@@ -91,13 +91,32 @@ void saveShoppingList() {
       }
       currentGroup = shoppingList[i].groupName;
       groupNum++;
-      // Write: number,group,group,firstItem
-      csvFile.printf("%d,%s,%s,%s", groupNum,
+      
+      // Collect all items for this group and always quote the items field
+      String allItems = "";
+      bool prevWasEnglish = false;
+      for (int k = i; k < shoppingCount && shoppingList[k].groupName == currentGroup; k++) {
+        String item = shoppingList[k].itemName;
+        bool isEnglish = (item.length() > 0 && (unsigned char)item.charAt(0) < 0x80 && isalpha(item.charAt(0)));
+        
+        if (allItems.length() > 0) {
+          if (isEnglish || prevWasEnglish) {
+            allItems += ", ";
+          } else {
+            allItems += " ";
+          }
+        }
+        allItems += item;
+        prevWasEnglish = isEnglish;
+      }
+      // Always quote the items field so commas inside are preserved
+      csvFile.printf("%d,%s,%s,\"%s\"", groupNum,
         currentGroup.c_str(), currentGroup.c_str(),
-        shoppingList[i].itemName.c_str());
-    } else {
-      // Append item to current group line
-      csvFile.printf(" %s", shoppingList[i].itemName.c_str());
+        allItems.c_str());
+      // Skip to end of this group
+      while (i + 1 < shoppingCount && shoppingList[i + 1].groupName == currentGroup) {
+        i++;
+      }
     }
   }
   if (shoppingCount > 0) {
@@ -175,30 +194,96 @@ void loadShoppingList() {
     char c = csvFile.read();
     if (c == '\n' || c == '\r') {
       if (line.length() > 0) {
-        // Parse CSV line: ignore col 0,1, use col 2 (group) and 3 (items)
-        int comma1 = line.indexOf(',');
-        if (comma1 >= 0) {
-          int comma2 = line.indexOf(',', comma1 + 1);
-          if (comma2 >= 0) {
-            int comma3 = line.indexOf(',', comma2 + 1);
-            if (comma3 >= 0) {
-              String groupName = line.substring(comma2 + 1, comma3);
-              String itemsStr = line.substring(comma3 + 1);
-              
-              // Split items by space and create separate entries
-              int startPos = 0;
-              while (startPos < itemsStr.length() && tempCount < MAX_SHOPPING) {
-                int spacePos = itemsStr.indexOf(' ', startPos);
+        // Parse CSV line with proper quote handling
+        // Format: col0,col1,col2,col3 — col2=group, col3=items
+        // Commas inside "" are part of the field, not separators
+        String fields[4];
+        int fieldIdx = 0;
+        bool inQuote = false;
+        int fieldStart = 0;
+        for (int ci = 0; ci <= line.length() && fieldIdx < 4; ci++) {
+          char ch = (ci < line.length()) ? line.charAt(ci) : '\0';
+          if (ch == '"') {
+            inQuote = !inQuote;
+          } else if ((ch == ',' && !inQuote) || ci == line.length()) {
+            if (fieldIdx < 4) {
+              fields[fieldIdx] = line.substring(fieldStart, ci);
+              fields[fieldIdx].trim();
+              // Strip outer quotes
+              if (fields[fieldIdx].length() >= 2 && fields[fieldIdx].charAt(0) == '"' && fields[fieldIdx].charAt(fields[fieldIdx].length() - 1) == '"') {
+                fields[fieldIdx] = fields[fieldIdx].substring(1, fields[fieldIdx].length() - 1);
+              }
+              fieldIdx++;
+            }
+            fieldStart = ci + 1;
+          }
+        }
+        
+        if (fieldIdx >= 4) {
+          String groupName = fields[2];
+          String itemsStr = fields[3];
+          
+          // Smart mixed-language parser:
+          // - CJK sections: split by space
+          // - ASCII/English sections: split by comma
+          int pos = 0;
+          while (pos < itemsStr.length() && tempCount < MAX_SHOPPING) {
+            while (pos < itemsStr.length() && itemsStr.charAt(pos) == ' ') pos++;
+            if (pos >= itemsStr.length()) break;
+            
+            unsigned char firstByte = (unsigned char)itemsStr.charAt(pos);
+            bool isCJKSection = (firstByte >= 0x80);
+            
+            if (isCJKSection) {
+              int runStart = pos;
+              while (pos < itemsStr.length()) {
+                unsigned char cb = (unsigned char)itemsStr.charAt(pos);
+                if (cb < 0x80 && isalpha(cb)) break;
+                pos++;
+              }
+              String cjkRun = itemsStr.substring(runStart, pos);
+              cjkRun.trim();
+              int sp = 0;
+              while (sp < cjkRun.length() && tempCount < MAX_SHOPPING) {
+                int spacePos = cjkRun.indexOf(' ', sp);
                 String item;
-                
                 if (spacePos == -1) {
-                  item = itemsStr.substring(startPos);
-                  startPos = itemsStr.length();
+                  item = cjkRun.substring(sp);
+                  sp = cjkRun.length();
                 } else {
-                  item = itemsStr.substring(startPos, spacePos);
-                  startPos = spacePos + 1;
+                  item = cjkRun.substring(sp, spacePos);
+                  sp = spacePos + 1;
                 }
-                
+                item.trim();
+                if (item.length() > 0) {
+                  tempItems[tempCount].groupName = groupName;
+                  tempItems[tempCount].itemName = item;
+                  tempCount++;
+                }
+              }
+            } else {
+              int runStart = pos;
+              while (pos < itemsStr.length()) {
+                unsigned char cb = (unsigned char)itemsStr.charAt(pos);
+                if (cb >= 0x80) break;
+                pos++;
+              }
+              String engRun = itemsStr.substring(runStart, pos);
+              engRun.trim();
+              if (engRun.endsWith(",")) engRun = engRun.substring(0, engRun.length() - 1);
+              engRun.trim();
+              int sp = 0;
+              while (sp < engRun.length() && tempCount < MAX_SHOPPING) {
+                int commaPos = engRun.indexOf(',', sp);
+                String item;
+                if (commaPos == -1) {
+                  item = engRun.substring(sp);
+                  sp = engRun.length();
+                } else {
+                  item = engRun.substring(sp, commaPos);
+                  sp = commaPos + 1;
+                }
+                item.trim();
                 if (item.length() > 0) {
                   tempItems[tempCount].groupName = groupName;
                   tempItems[tempCount].itemName = item;
@@ -260,24 +345,51 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
   for (int j = 0; j < text.length(); ) {
     unsigned char c = text.charAt(j);
     bool isASCII = (c < 0x80);
-    int charStart = j;
-    uint32_t unicode = utf8Decode(text, j);
-    String ch = text.substring(charStart, j);
-    applyVerticalPunct(ch, unicode);
     
     if (isASCII) {
-      // Rotate ASCII 90° clockwise using sprite
+      // Collect consecutive ASCII characters into one run
+      int runStart = j;
+      while (j < text.length() && (unsigned char)text.charAt(j) < 0x80) {
+        j++;
+      }
+      String run = text.substring(runStart, j);
+      run.trim();
+      if (run.length() == 0) continue;
+      
+      // Measure the run width to create a properly-sized sprite
+      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setTextSize(1);
+      int textW = M5.Display.textWidth(run);
+      int textH = charSpacing;
+      
+      // Create sprite, render horizontal text, rotate 90° as a unit
       LGFX_Sprite sprite(&M5.Display);
-      sprite.createSprite(charSpacing, charSpacing);
+      if (!sprite.createSprite(textW + 4, textH)) {
+        y += textH;  // Skip but advance position
+        continue;
+      }
       sprite.fillSprite(TFT_WHITE);
       sprite.setFont(&fonts::efontTW_24);
       sprite.setTextColor(TFT_BLACK);
       sprite.setTextSize(1);
-      sprite.drawString(ch, charSpacing/4, charSpacing/4);
-      sprite.pushRotateZoom(&M5.Display, x, y + charSpacing/2, 90, 1.0, 1.0);
+      sprite.setTextDatum(ML_DATUM);
+      sprite.drawString(run, 2, textH / 2);
+      
+      // Rotate 90° clockwise and push to display
+      // After rotation: width becomes height, height becomes width
+      int rotatedW = textH;    // becomes the horizontal extent
+      int rotatedH = textW + 4; // becomes the vertical extent
+      sprite.pushRotateZoom(&M5.Display, x, y + rotatedH / 2, 90, 1.0, 1.0);
       sprite.deleteSprite();
+      
+      y += rotatedH;
     } else {
-      // Chinese - draw upright
+      // CJK character - decode and draw upright
+      int charStart = j;
+      uint32_t unicode = utf8Decode(text, j);
+      String ch = text.substring(charStart, j);
+      applyVerticalPunct(ch, unicode);
+      
       if (ofrFontLoaded) {
         ofr.setFontSize(charSpacing);
         ofr.setFontColor(TFT_BLACK, TFT_WHITE);
@@ -288,9 +400,9 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
         M5.Display.setCursor(x - 12, y);
         M5.Display.print(ch);
       }
+      
+      y += charSpacing;
     }
-    
-    y += charSpacing;
   }
   
   return y;
@@ -531,7 +643,10 @@ bgWidth, groupTextHeight + bgPadding * 2,
         if (isASCII) {
           // Rotate ASCII 90° clockwise using sprite (white on grey)
           LGFX_Sprite sprite(&M5.Display);
-          sprite.createSprite(48, 48);  // Larger sprite
+          if (!sprite.createSprite(48, 48)) {
+            y += 30;  // Skip but advance position
+            continue;
+          }
           sprite.fillSprite(0x5AEB);  // Match grey background
           sprite.setFont(&fonts::efontTW_24);
           sprite.setTextColor(TFT_WHITE);
@@ -661,7 +776,10 @@ bgWidth, groupTextHeight + bgPadding * 2,
         if (isASCII) {
           // Rotate ASCII 90° clockwise using sprite (center at columnX)
           LGFX_Sprite sprite(&M5.Display);
-          sprite.createSprite(48, 48);  // Larger sprite for bigger text
+          if (!sprite.createSprite(48, 48)) {
+            y += 30;  // Skip but advance position
+            continue;
+          }
           sprite.fillSprite(TFT_WHITE);
           sprite.setFont(&fonts::efontTW_24);
           sprite.setTextColor(TFT_BLACK);

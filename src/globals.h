@@ -185,6 +185,10 @@ struct WeatherData {
   long sunset;
   unsigned long fetchTime;
   bool valid;
+  String fetchedUnits;  // Track units from API fetch to avoid float drift on toggle
+  // Original values from API fetch (never modified by toggle)
+  float origTempCurrent, origTempMin, origTempMax, origFeelsLike, origWindSpeed;
+  struct { float tempMin, tempMax; } origForecast[3];
 
   struct Forecast {
     String date;

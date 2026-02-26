@@ -199,6 +199,10 @@ Requires Python 3 with `Pillow` and a TTF font (default: `assets/fonts/GenYoMinT
 
 This project is licensed under the [GNU General Public License v2.0](LICENSE).
 
+## Documentation
+
+See the **[User Guide](docs/USER_GUIDE.md)** for detailed setup instructions, feature walkthroughs, and troubleshooting.
+
 ## Acknowledgments
 
 - [壽星天文曆 (sxwnl)](https://github.com/sxwnl) by 許劍偉 — Chinese astronomical calendar algorithms

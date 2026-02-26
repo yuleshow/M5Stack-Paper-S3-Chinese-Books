@@ -138,7 +138,7 @@ icon.w - 20, icon.h - 60,
     char miniTemp[16];
     String unitSym = (weatherConfig.units == "imperial") ? "F" : "C";
     snprintf(miniTemp, sizeof(miniTemp), "%.0f\xC2\xB0%s %s", weatherData.tempCurrent, unitSym.c_str(), weatherData.descChinese.c_str());
-    drawSystemTextCentered(miniTemp, wIcon.x + wIcon.w / 2, wIcon.y + wIcon.h - 8, 18);
+    drawSystemTextCentered(miniTemp, wIcon.x + wIcon.w / 2, wIcon.y + wIcon.h + 2, 18);
   }
 
   // Item count badges on todo (icon 2) and shopping (icon 3)

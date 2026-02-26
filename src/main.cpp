@@ -453,15 +453,14 @@ void loop() {
     }
   }
   
-  // Idle sleep: DISABLED for development
-  // TODO: Re-enable idle sleep when done coding
-  // bool isCharging = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
-  // if (lastActivityTime > 0 && !isCharging && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
-  //   if (currentMode != MODE_CLOCK) {
-  //     Serial.println("Idle timeout - entering deep sleep");
-  //     enterDeepSleep();
-  //   }
-  // }
+  // Idle sleep: auto-sleep after 10 minutes of inactivity (when not charging)
+  bool isCharging = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
+  if (lastActivityTime > 0 && !isCharging && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
+    if (currentMode != MODE_CLOCK) {
+      Serial.println("Idle timeout - entering deep sleep");
+      enterDeepSleep();
+    }
+  }
   
   // Auto-refresh clock - full refresh every minute, second hand update every second
   if (currentMode == MODE_CLOCK && timeConfig.timeSynced) {
@@ -739,6 +738,7 @@ void loop() {
         }
         drawSystemText("年", xp, 72, 36);
         M5.Display.display();
+        M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Restore quality mode
       };
 
       // Number pad area (rows 0-3, cols 0-2)
@@ -831,6 +831,7 @@ void loop() {
               }
 
               M5.Display.display();
+              M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Restore quality mode
             }
           }
         }
@@ -947,7 +948,9 @@ void loop() {
       // Font size decrease (字-)
       else if (y > 900 && x >= 155 && x <= 200) {
         if (readingFontSize > MIN_READING_FONT_SIZE) {
-          size_t byteOffset = (size_t)currentPage * bytesPerPage;
+          size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
+                              ? pageByteOffsets[currentPage]
+                              : (size_t)currentPage * bytesPerPage;
           readingFontSize -= FONT_SIZE_STEP;
           if (readingFontSize < MIN_READING_FONT_SIZE) readingFontSize = MIN_READING_FONT_SIZE;
           recalculatePages();
@@ -962,7 +965,9 @@ void loop() {
       // Font size increase (字+)
       else if (y > 900 && x >= 230 && x <= 275) {
         if (readingFontSize < MAX_READING_FONT_SIZE) {
-          size_t byteOffset = (size_t)currentPage * bytesPerPage;
+          size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
+                              ? pageByteOffsets[currentPage]
+                              : (size_t)currentPage * bytesPerPage;
           readingFontSize += FONT_SIZE_STEP;
           if (readingFontSize > MAX_READING_FONT_SIZE) readingFontSize = MAX_READING_FONT_SIZE;
           recalculatePages();
@@ -1171,29 +1176,43 @@ void loop() {
         bool toImperial = (weatherConfig.units != "imperial");
         weatherConfig.units = toImperial ? "imperial" : "metric";
         Serial.printf("Weather units toggled to: %s\n", weatherConfig.units.c_str());
-        // Convert cached values locally (no re-fetch needed)
+        // Always convert from original API values (avoids cumulative float drift)
         if (weatherData.valid) {
-          if (toImperial) {
-            // metric → imperial: F = C*9/5+32, mph = m/s*2.237
-            weatherData.tempCurrent = weatherData.tempCurrent * 9.0f / 5.0f + 32.0f;
-            weatherData.tempMin     = weatherData.tempMin * 9.0f / 5.0f + 32.0f;
-            weatherData.tempMax     = weatherData.tempMax * 9.0f / 5.0f + 32.0f;
-            weatherData.feelsLike   = weatherData.feelsLike * 9.0f / 5.0f + 32.0f;
-            weatherData.windSpeed   = weatherData.windSpeed * 2.237f;
-            for (int i = 0; i < weatherData.forecastCount; i++) {
-              weatherData.forecast[i].tempMin = weatherData.forecast[i].tempMin * 9.0f / 5.0f + 32.0f;
-              weatherData.forecast[i].tempMax = weatherData.forecast[i].tempMax * 9.0f / 5.0f + 32.0f;
-            }
-          } else {
-            // imperial → metric: C = (F-32)*5/9, m/s = mph/2.237
-            weatherData.tempCurrent = (weatherData.tempCurrent - 32.0f) * 5.0f / 9.0f;
-            weatherData.tempMin     = (weatherData.tempMin - 32.0f) * 5.0f / 9.0f;
-            weatherData.tempMax     = (weatherData.tempMax - 32.0f) * 5.0f / 9.0f;
-            weatherData.feelsLike   = (weatherData.feelsLike - 32.0f) * 5.0f / 9.0f;
-            weatherData.windSpeed   = weatherData.windSpeed / 2.237f;
-            for (int i = 0; i < weatherData.forecastCount; i++) {
-              weatherData.forecast[i].tempMin = (weatherData.forecast[i].tempMin - 32.0f) * 5.0f / 9.0f;
-              weatherData.forecast[i].tempMax = (weatherData.forecast[i].tempMax - 32.0f) * 5.0f / 9.0f;
+          bool fetchedMetric = (weatherData.fetchedUnits != "imperial");
+          bool needConvert = (toImperial != !fetchedMetric);  // display unit differs from fetch unit
+          // Restore original API values first
+          weatherData.tempCurrent = weatherData.origTempCurrent;
+          weatherData.tempMin     = weatherData.origTempMin;
+          weatherData.tempMax     = weatherData.origTempMax;
+          weatherData.feelsLike   = weatherData.origFeelsLike;
+          weatherData.windSpeed   = weatherData.origWindSpeed;
+          for (int i = 0; i < weatherData.forecastCount; i++) {
+            weatherData.forecast[i].tempMin = weatherData.origForecast[i].tempMin;
+            weatherData.forecast[i].tempMax = weatherData.origForecast[i].tempMax;
+          }
+          if (needConvert) {
+            if (toImperial) {
+              // metric -> imperial
+              weatherData.tempCurrent = weatherData.tempCurrent * 9.0f / 5.0f + 32.0f;
+              weatherData.tempMin     = weatherData.tempMin * 9.0f / 5.0f + 32.0f;
+              weatherData.tempMax     = weatherData.tempMax * 9.0f / 5.0f + 32.0f;
+              weatherData.feelsLike   = weatherData.feelsLike * 9.0f / 5.0f + 32.0f;
+              weatherData.windSpeed   = weatherData.windSpeed * 2.237f;
+              for (int i = 0; i < weatherData.forecastCount; i++) {
+                weatherData.forecast[i].tempMin = weatherData.forecast[i].tempMin * 9.0f / 5.0f + 32.0f;
+                weatherData.forecast[i].tempMax = weatherData.forecast[i].tempMax * 9.0f / 5.0f + 32.0f;
+              }
+            } else {
+              // imperial -> metric
+              weatherData.tempCurrent = (weatherData.tempCurrent - 32.0f) * 5.0f / 9.0f;
+              weatherData.tempMin     = (weatherData.tempMin - 32.0f) * 5.0f / 9.0f;
+              weatherData.tempMax     = (weatherData.tempMax - 32.0f) * 5.0f / 9.0f;
+              weatherData.feelsLike   = (weatherData.feelsLike - 32.0f) * 5.0f / 9.0f;
+              weatherData.windSpeed   = weatherData.windSpeed / 2.237f;
+              for (int i = 0; i < weatherData.forecastCount; i++) {
+                weatherData.forecast[i].tempMin = (weatherData.forecast[i].tempMin - 32.0f) * 5.0f / 9.0f;
+                weatherData.forecast[i].tempMax = (weatherData.forecast[i].tempMax - 32.0f) * 5.0f / 9.0f;
+              }
             }
           }
         }

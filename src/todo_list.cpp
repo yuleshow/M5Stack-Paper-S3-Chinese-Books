@@ -428,7 +428,10 @@ void drawTodoList() {
         String ch = todoList[i].date.substring(j, j + 1);
         // Rotate date characters 90° clockwise using sprite
         LGFX_Sprite sprite(&M5.Display);
-        sprite.createSprite(48, 48);
+        if (!sprite.createSprite(48, 48)) {
+          y += 24;  // Skip but advance position
+          continue;
+        }
         sprite.fillSprite(TFT_WHITE);
         if (ofrFontLoaded) {
           ofr.setDrawer(sprite);
@@ -517,7 +520,10 @@ void drawTodoList() {
         // Rotate ASCII 90° clockwise using sprite (use TTF if available for smooth text)
         {
           LGFX_Sprite sprite(&M5.Display);
-          sprite.createSprite(48, 48);
+          if (!sprite.createSprite(48, 48)) {
+            y += 30;  // Skip but advance position
+            continue;
+          }
           sprite.fillSprite(TFT_WHITE);
           if (ofrFontLoaded) {
             ofr.setDrawer(sprite);
