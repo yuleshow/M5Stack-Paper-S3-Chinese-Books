@@ -80,7 +80,10 @@ void saveShoppingList() {
   }
 
   // Group items by groupName and write one CSV line per group
-  // Mixed format: CJK items space-separated, English items comma-separated
+  // Strict 4-column format: col1,col2,group,items
+  // CJK items space-separated, English items comma-separated
+  // Never modify the CSV structure — always exactly 4 columns
+  // Quote col4 if it contains commas (standard CSV quoting)
   int groupNum = 0;
   String currentGroup = "";
   for (int i = 0; i < shoppingCount; i++) {
@@ -92,7 +95,7 @@ void saveShoppingList() {
       currentGroup = shoppingList[i].groupName;
       groupNum++;
       
-      // Collect all items for this group and always quote the items field
+      // Collect all items for this group
       String allItems = "";
       bool prevWasEnglish = false;
       for (int k = i; k < shoppingCount && shoppingList[k].groupName == currentGroup; k++) {
@@ -109,10 +112,17 @@ void saveShoppingList() {
         allItems += item;
         prevWasEnglish = isEnglish;
       }
-      // Always quote the items field so commas inside are preserved
-      csvFile.printf("%d,%s,%s,\"%s\"", groupNum,
-        currentGroup.c_str(), currentGroup.c_str(),
-        allItems.c_str());
+      // Write strict 4-column CSV; quote col4 only if it contains commas
+      bool needsQuote = (allItems.indexOf(',') >= 0);
+      if (needsQuote) {
+        csvFile.printf("%d,%s,%s,\"%s\"", groupNum,
+          currentGroup.c_str(), currentGroup.c_str(),
+          allItems.c_str());
+      } else {
+        csvFile.printf("%d,%s,%s,%s", groupNum,
+          currentGroup.c_str(), currentGroup.c_str(),
+          allItems.c_str());
+      }
       // Skip to end of this group
       while (i + 1 < shoppingCount && shoppingList[i + 1].groupName == currentGroup) {
         i++;
@@ -210,34 +220,53 @@ void loadShoppingList() {
     char c = csvFile.read();
     if (c == '\n' || c == '\r') {
       if (line.length() > 0) {
-        // Parse CSV line with proper quote handling
-        // Format: col0,col1,col2,col3 — col2=group, col3=items
-        // Commas inside "" are part of the field, not separators
-        String fields[4];
+        // Parse CSV line: col0,col1,col2,col3...
+        // col2 = group name, col3+ = items (may span multiple comma-separated fields)
+        // Items field may or may not be quoted; unquoted commas create extra fields
+        // Strategy: parse first 3 fields normally, then take EVERYTHING after col2's comma as items
+        String fields[3];
         int fieldIdx = 0;
         bool inQuote = false;
         int fieldStart = 0;
-        for (int ci = 0; ci <= line.length() && fieldIdx < 4; ci++) {
-          char ch = (ci < line.length()) ? line.charAt(ci) : '\0';
+        int itemsStart = -1;
+        for (int ci = 0; ci <= (int)line.length() && fieldIdx < 3; ci++) {
+          char ch = (ci < (int)line.length()) ? line.charAt(ci) : '\0';
           if (ch == '"') {
             inQuote = !inQuote;
-          } else if ((ch == ',' && !inQuote) || ci == line.length()) {
-            if (fieldIdx < 4) {
-              fields[fieldIdx] = line.substring(fieldStart, ci);
-              fields[fieldIdx].trim();
-              // Strip outer quotes
-              if (fields[fieldIdx].length() >= 2 && fields[fieldIdx].charAt(0) == '"' && fields[fieldIdx].charAt(fields[fieldIdx].length() - 1) == '"') {
-                fields[fieldIdx] = fields[fieldIdx].substring(1, fields[fieldIdx].length() - 1);
-              }
-              fieldIdx++;
+          } else if ((ch == ',' && !inQuote) || ci == (int)line.length()) {
+            fields[fieldIdx] = line.substring(fieldStart, ci);
+            fields[fieldIdx].trim();
+            // Strip outer quotes
+            if (fields[fieldIdx].length() >= 2 && fields[fieldIdx].charAt(0) == '"' && fields[fieldIdx].charAt(fields[fieldIdx].length() - 1) == '"') {
+              fields[fieldIdx] = fields[fieldIdx].substring(1, fields[fieldIdx].length() - 1);
             }
+            fieldIdx++;
             fieldStart = ci + 1;
+            if (fieldIdx == 3) {
+              itemsStart = ci + 1;  // Everything after this comma is items
+            }
           }
         }
         
-        if (fieldIdx >= 4) {
+        if (fieldIdx >= 3 && itemsStart >= 0 && itemsStart < (int)line.length()) {
           String groupName = fields[2];
-          String itemsStr = fields[3];
+          // Get everything from itemsStart to end of line as the items string
+          String itemsStr = line.substring(itemsStart);
+          // Strip trailing empty fields (commas at end like ,,,)
+          while (itemsStr.endsWith(",")) {
+            itemsStr = itemsStr.substring(0, itemsStr.length() - 1);
+          }
+          itemsStr.trim();
+          // Remove all CSV quote characters — they are formatting, not content
+          // e.g. "eggs, 肝醬", bread → eggs, 肝醬, bread
+          String cleaned = "";
+          for (int qi = 0; qi < (int)itemsStr.length(); qi++) {
+            if (itemsStr.charAt(qi) != '"') {
+              cleaned += itemsStr.charAt(qi);
+            }
+          }
+          itemsStr = cleaned;
+          itemsStr.trim();
           
           Serial.printf("CSV group=[%s] items=[%s] (%d bytes)\n", 
             groupName.c_str(), itemsStr.c_str(), itemsStr.length());
