@@ -23,6 +23,187 @@ bool usbMSCEnabled = false;
 bool useSDCardIcons = true;
 bool usbMSCActive = false;
 bool useSxwnlCalendar = false;  // Default: Meeus (our way)
+bool bluetoothEnabled = false;
+bool bluetoothActive = false;
+BLEServer* pBLEServer = nullptr;
+BLECharacteristic* pTxCharacteristic = nullptr;
+BLECharacteristic* pRxCharacteristic = nullptr;
+BLEScannedDevice bleDevices[MAX_BLE_DEVICES];
+int bleDeviceCount = 0;
+bool bleScanning = false;
+bool bleShowingScan = false;
+int bleSelectedDevice = -1;
+bool bleConnectedToDevice = false;
+String bleConnectedName = "";
+
+// BLE UUIDs (Nordic UART Service)
+#define BLE_SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define BLE_CHARACTERISTIC_TX   "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+#define BLE_CHARACTERISTIC_RX   "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+
+class BLEServerCallbackHandler : public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) {
+    Serial.println("BLE client connected");
+  }
+  void onDisconnect(BLEServer* pServer) {
+    Serial.println("BLE client disconnected");
+    // Restart advertising
+    if (bluetoothActive) {
+      pServer->getAdvertising()->start();
+    }
+  }
+};
+
+class BLERxCallbackHandler : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) {
+    std::string rxValue = pCharacteristic->getValue();
+    if (rxValue.length() > 0) {
+      Serial.printf("BLE RX: %s\n", rxValue.c_str());
+    }
+  }
+};
+
+void startBLE() {
+  if (bluetoothActive) return;
+  
+  BLEDevice::init("M5Paper-BLE");
+  pBLEServer = BLEDevice::createServer();
+  pBLEServer->setCallbacks(new BLEServerCallbackHandler());
+  
+  BLEService* pService = pBLEServer->createService(BLE_SERVICE_UUID);
+  
+  pTxCharacteristic = pService->createCharacteristic(
+    BLE_CHARACTERISTIC_TX,
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
+  pTxCharacteristic->addDescriptor(new BLE2902());
+  
+  pRxCharacteristic = pService->createCharacteristic(
+    BLE_CHARACTERISTIC_RX,
+    BLECharacteristic::PROPERTY_WRITE
+  );
+  pRxCharacteristic->setCallbacks(new BLERxCallbackHandler());
+  
+  pService->start();
+  pBLEServer->getAdvertising()->start();
+  bluetoothActive = true;
+  Serial.println("BLE started as M5Paper-BLE");
+}
+
+void stopBLE() {
+  if (!bluetoothActive) return;
+  
+  BLEDevice::deinit(true);
+  pBLEServer = nullptr;
+  pTxCharacteristic = nullptr;
+  pRxCharacteristic = nullptr;
+  bluetoothActive = false;
+  bleConnectedToDevice = false;
+  bleConnectedName = "";
+  Serial.println("BLE stopped");
+}
+
+void scanBLEDevices() {
+  Serial.println("Starting BLE scan...");
+  bleScanning = true;
+  bleDeviceCount = 0;
+  
+  // If BLE server is running, we need to init differently
+  // BLEDevice must be initialized
+  if (!bluetoothActive) {
+    BLEDevice::init("M5Paper-BLE");
+  }
+  
+  BLEScan* pBLEScan = BLEDevice::getScan();
+  pBLEScan->setActiveScan(true);
+  pBLEScan->setInterval(100);
+  pBLEScan->setWindow(99);
+  
+  BLEScanResults foundDevices = pBLEScan->start(5, false);  // 5 second scan
+  
+  int count = foundDevices.getCount();
+  Serial.printf("BLE scan found %d devices\n", count);
+  
+  bleDeviceCount = 0;
+  for (int i = 0; i < count && bleDeviceCount < MAX_BLE_DEVICES; i++) {
+    BLEAdvertisedDevice device = foundDevices.getDevice(i);
+    String name = device.haveName() ? String(device.getName().c_str()) : "";
+    
+    // Only show devices with names (skip anonymous ones)
+    if (name.length() > 0) {
+      bleDevices[bleDeviceCount].name = name;
+      bleDevices[bleDeviceCount].address = String(device.getAddress().toString().c_str());
+      bleDevices[bleDeviceCount].rssi = device.getRSSI();
+      bleDevices[bleDeviceCount].connectable = true;
+      bleDeviceCount++;
+      Serial.printf("  [%d] %s (%s) RSSI:%d\n", bleDeviceCount, name.c_str(), device.getAddress().toString().c_str(), device.getRSSI());
+    }
+  }
+  
+  pBLEScan->clearResults();
+  
+  // If we weren't running BLE server before, deinit
+  if (!bluetoothActive) {
+    BLEDevice::deinit(false);
+  }
+  
+  bleScanning = false;
+  Serial.printf("BLE scan complete: %d named devices\n", bleDeviceCount);
+}
+
+// BLE Client callbacks
+static BLEClient* pBLEClient = nullptr;
+
+class BLEClientCallbackHandler : public BLEClientCallbacks {
+  void onConnect(BLEClient* pClient) {
+    Serial.println("BLE client: connected to remote device");
+  }
+  void onDisconnect(BLEClient* pClient) {
+    Serial.println("BLE client: disconnected from remote device");
+    bleConnectedToDevice = false;
+    bleConnectedName = "";
+  }
+};
+
+void connectBLEDevice(int index) {
+  if (index < 0 || index >= bleDeviceCount) return;
+  
+  Serial.printf("Connecting to BLE device: %s (%s)\n", 
+    bleDevices[index].name.c_str(), 
+    bleDevices[index].address.c_str());
+  
+  // Make sure BLE is initialized
+  if (!bluetoothActive) {
+    BLEDevice::init("M5Paper-BLE");
+    bluetoothActive = true;
+  }
+  
+  // Disconnect existing client if any
+  if (pBLEClient != nullptr) {
+    if (pBLEClient->isConnected()) {
+      pBLEClient->disconnect();
+    }
+    delete pBLEClient;
+    pBLEClient = nullptr;
+  }
+  
+  pBLEClient = BLEDevice::createClient();
+  pBLEClient->setClientCallbacks(new BLEClientCallbackHandler());
+  
+  BLEAddress addr(bleDevices[index].address.c_str());
+  
+  if (pBLEClient->connect(addr)) {
+    bleConnectedToDevice = true;
+    bleConnectedName = bleDevices[index].name;
+    Serial.printf("Connected to %s\n", bleConnectedName.c_str());
+  } else {
+    Serial.println("BLE connection failed");
+    bleConnectedToDevice = false;
+    bleConnectedName = "";
+    delete pBLEClient;
+    pBLEClient = nullptr;
+  }
+}
 
 // Font selection
 int numFonts = 4;

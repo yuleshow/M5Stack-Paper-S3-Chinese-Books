@@ -9,6 +9,10 @@
 #include <WiFi.h>
 #include <time.h>
 #include <WebServer.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 #include <HTTPClient.h>
 #include <USB.h>
 #include "USBMSC.h"
@@ -227,6 +231,15 @@ struct WiFiNetwork {
   bool encrypted;
 };
 
+static const int MAX_BLE_DEVICES = 20;
+
+struct BLEScannedDevice {
+  String name;
+  String address;
+  int rssi;
+  bool connectable;
+};
+
 struct GlyphIndex {
   uint32_t unicode;
   uint16_t width;
@@ -284,6 +297,22 @@ extern bool usbMSCEnabled;
 extern bool useSDCardIcons;
 extern bool usbMSCActive;
 extern bool useSxwnlCalendar;  // true = 壽星天文曆, false = Meeus (our way)
+extern bool bluetoothEnabled;
+extern bool bluetoothActive;
+extern BLEServer* pBLEServer;
+extern BLECharacteristic* pTxCharacteristic;
+extern BLECharacteristic* pRxCharacteristic;
+extern BLEScannedDevice bleDevices[MAX_BLE_DEVICES];
+extern int bleDeviceCount;
+extern bool bleScanning;
+extern bool bleShowingScan;
+extern int bleSelectedDevice;
+extern bool bleConnectedToDevice;
+extern String bleConnectedName;
+void startBLE();
+void stopBLE();
+void scanBLEDevices();
+void connectBLEDevice(int index);
 
 // Font selection
 extern int numFonts;
@@ -560,6 +589,7 @@ void drawWebServerSetup();
 void drawUSBMSCSetup();
 void drawIconSetup();
 void drawCalendarSetup();
+void drawBluetoothSetup();
 void drawFontMenu();
 
 // cleanup

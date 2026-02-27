@@ -10,8 +10,6 @@ SET_LOOP_TASK_STACK_SIZE(32 * 1024);
 
 // RTC_DATA_ATTR survives deep sleep
 RTC_DATA_ATTR int bootCount = 0;
-RTC_DATA_ATTR int rapidBootCount = 0;
-RTC_DATA_ATTR unsigned long lastBootTime = 0;
 
 // Check if external power (USB) is connected
 bool isExternalPowerConnected() {
@@ -108,36 +106,11 @@ void setup() {
   Serial.println("\n\n=== M5Paper S3 E-Book Reader ===");
   Serial.printf("Boot #%d, Wakeup cause: %d\n", bootCount, wakeup_reason);
   
-  // Detect rapid reboot loop (boots within 30 seconds of each other)
-  unsigned long now = millis();
   if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
-    // Check if touch pin is actually being touched
-    pinMode(GPIO_NUM_21, INPUT_PULLUP);
-    delay(50);
-    if (digitalRead(GPIO_NUM_21) == HIGH) {
-      // No actual touch detected - this was a spurious wake
-      rapidBootCount++;
-      Serial.printf("Spurious wake detected (count=%d) - going back to sleep\n", rapidBootCount);
-      
-      if (rapidBootCount >= 5) {
-        // Too many spurious wakes - use timer-only wakeup to break the loop
-        Serial.println("Too many spurious wakes! Using 30-min timer wakeup only");
-        esp_sleep_enable_timer_wakeup(30 * 60 * 1000000ULL);
-        Serial.flush();
-        esp_deep_sleep_start();
-      }
-      
-      // Go right back to sleep without full init
-      esp_sleep_enable_ext0_wakeup(GPIO_NUM_21, 0);
-      esp_sleep_enable_timer_wakeup(30 * 60 * 1000000ULL);  // 30 min max sleep
-      Serial.flush();
-      esp_deep_sleep_start();
-    }
-    Serial.println("Touch wake-up confirmed - resuming");
+    Serial.println("Touch wake-up - resuming");
+  } else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+    Serial.println("Timer wake-up - resuming");
   }
-  
-  // Reset rapid boot counter on successful boot
-  rapidBootCount = 0;
   
   auto cfg = M5.config();
   // E-ink retains its image during deep sleep, so no need to clear on wake.
@@ -1661,6 +1634,15 @@ void loop() {
           return;
         }
         
+        // Bluetooth Settings item (seventh item)
+        y1 += itemHeight + 18;
+        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+          Serial.println("Bluetooth settings selected");
+          setupSubmenu = 7;
+          drawBluetoothSetup();
+          return;
+        }
+        
         // Return button (lower-right)
         if (touchedReturnButton(x, y)) {
           Serial.println("Back button touched - returning to dashboard");
@@ -2044,6 +2026,114 @@ void loop() {
           setupSubmenu = 0;
           drawSetupMenu();
           return;
+        }
+      }
+      else if (setupSubmenu == 7) {
+        // Bluetooth setup submenu
+        
+        if (bleShowingScan) {
+          // Scan view touch handling
+          int scanBtnY = 750;
+          
+          // Scan / Re-scan button
+          if (x >= 20 && x <= 170 && y >= scanBtnY && y <= scanBtnY + 70) {
+            Serial.println("BLE scan button touched");
+            // Show scanning state
+            M5.Display.setEpdMode(epd_mode_t::epd_fast);
+            M5.Display.fillRect(20, 310, 500, 420, TFT_WHITE);
+            drawSystemText("掃描中...", 20, 320, 22);
+            M5.Display.display();
+            M5.Display.setEpdMode(epd_mode_t::epd_quality);
+            
+            scanBLEDevices();
+            bleSelectedDevice = -1;
+            drawBluetoothSetup();
+            return;
+          }
+          
+          // Connect button
+          if (bleSelectedDevice >= 0 && bleSelectedDevice < bleDeviceCount) {
+            if (x >= 190 && x <= 340 && y >= scanBtnY && y <= scanBtnY + 70) {
+              Serial.println("BLE connect button touched");
+              
+              // Show connecting state
+              M5.Display.setEpdMode(epd_mode_t::epd_fast);
+              M5.Display.fillRect(20, 310, 500, 420, TFT_WHITE);
+              String msg = "連接中：" + bleDevices[bleSelectedDevice].name;
+              drawSystemText(msg.c_str(), 20, 320, 22);
+              M5.Display.display();
+              M5.Display.setEpdMode(epd_mode_t::epd_quality);
+              
+              connectBLEDevice(bleSelectedDevice);
+              bleShowingScan = false;
+              drawBluetoothSetup();
+              return;
+            }
+          }
+          
+          // Device list touch (select a device)
+          if (bleDeviceCount > 0 && y >= 320 && y < 320 + min(bleDeviceCount, 7) * 55) {
+            int idx = (y - 320) / 55;
+            if (idx >= 0 && idx < bleDeviceCount && idx < 7) {
+              Serial.printf("BLE device %d selected: %s\n", idx, bleDevices[idx].name.c_str());
+              bleSelectedDevice = idx;
+              drawBluetoothSetup();
+              return;
+            }
+          }
+          
+          // Return button
+          if (touchedReturnButton(x, y)) {
+            Serial.println("BLE scan back button touched");
+            bleShowingScan = false;
+            drawBluetoothSetup();
+            return;
+          }
+        } else {
+          // Main BT setup view
+          int btnY = 300;
+          int scanBtnY = btnY + 110;
+          
+          // Toggle button
+          if (x >= 20 && x <= 260 && y >= btnY && y <= btnY + 90) {
+            Serial.println("Bluetooth toggle button touched");
+            if (bluetoothActive) {
+              stopBLE();
+            } else {
+              startBLE();
+            }
+            drawBluetoothSetup();
+            return;
+          }
+          
+          // Scan button
+          if (x >= 20 && x <= 260 && y >= scanBtnY && y <= scanBtnY + 90) {
+            Serial.println("BLE scan devices button touched");
+            bleShowingScan = true;
+            bleSelectedDevice = -1;
+            
+            // Show scanning state
+            M5.Display.setEpdMode(epd_mode_t::epd_fast);
+            M5.Display.fillScreen(TFT_WHITE);
+            drawStatusBar();
+            drawSystemText("藍牙", 20, 30, 40);
+            drawSystemText("掃描中...", 20, 320, 22);
+            M5.Display.display();
+            M5.Display.setEpdMode(epd_mode_t::epd_quality);
+            
+            scanBLEDevices();
+            drawBluetoothSetup();
+            return;
+          }
+          
+          // Return button
+          if (touchedReturnButton(x, y)) {
+            Serial.println("Bluetooth setup back button touched");
+            bleShowingScan = false;
+            setupSubmenu = 0;
+            drawSetupMenu();
+            return;
+          }
         }
       }
     }

@@ -688,6 +688,21 @@ void drawSetupMenu() {
     drawSystemText("Meeus 天文算法（精度較高）", 40, y + 62, 22);
   }
   
+  y += itemHeight + 18;
+  
+  // Bluetooth Settings item (seventh item)
+  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+  
+  drawSystemText("藍牙", 40, y + 18, 32);
+  
+  if (bluetoothActive) {
+    drawSystemText("已啟用", 40, y + 62, 22);
+  } else {
+    drawSystemText("未啟用", 40, y + 62, 22);
+  }
+  
   // Universal return button (lower-right)
   drawReturnButton();
   
@@ -940,4 +955,138 @@ void drawWiFiSetup() {
   
   M5.Display.display();
   Serial.println("WiFi setup screen displayed");
+}
+
+void drawBluetoothSetup() {
+  Serial.println("Drawing Bluetooth setup screen...");
+  
+  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.fillScreen(TFT_WHITE);
+  M5.Display.setTextColor(TFT_BLACK);
+  
+  // Status bar + return button
+  drawStatusBar();
+  drawReturnButton();
+  
+  // Title
+  drawSystemText("藍牙", 20, 30, 40);
+  
+  // Current status
+  drawSystemText("狀態：", 20, 120, 32);
+  if (bleConnectedToDevice) {
+    drawSystemText("已連接", 160, 120, 32, EPD_DARK_GRAY);
+    
+    // Show connected device info
+    M5.Display.drawRect(15, 170, 500, 80, TFT_BLACK);
+    M5.Display.drawRect(16, 171, 498, 78, TFT_BLACK);
+    String connInfo = "已連接：" + bleConnectedName;
+    drawSystemText(connInfo.c_str(), 25, 190, 22);
+  } else if (bluetoothActive) {
+    drawSystemText("已啟用", 160, 120, 32, EPD_DARK_GRAY);
+    
+    // Show device name
+    M5.Display.drawRect(15, 170, 500, 80, TFT_BLACK);
+    M5.Display.drawRect(16, 171, 498, 78, TFT_BLACK);
+    drawSystemText("裝置名稱：M5Paper-BLE", 25, 190, 22);
+  } else {
+    drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
+  }
+  
+  // If showing scan results
+  if (bleShowingScan) {
+    drawSystemText("附近藍牙裝置：", 20, 280, 28);
+    
+    if (bleScanning) {
+      drawSystemText("掃描中...", 20, 320, 22);
+    } else if (bleDeviceCount == 0) {
+      drawSystemText("未發現裝置", 20, 320, 22);
+    } else {
+      // Show device list (max 7 items)
+      int listY = 320;
+      int maxShow = min(bleDeviceCount, 7);
+      for (int i = 0; i < maxShow; i++) {
+        // Highlight selected
+        if (i == bleSelectedDevice) {
+          M5.Display.fillRect(18, listY - 2, 500, 55, TFT_LIGHTGRAY);
+        }
+        
+        // Device name
+        drawSystemText(bleDevices[i].name.c_str(), 40, listY, 22);
+        
+        // RSSI signal bars
+        int bars = 0;
+        if (bleDevices[i].rssi > -50) bars = 4;
+        else if (bleDevices[i].rssi > -65) bars = 3;
+        else if (bleDevices[i].rssi > -80) bars = 2;
+        else bars = 1;
+        
+        int barX = 440;
+        for (int b = 0; b < bars; b++) {
+          M5.Display.fillRect(barX, listY + 28 - (b + 1) * 5, 8, (b + 1) * 5, TFT_BLACK);
+          barX += 12;
+        }
+        
+        // Address (small)
+        M5.Display.setFont(&fonts::Font0);
+        M5.Display.setTextSize(1);
+        M5.Display.setTextColor(TFT_DARKGRAY);
+        M5.Display.setCursor(40, listY + 28);
+        M5.Display.print(bleDevices[i].address);
+        M5.Display.setTextColor(TFT_BLACK);
+        
+        // Separator
+        M5.Display.drawLine(20, listY + 50, 520, listY + 50, TFT_LIGHTGRAY);
+        
+        listY += 55;
+      }
+    }
+    
+    // Scan / Re-scan button
+    int scanBtnY = 750;
+    M5.Display.fillRect(20, scanBtnY, 150, 70, TFT_BLACK);
+    drawSystemText("掃描", 45, scanBtnY + 20, 28, TFT_WHITE, TFT_BLACK);
+    
+    // Connect button (if a device is selected)
+    if (bleSelectedDevice >= 0 && bleSelectedDevice < bleDeviceCount) {
+      M5.Display.fillRect(190, scanBtnY, 150, 70, EPD_DARK_GRAY);
+      drawSystemText("連接", 215, scanBtnY + 20, 28, TFT_WHITE, EPD_DARK_GRAY);
+    }
+    
+    // Universal return button (lower-right)
+    drawReturnButton();
+    
+    M5.Display.display();
+    Serial.println("Bluetooth scan view displayed");
+    return;
+  }
+  
+  // Toggle button
+  int btnY = 300;
+  if (bluetoothActive) {
+    M5.Display.fillRect(20, btnY, 240, 90, TFT_BLACK);
+    drawSystemText("關閉", 75, btnY + 30, 32, TFT_WHITE, TFT_BLACK);
+  } else {
+    M5.Display.fillRect(20, btnY, 240, 90, EPD_DARK_GRAY);
+    drawSystemText("啟用", 75, btnY + 30, 32, TFT_WHITE, EPD_DARK_GRAY);
+  }
+  
+  // Scan button
+  int scanBtnY = btnY + 110;
+  M5.Display.fillRect(20, scanBtnY, 240, 90, EPD_DARK_GRAY);
+  drawSystemText("掃描裝置", 50, scanBtnY + 30, 28, TFT_WHITE, EPD_DARK_GRAY);
+  
+  // Info box
+  M5.Display.drawRect(280, btnY, 240, 200, TFT_BLACK);
+  drawSystemText("說明：", 290, btnY + 10, 22);
+  drawSystemText("啟用後可通過", 290, btnY + 40, 20);
+  drawSystemText("藍牙低功耗傳輸", 290, btnY + 70, 20);
+  drawSystemText("資料到裝置", 290, btnY + 100, 20);
+  drawSystemText("• BLE UART 模式", 290, btnY + 140, 20);
+  drawSystemText("• 可掃描並連接裝置", 290, btnY + 170, 20);
+  
+  // Universal return button (lower-right)
+  drawReturnButton();
+  
+  M5.Display.display();
+  Serial.println("Bluetooth setup displayed");
 }
