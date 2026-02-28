@@ -897,7 +897,7 @@ void epubCleanup() {
 }
 
 // Parse JPEG dimensions from raw data (returns true if found)
-static bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& height) {
+bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& height) {
   size_t i = 0;
   while (i + 1 < len) {
     if (data[i] != 0xFF) return false;
@@ -921,7 +921,7 @@ static bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& 
 }
 
 // Parse PNG dimensions from raw data (returns true if found)
-static bool getPngDimensions(const uint8_t* data, size_t len, int& width, int& height) {
+bool getPngDimensions(const uint8_t* data, size_t len, int& width, int& height) {
   // PNG signature: 89 50 4E 47 0D 0A 1A 0A, then IHDR chunk
   if (len < 24) return false;
   if (data[0] != 0x89 || data[1] != 0x50 || data[2] != 0x4E || data[3] != 0x47) return false;

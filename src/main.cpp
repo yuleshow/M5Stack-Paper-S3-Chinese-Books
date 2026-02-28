@@ -426,6 +426,19 @@ void loop() {
     }
   }
   
+  // Wallpaper auto-rotate: change wallpaper every 60 seconds when active
+  if (wallpaperRotateActive && currentMode == MODE_WALLPAPER && wallpaperCount > 1) {
+    if (millis() - wallpaperRotateLastChange > 60000) {
+      wallpaperRotateLastChange = millis();
+      int newIdx;
+      do {
+        newIdx = random(0, wallpaperCount);
+      } while (newIdx == selectedWallpaper && wallpaperCount > 1);
+      Serial.printf("Auto-rotate: switching to wallpaper %d\n", newIdx);
+      drawWallpaperWithIndex(newIdx);
+    }
+  }
+
   // Idle sleep: auto-sleep after 10 minutes of inactivity (when not charging)
   bool isCharging = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
   if (lastActivityTime > 0 && !isCharging && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
@@ -2206,34 +2219,129 @@ void loop() {
       }
     }
     else if (currentMode == MODE_WALLPAPER_LIST) {
-      // Return button (lower-right)
-      if (touchedReturnButton(x, y)) {
+      // View toggle button (top-right): x=380..520, y=30..70
+      if (x >= 380 && x <= 520 && y >= 30 && y <= 70) {
+        wallpaperViewMode = (wallpaperViewMode == 0) ? 1 : 0;
+        wallpaperScrollOffset = 0;  // Reset scroll on view change
+        Serial.printf("Wallpaper view mode: %s\n", wallpaperViewMode ? "thumbnails" : "list");
+        drawWallpaperList();
+      }
+      // Left arrow (←) = next page (scroll down)
+      else if (touchedPrevPage(x, y)) {
+        int maxVisible;
+        if (wallpaperViewMode == 0) {
+          maxVisible = 12;
+        } else {
+          int cols = 3, rows = 3, thumbPad = 8;
+          int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
+          int thumbH = (875 - 80 - thumbPad * (rows + 1)) / rows;
+          maxVisible = cols * rows;
+        }
+        int endIdx = min(wallpaperScrollOffset + maxVisible, wallpaperCount);
+        if (endIdx < wallpaperCount) {
+          Serial.println("Wallpaper list: next page (scroll down)");
+          wallpaperScrollOffset += maxVisible;
+          if (wallpaperScrollOffset >= wallpaperCount) wallpaperScrollOffset = wallpaperCount - 1;
+          drawWallpaperList();
+        }
+      }
+      // Right arrow (→) = prev page (scroll up)
+      else if (touchedNextPage(x, y)) {
+        if (wallpaperScrollOffset > 0) {
+          int maxVisible;
+          if (wallpaperViewMode == 0) {
+            maxVisible = 12;
+          } else {
+            int cols = 3, rows = 3, thumbPad = 8;
+            int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
+            int thumbH = (875 - 80 - thumbPad * (rows + 1)) / rows;
+            maxVisible = cols * rows;
+          }
+          Serial.println("Wallpaper list: prev page (scroll up)");
+          wallpaperScrollOffset -= maxVisible;
+          if (wallpaperScrollOffset < 0) wallpaperScrollOffset = 0;
+          drawWallpaperList();
+        }
+      }
+      // Universal nav: return button
+      else if (touchedReturnButton(x, y)) {
         Serial.println("Wallpaper list back button touched - returning to dashboard");
         currentMode = MODE_DASHBOARD;
         drawDashboard();
       }
-      // Check if wallpaper item was touched
-      else if (wallpaperCount > 0 && y >= 80 && y <= 850) {
-        int itemHeight = 65;  // 60 + 5 spacing
-        int startIdx = wallpaperScrollOffset;
-        int maxVisible = 12;
-        int endIdx = min(startIdx + maxVisible, wallpaperCount);
-        
-        for (int i = startIdx; i < endIdx; i++) {
-          int itemY = 80 + (i - startIdx) * itemHeight;
-          if (y >= itemY && y <= itemY + 60 && x >= 20 && x <= 520) {
-            Serial.printf("Wallpaper %d selected: %s\n", i, wallpaperFiles[i].c_str());
-            selectedWallpaper = i;
+      // Random button (隨機): x=200..300, y=900..944
+      else if (x >= 200 && x <= 300 && y >= 900 && y <= 944) {
+        Serial.println("Wallpaper list: random");
+        if (wallpaperCount > 0) {
+          selectedWallpaper = random(0, wallpaperCount);
+          Serial.printf("Random wallpaper: %d\n", selectedWallpaper);
+          currentMode = MODE_WALLPAPER;
+          drawWallpaper();
+        }
+      }
+      // Rotate button (輪播): x=330..440, y=900..944
+      else if (x >= 330 && x <= 440 && y >= 900 && y <= 944) {
+        wallpaperRotateActive = !wallpaperRotateActive;
+        Serial.printf("Wallpaper rotate: %s\n", wallpaperRotateActive ? "ON" : "OFF");
+        if (wallpaperRotateActive) {
+          wallpaperRotateLastChange = millis();
+          if (wallpaperCount > 0) {
+            selectedWallpaper = random(0, wallpaperCount);
             currentMode = MODE_WALLPAPER;
             drawWallpaper();
-            break;
+          }
+        } else {
+          drawWallpaperList();
+        }
+      }
+      // Check if wallpaper item was touched (list or thumbnail)
+      else if (wallpaperCount > 0 && y >= 80 && y <= 875) {
+        if (wallpaperViewMode == 0) {
+          // Name list: item touch
+          int itemHeight = 65;
+          int startIdx = wallpaperScrollOffset;
+          int maxVisible = 12;
+          int endIdx = min(startIdx + maxVisible, wallpaperCount);
+          for (int i = startIdx; i < endIdx; i++) {
+            int itemY = 80 + (i - startIdx) * itemHeight;
+            if (y >= itemY && y <= itemY + 60 && x >= 20 && x <= 520) {
+              Serial.printf("Wallpaper %d selected: %s\n", i, wallpaperFiles[i].c_str());
+              selectedWallpaper = i;
+              currentMode = MODE_WALLPAPER;
+              drawWallpaper();
+              break;
+            }
+          }
+        } else {
+          // Thumbnail: grid touch
+          int cols = 3, rows = 3, thumbPad = 8;
+          int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
+          int thumbH = (875 - 80 - thumbPad * (rows + 1)) / rows;
+          int maxVisible = cols * rows;
+          int startIdx = wallpaperScrollOffset;
+          int endIdx = min(startIdx + maxVisible, wallpaperCount);
+          
+          for (int i = startIdx; i < endIdx; i++) {
+            int idx = i - startIdx;
+            int col = idx % cols;
+            int row = idx / cols;
+            int tx = thumbPad + col * (thumbW + thumbPad);
+            int ty = 80 + thumbPad + row * (thumbH + thumbPad);
+            if (x >= tx && x <= tx + thumbW && y >= ty && y <= ty + thumbH) {
+              Serial.printf("Thumbnail %d selected: %s\n", i, wallpaperFiles[i].c_str());
+              selectedWallpaper = i;
+              currentMode = MODE_WALLPAPER;
+              drawWallpaper();
+              break;
+            }
           }
         }
       }
     }
     else if (currentMode == MODE_WALLPAPER) {
-      // Any touch on wallpaper returns to list
+      // Touch on wallpaper returns to list (also stops rotate)
       Serial.println("Wallpaper touched - returning to list");
+      wallpaperRotateActive = false;
       currentMode = MODE_WALLPAPER_LIST;
       drawWallpaperList();
     }

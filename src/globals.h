@@ -430,6 +430,9 @@ extern String wallpaperFiles[MAX_WALLPAPERS];
 extern int wallpaperCount;
 extern int selectedWallpaper;
 extern int wallpaperScrollOffset;
+extern bool wallpaperRotateActive;
+extern unsigned long wallpaperRotateLastChange;
+extern int wallpaperViewMode;  // 0=name list, 1=thumbnails
 
 // WiFi / Config / Time
 extern WiFiConfig wifiConfig;
@@ -589,6 +592,11 @@ void drawMottoScreen();
 void loadWallpaperFiles();
 void drawWallpaperList();
 void drawWallpaper();
+void drawWallpaperWithIndex(int index);
+
+// image dimension helpers
+bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& height);
+bool getPngDimensions(const uint8_t* data, size_t len, int& width, int& height);
 
 // web_server_handler
 void startWebServer();

@@ -68,6 +68,83 @@ lowerFilename.c_str(), isImage ? "YES" : "NO");
   Serial.printf("Loaded %d wallpaper files\n", wallpaperCount);
 }
 
+// Draw a single thumbnail by loading image, scaling and drawing into a small rect
+static void drawThumbnail(int index, int tx, int ty, int tw, int th) {
+  if (index < 0 || index >= wallpaperCount) return;
+  
+  String filepath = "/wallpapers/" + wallpaperFiles[index];
+  if (wallpaperFiles[index].startsWith("/")) filepath = wallpaperFiles[index];
+  
+  File imgFile = SD.open(filepath.c_str());
+  if (!imgFile) {
+    M5.Display.drawRect(tx, ty, tw, th, TFT_DARKGRAY);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.setTextSize(0.8);
+    M5.Display.drawString("?", tx + tw / 2, ty + th / 2);
+    return;
+  }
+  
+  size_t fileSize = imgFile.size();
+  if (fileSize > 4000000) {
+    imgFile.close();
+    M5.Display.drawRect(tx, ty, tw, th, TFT_DARKGRAY);
+    return;
+  }
+  
+  uint8_t* buf = (uint8_t*)ps_malloc(fileSize);
+  if (!buf) buf = (uint8_t*)malloc(fileSize);
+  if (!buf) { imgFile.close(); M5.Display.drawRect(tx, ty, tw, th, TFT_DARKGRAY); return; }
+  
+  imgFile.read(buf, fileSize);
+  imgFile.close();
+  
+  // Get image dimensions
+  String lp = filepath;
+  lp.toLowerCase();
+  bool isJpeg = lp.endsWith(".jpg") || lp.endsWith(".jpeg");
+  bool isPng = lp.endsWith(".png");
+  bool isBmp = lp.endsWith(".bmp");
+  
+  int imgW = 0, imgH = 0;
+  if (isJpeg) getJpegDimensions(buf, fileSize, imgW, imgH);
+  else if (isPng) getPngDimensions(buf, fileSize, imgW, imgH);
+  else if (isBmp && fileSize > 26) {
+    imgW = buf[18] | (buf[19] << 8) | (buf[20] << 16) | (buf[21] << 24);
+    imgH = buf[22] | (buf[23] << 8) | (buf[24] << 16) | (buf[25] << 24);
+    if (imgH < 0) imgH = -imgH;
+  }
+  
+  // Scale to fit thumbnail area
+  float scale_x = 1.0f, scale_y = 1.0f;
+  int drawX = tx, drawY = ty;
+  if (imgW > 0 && imgH > 0) {
+    float scaleW = (float)tw / (float)imgW;
+    float scaleH = (float)th / (float)imgH;
+    float scale = min(scaleW, scaleH);
+    scale_x = scale;
+    scale_y = scale;
+    int scaledW = (int)(imgW * scale);
+    int scaledH = (int)(imgH * scale);
+    drawX = tx + (tw - scaledW) / 2;
+    drawY = ty + (th - scaledH) / 2;
+  }
+  
+  if (isJpeg) M5.Display.drawJpg(buf, fileSize, drawX, drawY, tw, th, 0, 0, scale_x, scale_y);
+  else if (isPng) M5.Display.drawPng(buf, fileSize, drawX, drawY, tw, th, 0, 0, scale_x, scale_y);
+  else if (isBmp) M5.Display.drawBmp(buf, fileSize, drawX, drawY, tw, th, 0, 0, scale_x, scale_y);
+  
+  free(buf);
+  
+  // Draw border (highlight selected)
+  if (index == selectedWallpaper) {
+    M5.Display.drawRect(tx, ty, tw, th, TFT_BLACK);
+    M5.Display.drawRect(tx + 1, ty + 1, tw - 2, th - 2, TFT_BLACK);
+    M5.Display.drawRect(tx + 2, ty + 2, tw - 4, th - 4, TFT_BLACK);
+  } else {
+    M5.Display.drawRect(tx, ty, tw, th, TFT_DARKGRAY);
+  }
+}
+
 void drawWallpaperList() {
   Serial.println("Drawing wallpaper list...");
   
@@ -77,14 +154,26 @@ void drawWallpaperList() {
   M5.Display.setTextColor(TFT_BLACK);
   M5.Display.setFont(&fonts::efontTW_24);
   
-  // Status bar + nav bar first
+  // Status bar
   drawStatusBar();
-  drawReturnButton();
   
-  // Title
-  M5.Display.setTextSize(2);
-  M5.Display.setTextDatum(TC_DATUM);
-  M5.Display.drawString("壁紙選擇", M5.Display.width() / 2, 20);
+  // Title + view toggle button at top
+  M5.Display.setTextSize(1.5);
+  M5.Display.setTextDatum(TL_DATUM);
+  M5.Display.drawString("壁紙選擇", 20, 30);
+  M5.Display.setTextSize(1);
+  
+  // View toggle button (top-right, below status bar)
+  int toggleX = 380, toggleY = 30, toggleW = 140, toggleH = 40;
+  M5.Display.fillRoundRect(toggleX, toggleY, toggleW, toggleH, 6, TFT_BLACK);
+  M5.Display.setTextDatum(MC_DATUM);
+  M5.Display.setTextColor(TFT_WHITE);
+  if (wallpaperViewMode == 0) {
+    M5.Display.drawString("切換縮圖", toggleX + toggleW / 2, toggleY + toggleH / 2 + 2);
+  } else {
+    M5.Display.drawString("切換列表", toggleX + toggleW / 2, toggleY + toggleH / 2 + 2);
+  }
+  M5.Display.setTextColor(TFT_BLACK);
   M5.Display.setTextDatum(TL_DATUM);
   
   // Load wallpaper files if not loaded
@@ -99,47 +188,122 @@ void drawWallpaperList() {
     M5.Display.drawString("請在 /wallpapers 資料夾中", M5.Display.width() / 2, M5.Display.height() / 2 + 20);
     M5.Display.drawString("添加圖片檔案", M5.Display.width() / 2, M5.Display.height() / 2 + 60);
     M5.Display.setTextDatum(TL_DATUM);
-  } else {
-    // Display list of wallpapers
-    M5.Display.setTextSize(1);
+    drawReturnButton();
+  } else if (wallpaperViewMode == 0) {
+    // ===== NAME LIST VIEW =====
     int y = 80;
     int itemHeight = 60;
-    int maxVisible = 12;  // Show up to 12 items
+    int maxVisible = 12;
     
     int startIdx = wallpaperScrollOffset;
     int endIdx = min(startIdx + maxVisible, wallpaperCount);
     
     for (int i = startIdx; i < endIdx; i++) {
-      // Draw list item
       if (i == selectedWallpaper) {
         M5.Display.fillRoundRect(20, y, 500, itemHeight, 8, TFT_LIGHTGRAY);
       } else {
         M5.Display.fillRoundRect(20, y, 500, itemHeight, 8, TFT_WHITE);
       }
       M5.Display.drawRoundRect(20, y, 500, itemHeight, 8, TFT_BLACK);
-      
       M5.Display.setCursor(35, y + 20);
       M5.Display.print(wallpaperFiles[i]);
-      
       y += itemHeight + 5;
     }
     
-    // Scroll indicator if needed
+    // Scroll indicator (top center, between title and toggle)
     if (wallpaperCount > maxVisible) {
       M5.Display.setTextSize(1);
-      M5.Display.setTextDatum(BC_DATUM);
-      String scrollInfo = String(startIdx + 1) + "-" + String(endIdx) + " / " + String(wallpaperCount);
-      M5.Display.drawString(scrollInfo, M5.Display.width() / 2, M5.Display.height() - 80);
+      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setTextDatum(MC_DATUM);
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);
+      M5.Display.drawString(buf, 270, 50);
       M5.Display.setTextDatum(TL_DATUM);
+    }
+    
+    // Nav bar arrows + return
+    if (endIdx < wallpaperCount) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
+    if (wallpaperScrollOffset > 0) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
+    drawReturnButton();
+    
+    // Extra buttons: 隨機 and 輪播 — centered text
+    int btnW = 100, btnH = 44, btnY = 900;
+    M5.Display.fillRect(200, btnY, btnW, btnH, TFT_BLACK);
+    drawSystemTextCentered("隨機", 250, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+    
+    if (wallpaperRotateActive) {
+      M5.Display.fillRect(330, btnY, btnW + 10, btnH, TFT_BLACK);
+      drawSystemTextCentered("輪播中", 385, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+    } else {
+      M5.Display.fillRect(330, btnY, btnW, btnH, TFT_BLACK);
+      drawSystemTextCentered("輪播", 380, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+    }
+  } else {
+    // ===== THUMBNAIL VIEW =====
+    // Grid: 3 columns x 3 rows = 9 thumbnails per page
+    int cols = 3;
+    int rows = 3;
+    int thumbPad = 8;
+    int contentTop = 80;
+    int contentBot = 875;
+    int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
+    int thumbH = (contentBot - contentTop - thumbPad * (rows + 1)) / rows;
+    int maxVisible = cols * rows;  // 9
+    
+    int startIdx = wallpaperScrollOffset;
+    int endIdx = min(startIdx + maxVisible, wallpaperCount);
+    
+    for (int i = startIdx; i < endIdx; i++) {
+      int idx = i - startIdx;
+      int col = idx % cols;
+      int row = idx / cols;
+      int tx = thumbPad + col * (thumbW + thumbPad);
+      int ty = contentTop + thumbPad + row * (thumbH + thumbPad);
+      drawThumbnail(i, tx, ty, thumbW, thumbH);
+    }
+    
+    // Scroll indicator (top center, between title and toggle)
+    if (wallpaperCount > maxVisible) {
+      M5.Display.setTextSize(1);
+      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setTextDatum(MC_DATUM);
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);
+      M5.Display.drawString(buf, 270, 50);
+      M5.Display.setTextDatum(TL_DATUM);
+    }
+    
+    // Nav bar arrows + return
+    if (endIdx < wallpaperCount) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
+    if (wallpaperScrollOffset > 0) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
+    drawReturnButton();
+    
+    // Extra buttons: 隨機 and 輪播 — centered text
+    int btnW = 100, btnH = 44, btnY = 900;
+    M5.Display.fillRect(200, btnY, btnW, btnH, TFT_BLACK);
+    drawSystemTextCentered("隨機", 250, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+    
+    if (wallpaperRotateActive) {
+      M5.Display.fillRect(330, btnY, btnW + 10, btnH, TFT_BLACK);
+      drawSystemTextCentered("輪播中", 385, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+    } else {
+      M5.Display.fillRect(330, btnY, btnW, btnH, TFT_BLACK);
+      drawSystemTextCentered("輪播", 380, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
     }
   }
   
-  // Universal return button (lower-right)
   M5.Display.setTextDatum(TL_DATUM);
   
   M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Wallpaper list displayed");
+}
+
+// Helper: draw wallpaper by index (used by rotate timer and random)
+void drawWallpaperWithIndex(int index) {
+  if (index < 0 || index >= wallpaperCount) return;
+  selectedWallpaper = index;
+  drawWallpaper();
 }
 
 void drawWallpaper() {
@@ -155,7 +319,6 @@ void drawWallpaper() {
   Serial.printf("Selected index: %d\n", selectedWallpaper);
   Serial.printf("Stored filename: '%s'\n", wallpaperFiles[selectedWallpaper].c_str());
   Serial.printf("Constructed path: '%s'\n", filepath.c_str());
-  Serial.printf("Filename length: %d bytes\n", wallpaperFiles[selectedWallpaper].length());
   
   // Try alternate path if filename looks like it might already have path
   if (wallpaperFiles[selectedWallpaper].startsWith("/")) {
@@ -172,19 +335,6 @@ void drawWallpaper() {
   if (!testFile) {
     Serial.printf("FAILED to open: '%s'\n", filepath.c_str());
     
-    // Try listing directory to debug
-    Serial.println("Listing /wallpapers directory:");
-    File dir = SD.open("/wallpapers");
-    if (dir) {
-      File entry = dir.openNextFile();
-      while (entry) {
-        Serial.printf("  Found: '%s'\n", entry.name());
-        entry.close();
-        entry = dir.openNextFile();
-      }
-      dir.close();
-    }
-    
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setFont(&fonts::efontTW_24);
     M5.Display.setTextDatum(MC_DATUM);
@@ -199,27 +349,25 @@ void drawWallpaper() {
   // Check file size
   size_t fileSize = testFile.size();
   Serial.printf("File size: %d bytes\n", fileSize);
-  Serial.printf("Free heap before allocation: %d bytes\n", ESP.getFreeHeap());
   Serial.printf("Free PSRAM: %d bytes\n", ESP.getFreePsram());
   testFile.close();
   
-  // Check if file is too large
-  if (fileSize > 2000000) {  // 2MB limit
+  // Check if file is too large (4MB limit for PSRAM)
+  if (fileSize > 4000000) {
     Serial.println("File too large!");
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setFont(&fonts::efontTW_24);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.setTextSize(1);
     M5.Display.drawString("檔案過大", M5.Display.width() / 2, M5.Display.height() / 2 - 30);
-    M5.Display.setTextSize(0.8);
-    M5.Display.drawString("請使用小於2MB的圖片", M5.Display.width() / 2, M5.Display.height() / 2 + 20);
+    M5.Display.drawString("請使用小於4MB的圖片", M5.Display.width() / 2, M5.Display.height() / 2 + 20);
     M5.Display.setTextDatum(TL_DATUM);
     M5.Display.endWrite();
     M5.Display.display();
     return;
   }
   
-  // Load image data into buffer and draw
+  // Load image data into buffer
   File imgFile = SD.open(filepath.c_str());
   if (!imgFile) {
     Serial.println("Failed to reopen file");
@@ -233,76 +381,97 @@ void drawWallpaper() {
     return;
   }
   
-  bool loaded = false;
-  Serial.printf("Allocating %d bytes for image buffer...\n", fileSize);
-  
-  // Check file type (case-insensitive)
-  String lowerPath = filepath;
-  lowerPath.toLowerCase();
-  
-  if (lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg")) {
-    // Allocate buffer for JPEG
-    uint8_t* buf = (uint8_t*)malloc(fileSize);
-    if (!buf) {
-      Serial.println("Failed to allocate memory for JPEG!");
-      M5.Display.setTextColor(TFT_BLACK);
-      M5.Display.setFont(&fonts::efontTW_24);
-      M5.Display.setTextDatum(MC_DATUM);
-      M5.Display.drawString("記憶體不足", M5.Display.width() / 2, M5.Display.height() / 2);
-      M5.Display.setTextDatum(TL_DATUM);
-      M5.Display.endWrite();
-      M5.Display.display();
-      imgFile.close();
-      return;
-    }
-    Serial.println("Reading JPEG data...");
-    size_t bytesRead = imgFile.read(buf, fileSize);
-    Serial.printf("Read %d bytes\n", bytesRead);
-    Serial.println("Decoding JPEG...");
-    loaded = M5.Display.drawJpg(buf, fileSize, 0, 0);
-    Serial.printf("JPEG decode result: %s\n", loaded ? "SUCCESS" : "FAILED");
-    free(buf);
-  } else if (lowerPath.endsWith(".png")) {
-    // Allocate buffer for PNG
-    uint8_t* buf = (uint8_t*)malloc(fileSize);
-    if (!buf) {
-      Serial.println("Failed to allocate memory for PNG!");
-      imgFile.close();
-      return;
-    }
-    Serial.println("Reading PNG data...");
-    imgFile.read(buf, fileSize);
-    Serial.println("Decoding PNG...");
-    loaded = M5.Display.drawPng(buf, fileSize, 0, 0);
-    Serial.printf("PNG decode result: %s\n", loaded ? "SUCCESS" : "FAILED");
-    free(buf);
-  } else if (lowerPath.endsWith(".bmp")) {
-    // Allocate buffer for BMP
-    uint8_t* buf = (uint8_t*)malloc(fileSize);
-    if (!buf) {
-      Serial.println("Failed to allocate memory for BMP!");
-      imgFile.close();
-      return;
-    }
-    Serial.println("Reading BMP data...");
-    imgFile.read(buf, fileSize);
-    Serial.println("Decoding BMP...");
-    loaded = M5.Display.drawBmp(buf, fileSize, 0, 0);
-    Serial.printf("BMP decode result: %s\n", loaded ? "SUCCESS" : "FAILED");
-    free(buf);
+  uint8_t* buf = (uint8_t*)ps_malloc(fileSize);
+  if (!buf) {
+    buf = (uint8_t*)malloc(fileSize);
+  }
+  if (!buf) {
+    Serial.println("Failed to allocate memory for image!");
+    M5.Display.setTextColor(TFT_BLACK);
+    M5.Display.setFont(&fonts::efontTW_24);
+    M5.Display.setTextDatum(MC_DATUM);
+    M5.Display.drawString("記憶體不足", M5.Display.width() / 2, M5.Display.height() / 2);
+    M5.Display.setTextDatum(TL_DATUM);
+    M5.Display.endWrite();
+    M5.Display.display();
+    imgFile.close();
+    return;
   }
   
+  size_t bytesRead = imgFile.read(buf, fileSize);
   imgFile.close();
+  Serial.printf("Read %d bytes\n", bytesRead);
   
-  Serial.printf("Image load result: %s\n", loaded ? "SUCCESS" : "FAILED");
+  // Determine image dimensions and compute scaling
+  String lowerPath = filepath;
+  lowerPath.toLowerCase();
+  bool isJpeg = lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg");
+  bool isPng = lowerPath.endsWith(".png");
+  bool isBmp = lowerPath.endsWith(".bmp");
+  
+  int imgW = 0, imgH = 0;
+  if (isJpeg) {
+    getJpegDimensions(buf, fileSize, imgW, imgH);
+  } else if (isPng) {
+    getPngDimensions(buf, fileSize, imgW, imgH);
+  } else if (isBmp) {
+    // BMP: width at offset 18 (4 bytes LE), height at offset 22 (4 bytes LE)
+    if (fileSize > 26) {
+      imgW = buf[18] | (buf[19] << 8) | (buf[20] << 16) | (buf[21] << 24);
+      imgH = buf[22] | (buf[23] << 8) | (buf[24] << 16) | (buf[25] << 24);
+      if (imgH < 0) imgH = -imgH;  // BMP height can be negative (top-down)
+    }
+  }
+  Serial.printf("Image dimensions: %d x %d\n", imgW, imgH);
+  
+  // Calculate scale to fit display while preserving aspect ratio
+  float scale_x = 1.0f, scale_y = 1.0f;
+  int drawX = 0, drawY = 0;
+  
+  if (imgW > 0 && imgH > 0) {
+    float scaleW = (float)DISPLAY_WIDTH / (float)imgW;
+    float scaleH = (float)DISPLAY_HEIGHT / (float)imgH;
+    float scale = min(scaleW, scaleH);   // Fit inside display
+    
+    scale_x = scale;
+    scale_y = scale;
+    
+    // Center the image
+    int scaledW = (int)(imgW * scale);
+    int scaledH = (int)(imgH * scale);
+    drawX = (DISPLAY_WIDTH - scaledW) / 2;
+    drawY = (DISPLAY_HEIGHT - scaledH) / 2;
+    
+    Serial.printf("Scale: %.3f  drawPos: (%d, %d)  scaled: %dx%d\n",
+                  scale, drawX, drawY, scaledW, scaledH);
+  }
+  
+  bool loaded = false;
+  
+  if (isJpeg) {
+    Serial.println("Decoding JPEG with scaling...");
+    loaded = M5.Display.drawJpg(buf, fileSize, drawX, drawY,
+                                 DISPLAY_WIDTH, DISPLAY_HEIGHT,
+                                 0, 0, scale_x, scale_y);
+    Serial.printf("JPEG decode result: %s\n", loaded ? "SUCCESS" : "FAILED");
+  } else if (isPng) {
+    Serial.println("Decoding PNG with scaling...");
+    loaded = M5.Display.drawPng(buf, fileSize, drawX, drawY,
+                                 DISPLAY_WIDTH, DISPLAY_HEIGHT,
+                                 0, 0, scale_x, scale_y);
+    Serial.printf("PNG decode result: %s\n", loaded ? "SUCCESS" : "FAILED");
+  } else if (isBmp) {
+    Serial.println("Decoding BMP with scaling...");
+    loaded = M5.Display.drawBmp(buf, fileSize, drawX, drawY,
+                                 DISPLAY_WIDTH, DISPLAY_HEIGHT,
+                                 0, 0, scale_x, scale_y);
+    Serial.printf("BMP decode result: %s\n", loaded ? "SUCCESS" : "FAILED");
+  }
+  
+  free(buf);
   
   if (!loaded) {
-    Serial.println("=== JPEG DECODE FAILED ===");
-    Serial.println("Common GIMP export issues:");
-    Serial.println("1. Use 'Export As' not 'Save As'");
-    Serial.println("2. In export options, uncheck 'Progressive'");
-    Serial.println("3. Set quality to 85-95");
-    Serial.println("4. Try exporting as BMP instead");
+    Serial.println("=== IMAGE DECODE FAILED ===");
     
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setFont(&fonts::efontTW_24);

@@ -313,6 +313,9 @@ String wallpaperFiles[MAX_WALLPAPERS];
 int wallpaperCount = 0;
 int selectedWallpaper = 0;
 int wallpaperScrollOffset = 0;
+bool wallpaperRotateActive = false;
+unsigned long wallpaperRotateLastChange = 0;
+int wallpaperViewMode = 0;  // 0=name list, 1=thumbnails
 
 // WiFi / Config
 WiFiConfig wifiConfig;
