@@ -378,6 +378,7 @@ bool fetchWeather() {
 
 void drawWeather(bool fast) {
   M5.Display.setEpdMode(fast ? epd_mode_t::epd_fast : epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
 
@@ -431,6 +432,7 @@ void drawWeather(bool fast) {
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setCursor(60, y); M5.Display.print("metric (C) / imperial (F)");
 
+    M5.Display.endWrite();
     M5.Display.display();
     return;
   }
@@ -442,9 +444,11 @@ void drawWeather(bool fast) {
     } else {
       drawSystemTextCentered("載入天氣中...", w/2, h/2, 36);
     }
+    M5.Display.endWrite();
     M5.Display.display();
 
     if (!fetchWeather()) {
+      M5.Display.startWrite();
       M5.Display.fillScreen(TFT_WHITE);
       drawSystemTextCentered("天氣載入失敗", w/2, h/2 - 40, 36);
       if (WiFi.status() != WL_CONNECTED)
@@ -456,11 +460,13 @@ void drawWeather(bool fast) {
     drawStatusBar();
     drawReturnButton();
     drawRefreshIcon();
+      M5.Display.endWrite();
       M5.Display.display();  // Flush failure message to e-ink
       return;
     }
 
     // Clear screen for fresh draw
+    M5.Display.startWrite();
     M5.Display.fillScreen(TFT_WHITE);
     M5.Display.setTextColor(TFT_BLACK);
 
@@ -711,6 +717,7 @@ void drawWeather(bool fast) {
     drawCharByChar(mm, xp, 855, 20);
   }
 
+  M5.Display.endWrite();
   M5.Display.display();
 }
 
@@ -766,12 +773,15 @@ void redrawWeatherUnits() {
   M5.Display.setEpdMode(epd_mode_t::epd_fast);
 
   // Pass 1: flash all areas black
+  M5.Display.startWrite();
   for (int i = 0; i < n; i++) {
     M5.Display.fillRect(areas[i].x, areas[i].y, areas[i].w, areas[i].h, TFT_BLACK);
   }
+  M5.Display.endWrite();
   M5.Display.display();
 
   // Pass 2: clear to white and redraw content
+  M5.Display.startWrite();
   for (int i = 0; i < n; i++) {
     M5.Display.fillRect(areas[i].x, areas[i].y, areas[i].w, areas[i].h, TFT_WHITE);
   }
@@ -858,5 +868,6 @@ void redrawWeatherUnits() {
   }
 
   M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Restore quality mode
+  M5.Display.endWrite();
   M5.Display.display();
 }

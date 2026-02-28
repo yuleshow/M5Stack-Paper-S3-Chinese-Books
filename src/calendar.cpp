@@ -866,6 +866,7 @@ static int drawPaddedNumber(int number, int x, int y, int fontSize, uint16_t col
 
 void drawCalendarYearMonth() {
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
 
@@ -965,12 +966,14 @@ void drawCalendarYearMonth() {
   M5.Display.drawRoundRect(cancelX, bottomY, bbW, bbH, 8, TFT_BLACK);
   drawSystemTextCentered("取消", cancelX + bbW / 2, bottomY + 12, 24);
 
+  M5.Display.endWrite();
   M5.Display.display();
 }
 
 // Draw month calendar picker for date selection
 void drawCalendarPicker() {
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -1088,6 +1091,7 @@ void drawCalendarPicker() {
   M5.Display.drawRoundRect(todayBtnX, todayBtnY, todayBtnW, todayBtnH, 6, TFT_BLACK);
   drawSystemTextCentered("今天", todayBtnX + todayBtnW/2, todayBtnY + 8, 24);
   
+  M5.Display.endWrite();
   M5.Display.display();
 }
 
@@ -1123,6 +1127,7 @@ void getDateWithOffset(int offset, int &outYear, int &outMonth, int &outDay, int
 void drawCalendar() {
   Serial.println("drawCalendar() start");
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -1137,6 +1142,7 @@ void drawCalendar() {
   if (!getLocalTime(&timeinfo)) {
     Serial.println("drawCalendar: getLocalTime failed");
     drawSystemTextCentered("無法取得時間", 270, 400, 36);
+    M5.Display.endWrite();
     M5.Display.display();
     return;
   }
@@ -1513,6 +1519,7 @@ void drawCalendar() {
       drawSystemText("天", xp, secYSolar, 20);
     }
   }
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("drawCalendar() done");
 }

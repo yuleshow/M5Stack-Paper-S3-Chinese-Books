@@ -195,6 +195,7 @@ void drawUSBMSCSetup() {
   Serial.println("Drawing USB MSC setup screen...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -273,6 +274,7 @@ void drawUSBMSCSetup() {
   M5.Display.setCursor(290, btnY + 210);
   M5.Display.println("  Disable restarts");
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("USB MSC setup displayed");
 }

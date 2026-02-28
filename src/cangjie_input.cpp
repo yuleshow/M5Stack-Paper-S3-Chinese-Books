@@ -34,6 +34,7 @@ static String unicodeToUTF8(uint16_t cp) {
 
 void drawCangjieInput() {
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
 
@@ -256,6 +257,7 @@ void drawCangjieInput() {
   drawSystemText("取消", caX + 20, specialY + 14, 24, TFT_BLACK, TFT_LIGHTGRAY);
 
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
+  M5.Display.endWrite();
   M5.Display.display();
 }
 
@@ -263,6 +265,7 @@ void drawCangjieInput() {
 // Skips redrawing the keyboard (which never changes)
 void updateCangjieInputArea() {
   M5.Display.setEpdMode(epd_mode_t::epd_fast);
+  M5.Display.startWrite();
 
   // === Clear and redraw composed text area (Y=42..132) ===
   M5.Display.fillRect(11, 43, 518, 88, TFT_WHITE);
@@ -359,6 +362,7 @@ void updateCangjieInputArea() {
     M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   }
 
+  M5.Display.endWrite();
   M5.Display.display();
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
 }

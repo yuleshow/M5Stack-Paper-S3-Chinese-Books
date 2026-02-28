@@ -366,6 +366,27 @@ extern bool currentBookIsEpub;
 extern char* epubFullText;
 extern size_t epubFullTextLen;
 
+// EPUB persistent ZIP info (for on-demand image/chapter extraction)
+static const char EPUB_IMG_MARKER = '\x01';
+extern String epubFilePath;
+extern ZipEntry* epubZipEntries;
+extern int epubZipEntryCount;
+
+// EPUB chapter windowing (for big files)
+struct EpubChapterInfo {
+    int zipEntryIndex;           // Index into epubZipEntries
+    size_t estimatedTextSize;    // Rough estimate based on HTML size
+    size_t actualTextSize;       // Set after extraction, 0 = not yet known
+    size_t cumulativeOffset;     // Start offset in virtual full text stream
+};
+extern EpubChapterInfo* epubChapters;
+extern int epubChapterCount;
+extern int epubLoadedStartChapter;   // First chapter in current buffer window
+extern int epubLoadedEndChapter;     // Last loaded chapter + 1 (exclusive)
+extern size_t epubLoadedBaseOffset;  // Virtual text offset where buffer starts
+extern String epubBasePath;          // OPF base path for resolving references
+extern size_t epubEstimatedTotalBytes; // Estimated total text across all chapters
+
 // Todo
 static const int MAX_TODO = 50;
 extern TodoItem todoList[MAX_TODO];
@@ -493,8 +514,16 @@ void drawTodoDatePicker();
 
 // epub_reader
 String htmlToText(const String& html);
+size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
+                       char* outBuf, size_t outBufSize,
+                       const String& basePath);
+String pathNormalize(const String& path);
 String epubGetTitle(const String& epubPath);
 bool epubLoad(const String& epubPath);
+bool epubLoadChapterRange(int startChapter);
+int epubChapterForOffset(size_t offset);
+void epubCleanup();
+bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH);
 
 // book_reader
 void scanBooks();

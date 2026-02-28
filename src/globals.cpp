@@ -262,6 +262,20 @@ bool currentBookIsEpub = false;
 char* epubFullText = nullptr;
 size_t epubFullTextLen = 0;
 
+// EPUB persistent ZIP info (for on-demand image/chapter extraction)
+String epubFilePath = "";
+ZipEntry* epubZipEntries = nullptr;
+int epubZipEntryCount = 0;
+
+// EPUB chapter windowing
+EpubChapterInfo* epubChapters = nullptr;
+int epubChapterCount = 0;
+int epubLoadedStartChapter = 0;
+int epubLoadedEndChapter = 0;
+size_t epubLoadedBaseOffset = 0;
+String epubBasePath = "";
+size_t epubEstimatedTotalBytes = 0;
+
 // Todo
 TodoItem todoList[MAX_TODO];
 int todoCount = 0;

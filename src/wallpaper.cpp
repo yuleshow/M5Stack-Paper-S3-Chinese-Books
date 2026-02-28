@@ -72,6 +72,7 @@ void drawWallpaperList() {
   Serial.println("Drawing wallpaper list...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   M5.Display.setFont(&fonts::efontTW_24);
@@ -136,6 +137,7 @@ void drawWallpaperList() {
   // Universal return button (lower-right)
   M5.Display.setTextDatum(TL_DATUM);
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Wallpaper list displayed");
 }
@@ -162,6 +164,7 @@ void drawWallpaper() {
   }
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   
   // Try to open and check if file exists
@@ -189,6 +192,7 @@ void drawWallpaper() {
     M5.Display.setTextSize(1);
     M5.Display.drawString(filepath, M5.Display.width() / 2, M5.Display.height() / 2 + 20);
     M5.Display.setTextDatum(TL_DATUM);
+    M5.Display.endWrite();
     M5.Display.display();
     return;
   }
@@ -210,6 +214,7 @@ void drawWallpaper() {
     M5.Display.setTextSize(0.8);
     M5.Display.drawString("請使用小於2MB的圖片", M5.Display.width() / 2, M5.Display.height() / 2 + 20);
     M5.Display.setTextDatum(TL_DATUM);
+    M5.Display.endWrite();
     M5.Display.display();
     return;
   }
@@ -223,6 +228,7 @@ void drawWallpaper() {
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.drawString("無法開啟檔案", M5.Display.width() / 2, M5.Display.height() / 2);
     M5.Display.setTextDatum(TL_DATUM);
+    M5.Display.endWrite();
     M5.Display.display();
     return;
   }
@@ -244,6 +250,7 @@ void drawWallpaper() {
       M5.Display.setTextDatum(MC_DATUM);
       M5.Display.drawString("記憶體不足", M5.Display.width() / 2, M5.Display.height() / 2);
       M5.Display.setTextDatum(TL_DATUM);
+      M5.Display.endWrite();
       M5.Display.display();
       imgFile.close();
       return;
@@ -310,6 +317,7 @@ void drawWallpaper() {
     M5.Display.setTextDatum(TL_DATUM);
   }
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Wallpaper displayed");
 }

@@ -691,8 +691,11 @@ void loop() {
       auto updateYearDisplay = [&]() {
         int yrX = centerX - 100, yrY = 65, yrW = 220, yrH = 55;
         M5.Display.setEpdMode(epd_mode_t::epd_fast);
+        M5.Display.startWrite();
         M5.Display.fillRect(yrX, yrY, yrW, yrH, TFT_BLACK);
+        M5.Display.endWrite();
         M5.Display.display();
+        M5.Display.startWrite();
         M5.Display.fillRect(yrX, yrY, yrW, yrH, TFT_WHITE);
         int xp = centerX - 80;
         if (ymPickerYear > 0) {
@@ -710,6 +713,7 @@ void loop() {
           xp += 112;
         }
         drawSystemText("年", xp, 72, 36);
+        M5.Display.endWrite();
         M5.Display.display();
         M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Restore quality mode
       };
@@ -781,11 +785,14 @@ void loop() {
               }
 
               // Pass 1: flash black
+              M5.Display.startWrite();
               for (int i = 0; i < nR; i++)
                 M5.Display.fillRect(rects[i].x, rects[i].y, rects[i].w, rects[i].h, TFT_BLACK);
+              M5.Display.endWrite();
               M5.Display.display();
 
               // Pass 2: redraw
+              M5.Display.startWrite();
               for (int i = 0; i < nR; i++)
                 M5.Display.fillRect(rects[i].x, rects[i].y, rects[i].w, rects[i].h, TFT_WHITE);
 
@@ -803,6 +810,7 @@ void loop() {
                 drawSystemTextCentered(mNames[oldMonth - 1], obx + mBtnW / 2, oby + 12, 28);
               }
 
+              M5.Display.endWrite();
               M5.Display.display();
               M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Restore quality mode
             }
@@ -1022,6 +1030,7 @@ void loop() {
           M5.Display.setEpdMode(epd_mode_t::epd_fast);
 
           // First pass: black flash on checked items' areas
+          M5.Display.startWrite();
           for (int c = 0; c < shoppingCheckboxCount; c++) {
             int idx = shoppingCheckboxes[c].itemIdx;
             if (idx < shoppingCount && shoppingList[idx].checked) {
@@ -1032,9 +1041,11 @@ void loop() {
               M5.Display.fillRect(rx, ry, rw, rh, TFT_BLACK);
             }
           }
+          M5.Display.endWrite();
           M5.Display.display();
 
           // Second pass: white-out checked items' areas
+          M5.Display.startWrite();
           for (int c = 0; c < shoppingCheckboxCount; c++) {
             int idx = shoppingCheckboxes[c].itemIdx;
             if (idx < shoppingCount && shoppingList[idx].checked) {
@@ -1067,9 +1078,14 @@ void loop() {
 
           // Hide 清除 button
           int bx = 280, by = 900, bw = 120, bh = 44;
+          M5.Display.endWrite();
+          M5.Display.startWrite();
           M5.Display.fillRect(bx, by, bw, bh, TFT_BLACK);
+          M5.Display.endWrite();
           M5.Display.display();
+          M5.Display.startWrite();
           M5.Display.fillRect(bx, by, bw, bh, TFT_WHITE);
+          M5.Display.endWrite();
           M5.Display.display();
 
           M5.Display.setEpdMode(epd_mode_t::epd_quality);
@@ -1096,13 +1112,17 @@ void loop() {
             // Two-pass partial update using exact saved position
             int pad = 6;
             M5.Display.setEpdMode(epd_mode_t::epd_fast);
+            M5.Display.startWrite();
             M5.Display.fillRect(cbX - pad, cbY - pad, cbSize + pad*2, cbSize + pad*2, TFT_BLACK);
+            M5.Display.endWrite();
             M5.Display.display();
+            M5.Display.startWrite();
             M5.Display.fillRect(cbX - pad, cbY - pad, cbSize + pad*2, cbSize + pad*2, TFT_WHITE);
             M5.Display.drawRect(cbX, cbY, cbSize, cbSize, TFT_BLACK);
             if (shoppingList[idx].checked) {
               M5.Display.fillRect(cbX + 3, cbY + 3, cbSize - 6, cbSize - 6, TFT_BLACK);
             }
+            M5.Display.endWrite();
             M5.Display.display();
             
             // Update 清除 button: show/hide based on checked count
@@ -1112,8 +1132,11 @@ void loop() {
                 if (shoppingList[ci].checked) chkCnt++;
               }
               int bx = 280, by = 900, bw = 120, bh = 44;
+              M5.Display.startWrite();
               M5.Display.fillRect(bx, by, bw, bh, TFT_BLACK);
+              M5.Display.endWrite();
               M5.Display.display();
+              M5.Display.startWrite();
               M5.Display.fillRect(bx, by, bw, bh, TFT_WHITE);
               if (chkCnt > 0) {
                 M5.Display.fillRect(bx, by, bw, bh, TFT_BLACK);
@@ -1124,6 +1147,7 @@ void loop() {
                 M5.Display.printf("x%d", chkCnt);
                 M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
               }
+              M5.Display.endWrite();
               M5.Display.display();
             }
             
@@ -1229,8 +1253,11 @@ void loop() {
           Serial.println("Failed to load Cangjie table");
           // Show error message on screen
           M5.Display.setEpdMode(epd_mode_t::epd_fast);
+          M5.Display.startWrite();
           M5.Display.fillRect(100, 400, 340, 80, TFT_BLACK);
+          M5.Display.endWrite();
           M5.Display.display();
+          M5.Display.startWrite();
           M5.Display.fillRect(100, 400, 340, 80, TFT_WHITE);
           M5.Display.drawRect(100, 400, 340, 80, TFT_BLACK);
           drawSystemText("找不到", 120, 412, 28, TFT_BLACK, TFT_WHITE);
@@ -1238,6 +1265,7 @@ void loop() {
           M5.Display.setTextSize(1);
           M5.Display.setCursor(120, 450);
           M5.Display.print("cangjie5.bin on SD");
+          M5.Display.endWrite();
           M5.Display.display();
           M5.Display.setEpdMode(epd_mode_t::epd_quality);
           delay(2000);
@@ -1256,6 +1284,7 @@ void loop() {
           M5.Display.setEpdMode(epd_mode_t::epd_fast);
 
           // First pass: black flash on checked items' areas
+          M5.Display.startWrite();
           for (int c = 0; c < todoCheckboxCount; c++) {
             int idx = todoCheckboxes[c].itemIdx;
             if (idx < todoCount && todoList[idx].checked) {
@@ -1267,9 +1296,11 @@ void loop() {
               M5.Display.fillRect(rx, ry, rw, rh, TFT_BLACK);
             }
           }
+          M5.Display.endWrite();
           M5.Display.display();
 
           // Second pass: white-out checked items' areas
+          M5.Display.startWrite();
           for (int c = 0; c < todoCheckboxCount; c++) {
             int idx = todoCheckboxes[c].itemIdx;
             if (idx < todoCount && todoList[idx].checked) {
@@ -1318,9 +1349,14 @@ void loop() {
 
           // Hide 清除 button
           int bx = 280, by = 900, bw = 120, bh = 44;
+          M5.Display.endWrite();
+          M5.Display.startWrite();
           M5.Display.fillRect(bx, by, bw, bh, TFT_BLACK);
+          M5.Display.endWrite();
           M5.Display.display();
+          M5.Display.startWrite();
           M5.Display.fillRect(bx, by, bw, bh, TFT_WHITE);
+          M5.Display.endWrite();
           M5.Display.display();
 
           M5.Display.setEpdMode(epd_mode_t::epd_quality);
@@ -1378,13 +1414,17 @@ void loop() {
               // Two-pass partial update using exact saved position
               int pad = 6;
               M5.Display.setEpdMode(epd_mode_t::epd_fast);
+              M5.Display.startWrite();
               M5.Display.fillRect(cbX - pad, cbY - pad, cbSize + pad*2, cbSize + pad*2, TFT_BLACK);
+              M5.Display.endWrite();
               M5.Display.display();
+              M5.Display.startWrite();
               M5.Display.fillRect(cbX - pad, cbY - pad, cbSize + pad*2, cbSize + pad*2, TFT_WHITE);
               M5.Display.drawRect(cbX, cbY, cbSize, cbSize, TFT_BLACK);
               if (todoList[idx].checked) {
                 M5.Display.fillRect(cbX + 3, cbY + 3, cbSize - 6, cbSize - 6, TFT_BLACK);
               }
+              M5.Display.endWrite();
               M5.Display.display();
               
               // Update 清除 button: show/hide based on checked count
@@ -1394,8 +1434,11 @@ void loop() {
                   if (todoList[ci].checked) chkCnt++;
                 }
                 int bx = 280, by = 900, bw = 120, bh = 44;
+                M5.Display.startWrite();
                 M5.Display.fillRect(bx, by, bw, bh, TFT_BLACK);
+                M5.Display.endWrite();
                 M5.Display.display();
+                M5.Display.startWrite();
                 M5.Display.fillRect(bx, by, bw, bh, TFT_WHITE);
                 if (chkCnt > 0) {
                   M5.Display.fillRect(bx, by, bw, bh, TFT_BLACK);
@@ -1406,6 +1449,7 @@ void loop() {
                   M5.Display.printf("x%d", chkCnt);
                   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
                 }
+                M5.Display.endWrite();
                 M5.Display.display();
               }
               
@@ -1737,6 +1781,7 @@ void loop() {
             bool connected = connectToWiFi();
             
             // Show result
+            M5.Display.startWrite();
             M5.Display.fillScreen(TFT_WHITE);
             M5.Display.setTextColor(TFT_BLACK);
             M5.Display.setFont(&fonts::Font2);
@@ -1750,6 +1795,7 @@ void loop() {
             } else {
               M5.Display.println("Connection Failed!");
             }
+            M5.Display.endWrite();
             M5.Display.display();
             
             delay(3000);
@@ -1817,6 +1863,7 @@ void loop() {
                   saveWiFiConfig();
                   
                   bool connected = connectToWiFi();
+                  M5.Display.startWrite();
                   M5.Display.fillScreen(TFT_WHITE);
                   M5.Display.setTextColor(TFT_BLACK);
                   M5.Display.setFont(&fonts::Font2);
@@ -1827,6 +1874,7 @@ void loop() {
                   } else {
                     M5.Display.println("Connection Failed!");
                   }
+                  M5.Display.endWrite();
                   M5.Display.display();
                   delay(3000);
                   
@@ -1930,6 +1978,7 @@ void loop() {
             Serial.println("Stopping USB MSC...");
             
             // Show restarting message
+            M5.Display.startWrite();
             M5.Display.fillRect(0, 300, DISPLAY_WIDTH, 200, TFT_WHITE);
             drawSystemText("重新啟動中...", 100, 330, 32);
             M5.Display.setFont(&fonts::Font2);
@@ -1937,6 +1986,7 @@ void loop() {
             M5.Display.setTextColor(TFT_BLACK);
             M5.Display.setCursor(80, 380);
             M5.Display.print("Restarting device...");
+            M5.Display.endWrite();
             M5.Display.display();
             
             stopUSBMSC();
@@ -1945,9 +1995,11 @@ void loop() {
             Serial.println("Starting USB MSC...");
             
             // Show starting message
+            M5.Display.startWrite();
             M5.Display.fillRect(0, 300, DISPLAY_WIDTH, 200, TFT_WHITE);
             drawSystemText("啟動 USB 中...", 100, 350, 32);
             drawSystemText("請查看序列輸出以了解詳情", 80, 400, 22);
+            M5.Display.endWrite();
             M5.Display.display();
             
             usbMSCEnabled = true;
@@ -1955,12 +2007,14 @@ void loop() {
             
             // Show result
             delay(1000);
+            M5.Display.startWrite();
             M5.Display.fillRect(0, 450, DISPLAY_WIDTH, 100, TFT_WHITE);
             if (usbMSCActive) {
               drawSystemText("✓ 成功啟動", 80, 450, 28, EPD_DARK_GRAY);
             } else {
               drawSystemText("✗ 啟動失敗 - 請查看序列輸出", 80, 450, 24, EPD_DARK_GRAY);
             }
+            M5.Display.endWrite();
             M5.Display.display();
             delay(2000);
           }
@@ -2040,8 +2094,10 @@ void loop() {
             Serial.println("BLE scan button touched");
             // Show scanning state
             M5.Display.setEpdMode(epd_mode_t::epd_fast);
+            M5.Display.startWrite();
             M5.Display.fillRect(20, 310, 500, 420, TFT_WHITE);
             drawSystemText("掃描中...", 20, 320, 22);
+            M5.Display.endWrite();
             M5.Display.display();
             M5.Display.setEpdMode(epd_mode_t::epd_quality);
             
@@ -2058,9 +2114,11 @@ void loop() {
               
               // Show connecting state
               M5.Display.setEpdMode(epd_mode_t::epd_fast);
+              M5.Display.startWrite();
               M5.Display.fillRect(20, 310, 500, 420, TFT_WHITE);
               String msg = "連接中：" + bleDevices[bleSelectedDevice].name;
               drawSystemText(msg.c_str(), 20, 320, 22);
+              M5.Display.endWrite();
               M5.Display.display();
               M5.Display.setEpdMode(epd_mode_t::epd_quality);
               
@@ -2114,10 +2172,12 @@ void loop() {
             
             // Show scanning state
             M5.Display.setEpdMode(epd_mode_t::epd_fast);
+            M5.Display.startWrite();
             M5.Display.fillScreen(TFT_WHITE);
             drawStatusBar();
             drawSystemText("藍牙", 20, 30, 40);
             drawSystemText("掃描中...", 20, 320, 22);
+            M5.Display.endWrite();
             M5.Display.display();
             M5.Display.setEpdMode(epd_mode_t::epd_quality);
             
@@ -2212,9 +2272,27 @@ void loop() {
           if (bookIndex >= 0 && bookIndex < bookCount) {
             currentBook = bookDisplayName[bookIndex];
             Serial.printf("Selected: %s (%s)\n", currentBook.c_str(), bookList[bookIndex].c_str());
+            
+            // Show loading indicator before attempting to load
+            {
+              M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+              M5.Display.fillRect(20, 800, 500, 60, TFT_WHITE);
+              drawSystemText("載入中...", 20, 810, 24);
+              M5.Display.display();
+            }
+            
             if (loadBook(bookIndex)) {
               currentMode = MODE_READING;
               drawReading();
+            } else {
+              // Show error message, then redraw book list
+              Serial.println("Failed to load book, showing error");
+              M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+              M5.Display.fillRect(20, 800, 500, 60, TFT_WHITE);
+              drawSystemText("載入失敗 - 檔案可能過大或損壞", 20, 810, 20);
+              M5.Display.display();
+              delay(2000);
+              drawBookList();
             }
           }
         } else {

@@ -217,32 +217,88 @@ bool loadCurrentPage() {
   }
   currentPageByteOffset = pageOffset;  // Store for rendering correction
   
-  // EPUB: read from PSRAM buffer
-  if (currentBookIsEpub && epubFullText) {
-    size_t remaining = epubFullTextLen - pageOffset;
+  // EPUB: read from PSRAM buffer (with chapter windowing for big files)
+  if (currentBookIsEpub && epubChapters) {
+    // Check if the requested offset is within the currently loaded chapter window
+    bool needReload = !epubFullText ||
+                      pageOffset < epubLoadedBaseOffset ||
+                      pageOffset >= epubLoadedBaseOffset + epubFullTextLen;
+
+    if (needReload) {
+      // Find which chapter contains this offset
+      int targetChapter = epubChapterForOffset(pageOffset);
+      Serial.printf("EPUB: Page offset %u outside loaded range [%u, %u), reloading from chapter %d\n",
+                    pageOffset, epubLoadedBaseOffset,
+                    epubLoadedBaseOffset + epubFullTextLen, targetChapter + 1);
+
+      // Load chapters starting from one before the target (for backward navigation)
+      int loadFrom = max(0, targetChapter - 1);
+      if (!epubLoadChapterRange(loadFrom)) {
+        Serial.println("EPUB: Failed to reload chapters");
+        return false;
+      }
+
+      // After reloading, the totalBookBytes estimate may have changed
+      totalBookBytes = epubEstimatedTotalBytes;
+
+      // Reset page offset cache (invalidated by chapter reload)
+      if (pageByteOffsets) {
+        pageByteOffsets[0] = pageOffset;
+        pageOffsetsCount = 1;
+        // Recalculate current page number based on offset
+        if (bytesPerPage > 0) {
+          totalPages = (totalBookBytes / bytesPerPage) + 1;
+        }
+      }
+    }
+
+    if (!epubFullText || epubFullTextLen == 0) return false;
+
+    // Calculate local offset within the loaded buffer
+    size_t localOffset;
+    if (pageOffset >= epubLoadedBaseOffset) {
+      localOffset = pageOffset - epubLoadedBaseOffset;
+    } else {
+      localOffset = 0;  // Shouldn't happen after reload, but safety
+    }
+
+    if (localOffset >= epubFullTextLen) {
+      // We've reached beyond what's loaded — clamp
+      if (pageByteOffsets && pageOffsetsCount > 1) {
+        currentPage = pageOffsetsCount - 1;
+        localOffset = pageByteOffsets[currentPage] - epubLoadedBaseOffset;
+        if (localOffset >= epubFullTextLen) localOffset = 0;
+        totalPages = currentPage + 1;
+      } else {
+        localOffset = 0;
+      }
+    }
+
+    size_t remaining = epubFullTextLen - localOffset;
     size_t bytesToRead = min((size_t)(bytesPerPage + UTF8_READ_PADDING), remaining);
     
     // Find safe UTF-8 boundary
     size_t safeEnd = bytesToRead;
     if (bytesToRead >= (size_t)bytesPerPage && bytesToRead < remaining) {
       safeEnd = bytesPerPage;
-      while (safeEnd > 0 && (epubFullText[pageOffset + safeEnd] & 0xC0) == 0x80) {
+      while (safeEnd > 0 && (epubFullText[localOffset + safeEnd] & 0xC0) == 0x80) {
         safeEnd--;
       }
     }
     
-    char saved = epubFullText[pageOffset + safeEnd];
-    epubFullText[pageOffset + safeEnd] = '\0';
-    currentPageContent = String(epubFullText + pageOffset);
-    epubFullText[pageOffset + safeEnd] = saved;
+    char saved = epubFullText[localOffset + safeEnd];
+    epubFullText[localOffset + safeEnd] = '\0';
+    currentPageContent = String(epubFullText + localOffset);
+    epubFullText[localOffset + safeEnd] = saved;
     
-    // Track next page's actual byte offset (only when extending sequentially)
+    // Track next page's actual byte offset (using virtual/absolute offset)
+    size_t virtualNextOffset = pageOffset + safeEnd;
     if (pageByteOffsets && currentPage + 1 == pageOffsetsCount && pageOffsetsCount < MAX_PAGE_OFFSETS) {
-      pageByteOffsets[pageOffsetsCount] = pageOffset + safeEnd;
+      pageByteOffsets[pageOffsetsCount] = virtualNextOffset;
       pageOffsetsCount++;
       // Update totalPages estimate based on actual offsets
-      if (pageOffset + safeEnd < epubFullTextLen) {
-        size_t remainingBytes = epubFullTextLen - (pageOffset + safeEnd);
+      if (virtualNextOffset < epubEstimatedTotalBytes) {
+        size_t remainingBytes = epubEstimatedTotalBytes - virtualNextOffset;
         int remainingPages = (remainingBytes / bytesPerPage) + 1;
         totalPages = currentPage + 1 + remainingPages;
       } else {
@@ -250,7 +306,9 @@ bool loadCurrentPage() {
       }
     }
     
-    Serial.printf("EPUB page %d: %d bytes at offset %d\n", currentPage + 1, currentPageContent.length(), pageOffset);
+    Serial.printf("EPUB page %d: %d bytes at offset %d (local %d, ch %d-%d)\n",
+                  currentPage + 1, currentPageContent.length(), pageOffset,
+                  localOffset, epubLoadedStartChapter + 1, epubLoadedEndChapter);
     return true;
   }
   
@@ -332,7 +390,8 @@ bool loadBook(int bookIndex) {
       currentBookIsEpub = false;
       return false;
     }
-    totalBookBytes = epubFullTextLen;
+    // Use estimated total for page calculation (covers all chapters, not just loaded ones)
+    totalBookBytes = epubEstimatedTotalBytes;
     recalculatePages();
     currentPage = loadReadingPosition();
     if (currentPage >= totalPages) currentPage = 0;
@@ -342,6 +401,7 @@ bool loadBook(int bookIndex) {
   
   // Plain text file
   currentBookIsEpub = false;
+  epubCleanup();  // Free any leftover EPUB data when switching to plain text
   
   {
     ScopedSDLock lock;
@@ -367,6 +427,7 @@ void drawBookList() {
   Serial.println("Drawing book list...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   
   // Status bar + nav bar first
@@ -399,6 +460,7 @@ void drawBookList() {
   }
   
   Serial.println("Calling display()...");
+  M5.Display.endWrite();
   M5.Display.display();
   
   delay(500);  // Brief wait for e-ink refresh
@@ -412,6 +474,7 @@ void drawReading() {
   loadReadingFont();
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   
   // Status bar + nav bar first
@@ -510,10 +573,39 @@ void drawReading() {
     
     // Skip carriage returns and control characters
     if (unicode == '\r') continue;
-    if (unicode < 0x20 && unicode != '\n') continue;
+    if (unicode < 0x20 && unicode != '\n' && unicode != EPUB_IMG_MARKER) continue;
     if (unicode == 0x3000) continue;  // Ideographic space
     // Skip ASCII spaces (paragraph indentation is handled by column breaks)
     if (unicode == ' ') continue;
+    
+    // Handle EPUB image markers: \x01<image_path>\x01
+    if (unicode == EPUB_IMG_MARKER && currentBookIsEpub) {
+      // Parse image path until next marker
+      int pathStart = i;
+      while (i < (int)sampleText.length() && sampleText.charAt(i) != EPUB_IMG_MARKER) i++;
+      if (i < (int)sampleText.length()) {
+        String imgPath = sampleText.substring(pathStart, i);
+        i++;  // Skip closing marker
+        
+        Serial.printf("EPUB IMG marker found: '%s'\n", imgPath.c_str());
+        
+        // Use the full reading area for the image (not just remaining columns)
+        int imgX = READING_AREA_LEFT;
+        int imgY = READING_AREA_TOP;
+        int imgW = READING_AREA_RIGHT - READING_AREA_LEFT;   // Full width: 470
+        int imgH = READING_AREA_BOTTOM - READING_AREA_TOP;   // Full height: 790
+        
+        if (epubExtractAndDrawImage(imgPath, imgX, imgY, imgW, imgH)) {
+          // Image drawn — this page is done, break to next page
+          renderStopByte = i;
+          goto endPageRender;
+        } else {
+          // Image failed — show placeholder text
+          Serial.printf("EPUB: Image not rendered: %s\n", imgPath.c_str());
+        }
+      }
+      continue;
+    }
     
     // Hard newline → start a new column (paragraph break in vertical text)
     if (unicode == '\n') {
@@ -589,6 +681,7 @@ void drawReading() {
       }
     }
   }
+  endPageRender:  // Jump target for image rendering page break
   
   // Correct next page byte offset based on actual bytes rendered
   // This prevents text from being skipped between pages
@@ -701,6 +794,7 @@ void drawReading() {
   }
   
   Serial.println("Calling display()...");
+  M5.Display.endWrite();
   M5.Display.display();
   
   delay(500);  // Brief wait for e-ink refresh

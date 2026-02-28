@@ -578,6 +578,7 @@ void calculateShoppingPages() {
 
 void drawShoppingList() {
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -909,7 +910,9 @@ bgWidth, groupTextHeight + bgPadding * 2,
   
   if (pendingNavTouch) {
     Serial.println("Skipping display() - nav touch pending");
+    M5.Display.endWrite();
     return;
   }
+  M5.Display.endWrite();
   M5.Display.display();
 }

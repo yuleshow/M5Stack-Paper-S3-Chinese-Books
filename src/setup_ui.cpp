@@ -10,6 +10,7 @@ void drawFontMenu() {
   numFonts = fontFileCount;  // Update for touch handler
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   
   // Status bar + nav bar first
@@ -110,8 +111,10 @@ void drawFontMenu() {
   Serial.println("Calling display()...");
   if (pendingNavTouch) {
     Serial.println("Skipping display() - nav touch pending");
+    M5.Display.endWrite();
     return;
   }
+  M5.Display.endWrite();
   M5.Display.display();
   
   delay(500);  // Brief wait for e-ink refresh
@@ -222,6 +225,7 @@ void drawVirtualKeyboard() {
 void updatePasswordDisplay() {
   // Only update the password field area without refreshing entire screen
   M5.Display.setEpdMode(epd_mode_t::epd_fast);  // Fast refresh for typing
+  M5.Display.startWrite();
   
   // Clear password box
   M5.Display.fillRect(20, 240, 500, 60, TFT_WHITE);
@@ -240,6 +244,7 @@ void updatePasswordDisplay() {
   }
   M5.Display.print(maskedPassword);
   
+  M5.Display.endWrite();
   M5.Display.display();
   M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Back to quality mode
 }
@@ -248,6 +253,7 @@ void drawClock() {
   Serial.println("Drawing analog clock screen...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -391,6 +397,7 @@ void drawClock() {
   
   // Universal return button (lower-right)
   M5.Display.setTextDatum(TL_DATUM);
+  M5.Display.endWrite();
   M5.Display.display();
   
   // Update tracking
@@ -406,6 +413,7 @@ void drawWebServerSetup() {
   Serial.println("Drawing web server setup screen...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -476,6 +484,7 @@ void drawWebServerSetup() {
   // Universal return button (lower-right)
   drawReturnButton();
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Web server setup displayed");
 }
@@ -484,6 +493,7 @@ void drawIconSetup() {
   Serial.println("Drawing icon setup screen...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -525,6 +535,7 @@ void drawIconSetup() {
     drawSystemText("SD 卡優先", 50, btnY + 55, 28, TFT_WHITE, EPD_DARK_GRAY);
   }
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Icon setup screen displayed");
 }
@@ -533,6 +544,7 @@ void drawCalendarSetup() {
   Serial.println("Drawing calendar setup screen...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -574,6 +586,7 @@ void drawCalendarSetup() {
     drawSystemText("壽星天文曆", 50, btnY + 55, 28, TFT_WHITE, EPD_DARK_GRAY);
   }
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Calendar setup screen displayed");
 }
@@ -582,6 +595,7 @@ void drawSetupMenu() {
   Serial.println("Drawing setup menu...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -706,6 +720,7 @@ void drawSetupMenu() {
   // Universal return button (lower-right)
   drawReturnButton();
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Setup menu displayed");
 }
@@ -714,6 +729,7 @@ void drawWiFiSetup() {
   Serial.println("Drawing WiFi setup screen...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -839,6 +855,7 @@ void drawWiFiSetup() {
     // Universal return button (lower-right)
     drawReturnButton();
     
+    M5.Display.endWrite();
     M5.Display.display();
     return;
   }
@@ -885,6 +902,7 @@ void drawWiFiSetup() {
     // Universal return button (lower-right)
     drawReturnButton();
     
+    M5.Display.endWrite();
     M5.Display.display();
     return;
   }
@@ -953,6 +971,7 @@ void drawWiFiSetup() {
   // Universal return button (lower-right)
   drawReturnButton();
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("WiFi setup screen displayed");
 }
@@ -961,6 +980,7 @@ void drawBluetoothSetup() {
   Serial.println("Drawing Bluetooth setup screen...");
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -1055,6 +1075,7 @@ void drawBluetoothSetup() {
     // Universal return button (lower-right)
     drawReturnButton();
     
+    M5.Display.endWrite();
     M5.Display.display();
     Serial.println("Bluetooth scan view displayed");
     return;
@@ -1087,6 +1108,7 @@ void drawBluetoothSetup() {
   // Universal return button (lower-right)
   drawReturnButton();
   
+  M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Bluetooth setup displayed");
 }

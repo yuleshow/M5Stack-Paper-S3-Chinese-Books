@@ -316,6 +316,7 @@ void calculateTodoPages() {
 
 void drawTodoList() {
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
 
@@ -614,13 +615,16 @@ void drawTodoList() {
   
   if (pendingNavTouch) {
     Serial.println("Skipping display() - nav touch pending");
+    M5.Display.endWrite();
     return;
   }
+  M5.Display.endWrite();
   M5.Display.display();
 }
 
 void drawTodoDatePicker() {
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -724,5 +728,6 @@ void drawTodoDatePicker() {
   M5.Display.drawRoundRect(todayBtnX, todayBtnY, todayBtnW, todayBtnH, 6, TFT_BLACK);
   drawSystemTextCentered("今天", todayBtnX + todayBtnW/2, todayBtnY + 8, 24);
   
+  M5.Display.endWrite();
   M5.Display.display();
 }
