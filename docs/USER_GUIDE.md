@@ -131,11 +131,26 @@ Place JPG, PNG, or BMP images in `/wallpapers/`.
 
 ### Option A: Pre-built Binary
 
-Download the latest `M5Paper-S3-Chinese-Books-vX.X.X.bin` from the [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) page, then flash with esptool:
+Download binaries from the [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) page. Two versions are provided:
+
+#### 16 MB merged binary (recommended)
+
+Contains the bootloader, partition table, and application — use this for fresh/blank devices or a full reflash:
 
 ```bash
-esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-v*.bin
+pip install esptool  # if not already installed
+esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-*-merged.bin
 ```
+
+#### 8 MB app-only binary
+
+Contains only the application firmware. Use this if the device already has a valid bootloader and partition table (e.g., from a previous `pio run -t upload`):
+
+```bash
+esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x10000 M5Paper-S3-Chinese-Books-*-app-only.bin
+```
+
+> **Port note:** On macOS the port is typically `/dev/cu.usbmodem*`. On Linux use `/dev/ttyACM0`. On Windows use `COM3` (check Device Manager).
 
 ### Option B: Build from Source
 

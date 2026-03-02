@@ -26,11 +26,25 @@ jobs:
       - name: Build firmware
         run: pio run
 
-      - name: Upload firmware artifact
+      - name: Create merged firmware (bootloader + partitions + app)
+        run: |
+          BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
+          esptool.py --chip esp32s3 merge_bin \
+            --flash_mode qio \
+            --flash_size 16MB \
+            -o .pio/build/m5stack_paper/merged-firmware.bin \
+            0x0    .pio/build/m5stack_paper/bootloader.bin \
+            0x8000 .pio/build/m5stack_paper/partitions.bin \
+            0xe000 "$BOOT_APP0" \
+            0x10000 .pio/build/m5stack_paper/firmware.bin
+
+      - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: .pio/build/m5stack_paper/firmware.bin
+          path: |
+            .pio/build/m5stack_paper/firmware.bin
+            .pio/build/m5stack_paper/merged-firmware.bin
 
   release:
     needs: build
@@ -54,10 +68,23 @@ jobs:
       - name: Build firmware
         run: pio run
 
+      - name: Create merged firmware (bootloader + partitions + app)
+        run: |
+          BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
+          esptool.py --chip esp32s3 merge_bin \
+            --flash_mode qio \
+            --flash_size 16MB \
+            -o .pio/build/m5stack_paper/merged-firmware.bin \
+            0x0    .pio/build/m5stack_paper/bootloader.bin \
+            0x8000 .pio/build/m5stack_paper/partitions.bin \
+            0xe000 "$BOOT_APP0" \
+            0x10000 .pio/build/m5stack_paper/firmware.bin
+
       - name: Rename firmware with version
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          cp .pio/build/m5stack_paper/firmware.bin "M5Paper-S3-Chinese-Books-${VERSION}.bin"
+          cp .pio/build/m5stack_paper/firmware.bin "M5Paper-S3-Chinese-Books-${VERSION}-app-only.bin"
+          cp .pio/build/m5stack_paper/merged-firmware.bin "M5Paper-S3-Chinese-Books-${VERSION}-merged.bin"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
