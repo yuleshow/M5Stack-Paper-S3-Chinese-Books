@@ -12,3 +12,7 @@ gmtoffset=-28800
 apikey=YOUR_OPENWEATHERMAP_API_KEY
 city=Pasadena,CA,US
 units=metric
+
+[unlock]
+enabled=false
+device_name=M5Paper-BLE

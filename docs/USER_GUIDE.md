@@ -418,6 +418,75 @@ Tap **壁紙** on the dashboard to browse wallpaper images from `/wallpapers/` o
 
 ---
 
+## BLE Proximity Unlock
+
+Use your Paper S3 as a wireless key to auto-lock and unlock your Mac.
+
+### How it works
+
+1. The Paper S3 continuously advertises as a **BLE beacon** (no pairing required)
+2. A macOS companion script monitors the Bluetooth signal strength (RSSI)
+3. When you walk away → signal drops → Mac locks automatically
+4. When you return → signal detected → companion script types your password locally
+
+### Setup
+
+**Step 1: Enable BLE on the device**
+
+Add an `[unlock]` section to `config.ini` on your SD card:
+
+```ini
+[unlock]
+enabled=true
+device_name=M5Paper-BLE
+```
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | `true` to enable BLE advertising on boot |
+| `device_name` | BLE device name (used by the companion script to find the device) |
+
+**Step 2: Install and run the companion script**
+
+```bash
+pip install bleak
+python3 scripts/ble_unlock.py --password 'YOUR_MAC_PASSWORD'
+```
+
+The password is saved securely in **macOS Keychain** — it is never stored in any config file. Subsequent runs don't need `--password`:
+
+```bash
+python3 scripts/ble_unlock.py
+```
+
+**Step 3 (optional): Run as background service**
+
+```bash
+python3 scripts/ble_unlock.py --install-service
+```
+
+This creates a macOS LaunchAgent that starts automatically on login. The password is read from Keychain.
+
+### Configuration options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--password` | — | Mac login password (saved to macOS Keychain) |
+| `--name` | `M5Paper-BLE` | BLE device name to monitor |
+| `--lock-threshold` | `-85` | RSSI below this triggers lock (dBm) |
+| `--unlock-threshold` | `-70` | RSSI above this triggers unlock (dBm) |
+| `--lock-delay` | `15` | Seconds of absence before locking |
+| `--scan-interval` | `3` | Seconds between BLE scans |
+| `--debug` | — | Enable verbose logging |
+
+### Security notes
+
+- Your Mac password is stored in **macOS Keychain** (encrypted, never in plaintext files)
+- No Bluetooth pairing required — the device is a passive beacon
+- The companion script runs locally on your Mac and handles all lock/unlock logic
+
+---
+
 ## Settings
 
 Tap **設定** on the dashboard. Six settings are available:

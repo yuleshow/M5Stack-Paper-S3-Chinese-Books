@@ -874,7 +874,7 @@ void drawCalendarYearMonth() {
   int centerX = W / 2;
 
   // === Title ===
-  drawSystemTextCentered("選擇年月", centerX, 15, 32);
+  drawSystemTextCentered("選擇年月", centerX, 15, 36);
   M5.Display.drawLine(10, 60, W - 10, 60, TFT_BLACK);
 
   // === Year display row ===
@@ -914,8 +914,8 @@ void drawCalendarYearMonth() {
       int by = padY + r * (btnH + gapY);
       M5.Display.drawRoundRect(bx, by, btnW, btnH, 6, TFT_BLACK);
       const char* label = padLabels[r][c];
-      // Use size 28 for all button labels
-      drawSystemTextCentered(label, bx + btnW / 2, by + 14, 28);
+      // Use size 32 for all button labels
+      drawSystemTextCentered(label, bx + btnW / 2, by + 14, 32);
     }
   }
 
@@ -949,7 +949,7 @@ void drawCalendarYearMonth() {
       }
       uint16_t fg = isSelected ? TFT_WHITE : TFT_BLACK;
       uint16_t bg = isSelected ? TFT_BLACK : TFT_WHITE;
-      drawSystemTextCentered(monthNames[mIdx], bx + mBtnW / 2, by + 12, 28, fg, bg);
+      drawSystemTextCentered(monthNames[mIdx], bx + mBtnW / 2, by + 12, 32, fg, bg);
     }
   }
 
@@ -960,11 +960,11 @@ void drawCalendarYearMonth() {
 
   // 確定 button (dark)
   M5.Display.fillRoundRect(okX, bottomY, bbW, bbH, 8, TFT_BLACK);
-  drawSystemTextCentered("確定", okX + bbW / 2, bottomY + 12, 24, TFT_WHITE, TFT_BLACK);
+  drawSystemTextCentered("確定", okX + bbW / 2, bottomY + 10, 28, TFT_WHITE, TFT_BLACK);
 
   // 取消 button (outline)
   M5.Display.drawRoundRect(cancelX, bottomY, bbW, bbH, 8, TFT_BLACK);
-  drawSystemTextCentered("取消", cancelX + bbW / 2, bottomY + 12, 24);
+  drawSystemTextCentered("取消", cancelX + bbW / 2, bottomY + 10, 28);
 
   M5.Display.endWrite();
   M5.Display.display();
@@ -1007,7 +1007,7 @@ void drawCalendarPicker() {
   int headerY = 75;
   for (int i = 0; i < 7; i++) {
     uint16_t color = (i == 0) ? EPD_DARK_GRAY : TFT_BLACK;  // Sunday in dark gray
-    drawSystemTextCentered(headers[i], cellW / 2 + i * cellW, headerY, 28);
+    drawSystemTextCentered(headers[i], cellW / 2 + i * cellW, headerY, 32);
   }
   
   // Calendar grid
@@ -1015,8 +1015,8 @@ void drawCalendarPicker() {
   int firstDow = dayOfWeek(pickerYear, pickerMonth, 1);
   bool isGregorianCutover = (pickerYear == 1582 && pickerMonth == 10);
   
-  int cellH = 110;  // Height per row
-  int startY = 115;
+  int cellH = 115;  // Height per row
+  int startY = 120;
   int row = 0, col = firstDow;
   
   // Get today's date for highlighting
@@ -1052,7 +1052,7 @@ void drawCalendarPicker() {
     snprintf(dayStr, sizeof(dayStr), "%d", d);
     uint16_t dayColor = (isSelected || isToday) ? TFT_WHITE : (col == 0 ? EPD_DARK_GRAY : TFT_BLACK);
     uint16_t dayBg = (isSelected || isToday) ? TFT_BLACK : TFT_WHITE;
-    drawSystemTextCentered(dayStr, cx, cy, 32, dayColor, dayBg);
+    drawSystemTextCentered(dayStr, cx, cy, 36, dayColor, dayBg);
     
     // Lunar day below (show festival name if available) — only when lunar data is valid
     if (hasLunarData(pickerYear, pickerMonth, d)) {
@@ -1066,20 +1066,20 @@ void drawCalendarPicker() {
       } else {
         lunarStr = lunarDayName(ld.day);
       }
-      drawSystemTextCentered(lunarStr, cx, cy + 38, 18, dayColor, dayBg);
+      drawSystemTextCentered(lunarStr, cx, cy + 42, 22, dayColor, dayBg);
       
       // 朔/望 markers
       if (ld.day == 1) {
-        drawSystemTextCentered("朔", cx, cy + 60, 16, (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY, dayBg);
+        drawSystemTextCentered("朔", cx, cy + 68, 20, (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY, dayBg);
       } else if (ld.day == 15) {
-        drawSystemTextCentered("望", cx, cy + 60, 16, (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY, dayBg);
+        drawSystemTextCentered("望", cx, cy + 68, 20, (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY, dayBg);
       }
     }
     
     // Solar term check (works for any year)
     const char* st = getSolarTerm(pickerYear, pickerMonth, d);
     if (st) {
-      drawSystemTextCentered(st, cx, cy + 60, 16, (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY, dayBg);
+      drawSystemTextCentered(st, cx, cy + 68, 20, (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY, dayBg);
     }
     
     col++;
@@ -1089,7 +1089,7 @@ void drawCalendarPicker() {
   // "今天" (Today) button
   int todayBtnX = 200, todayBtnY = 900, todayBtnW = 100, todayBtnH = 44;
   M5.Display.drawRoundRect(todayBtnX, todayBtnY, todayBtnW, todayBtnH, 6, TFT_BLACK);
-  drawSystemTextCentered("今天", todayBtnX + todayBtnW/2, todayBtnY + 8, 24);
+  drawSystemTextCentered("今天", todayBtnX + todayBtnW/2, todayBtnY + 8, 28);
   
   M5.Display.endWrite();
   M5.Display.display();
@@ -1221,9 +1221,27 @@ void drawCalendar() {
     }
   }
   
-  // Right side: Solar term only if today IS the exact solar term date
-  if (solarTerm) {
-    drawSystemText(solarTerm, W - 90, 120, 34, EPD_DARK_GRAY);
+  // Right side: Solar term + festivals — only for 1900+
+  {
+    int rightX = W - 150;  // Right column x position
+    int rightY = 92;
+    
+    // Solar term (if today is the exact date)
+    if (solarTerm) {
+      drawSystemText(solarTerm, rightX, rightY, 34, EPD_DARK_GRAY);
+      rightY += 42;
+    }
+    
+    // All festivals (民俗/道教/佛教) next to big day
+    if (hasLunar) {
+      const char* festNames[4];
+      uint8_t festTypes[4];
+      int festCount = lookupFestivals(lunar.month, lunar.day, lunar.year, festNames, festTypes, 4);
+      for (int i = 0; i < festCount; i++) {
+        drawSystemText(festNames[i], rightX, rightY, 28);
+        rightY += 36;
+      }
+    }
   }
   
   // ===== Horizontal divider =====  

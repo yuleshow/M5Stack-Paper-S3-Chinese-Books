@@ -392,11 +392,31 @@ void loadShoppingList() {
   loadCheckedItems();
 }
 
+// Helper: measure vertical height of an ASCII run split by words
+// Font/textSize must be set on M5.Display before calling
+static const int WORD_GAP = 8;  // Vertical gap between words to show space
+static int measureAsciiRunHeight(const String& run) {
+  int h = 0;
+  int p = 0;
+  int wordCount = 0;
+  while (p < (int)run.length()) {
+    while (p < (int)run.length() && run.charAt(p) == ' ') p++;
+    if (p >= (int)run.length()) break;
+    int e = p;
+    while (e < (int)run.length() && run.charAt(e) != ' ') e++;
+    if (wordCount > 0) h += WORD_GAP;
+    h += M5.Display.textWidth(run.substring(p, e)) + 4;
+    wordCount++;
+    p = e;
+  }
+  return h;
+}
+
 // Returns the final Y position after drawing
 int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
   int y = startY;
   M5.Display.setFont(&fonts::efontTW_24);
-  M5.Display.setTextSize(1);
+  M5.Display.setTextSize(1.5);
   
   for (int j = 0; j < text.length(); ) {
     unsigned char c = text.charAt(j);
@@ -412,33 +432,42 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
       run.trim();
       if (run.length() == 0) continue;
       
-      // Measure the run width to create a properly-sized sprite
+      // Split run into words and render each word as a separate sprite
       M5.Display.setFont(&fonts::efontTW_24);
-      M5.Display.setTextSize(1);
-      int textW = M5.Display.textWidth(run);
+      M5.Display.setTextSize(1.5);
       int textH = charSpacing;
       
-      // Create sprite, render horizontal text, rotate 90° as a unit
-      LGFX_Sprite sprite(&M5.Display);
-      if (!sprite.createSprite(textW + 4, textH)) {
-        y += textH;  // Skip but advance position
-        continue;
+      int wp = 0;
+      int wordIdx = 0;
+      while (wp < (int)run.length()) {
+        while (wp < (int)run.length() && run.charAt(wp) == ' ') wp++;
+        if (wp >= (int)run.length()) break;
+        int we = wp;
+        while (we < (int)run.length() && run.charAt(we) != ' ') we++;
+        String word = run.substring(wp, we);
+        wp = we;
+        
+        if (wordIdx > 0) y += WORD_GAP;  // Space gap between words
+        int textW = M5.Display.textWidth(word);
+        int rotatedH = textW + 4;
+        
+        LGFX_Sprite sprite(&M5.Display);
+        if (!sprite.createSprite(textW + 4, textH)) {
+          y += rotatedH;
+          wordIdx++;
+          continue;
+        }
+        sprite.fillSprite(TFT_WHITE);
+        sprite.setFont(&fonts::efontTW_24);
+        sprite.setTextColor(TFT_BLACK);
+        sprite.setTextSize(1.5);
+        sprite.setTextDatum(ML_DATUM);
+        sprite.drawString(word, 2, textH / 2);
+        sprite.pushRotateZoom(&M5.Display, x, y + rotatedH / 2, 90, 1.0, 1.0);
+        sprite.deleteSprite();
+        y += rotatedH;
+        wordIdx++;
       }
-      sprite.fillSprite(TFT_WHITE);
-      sprite.setFont(&fonts::efontTW_24);
-      sprite.setTextColor(TFT_BLACK);
-      sprite.setTextSize(1);
-      sprite.setTextDatum(ML_DATUM);
-      sprite.drawString(run, 2, textH / 2);
-      
-      // Rotate 90° clockwise and push to display
-      // After rotation: width becomes height, height becomes width
-      int rotatedW = textH;    // becomes the horizontal extent
-      int rotatedH = textW + 4; // becomes the vertical extent
-      sprite.pushRotateZoom(&M5.Display, x, y + rotatedH / 2, 90, 1.0, 1.0);
-      sprite.deleteSprite();
-      
-      y += rotatedH;
     } else {
       // CJK character - decode and draw upright
       int charStart = j;
@@ -502,12 +531,24 @@ void calculateShoppingPages() {
         }
         currentGroup = shoppingList[i].groupName;
         
-        // Calculate group text height
+        // Calculate group text height: measure ASCII runs (split by words), CJK=56px each
         int groupTextHeight = 0;
+        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setTextSize(1.5);
         for (int j = 0; j < currentGroup.length(); ) {
           unsigned char c = currentGroup.charAt(j);
-          j += utf8CharLen(c);
-          groupTextHeight += (c < 0x80) ? 30 : 56;
+          if (c < 0x80) {
+            int runStart = j;
+            while (j < currentGroup.length() && (unsigned char)currentGroup.charAt(j) < 0x80) j++;
+            String run = currentGroup.substring(runStart, j);
+            run.trim();
+            if (run.length() > 0) {
+              groupTextHeight += measureAsciiRunHeight(run);
+            }
+          } else {
+            j += utf8CharLen(c);
+            groupTextHeight += 56;
+          }
         }
         
         int bgWidth = 56;
@@ -519,11 +560,24 @@ void calculateShoppingPages() {
       // Calculate item height
       String item = shoppingList[i].itemName;
       if (item.length() > 0) {
-        int itemHeight = 28 + 5;  // checkbox + gap
+        int itemHeight = 28 + 10;  // checkbox + gap
+        // Estimate height: measure ASCII runs (split by words), CJK=56px each
+        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setTextSize(1.5);
         for (int j = 0; j < item.length(); ) {
           unsigned char c = item.charAt(j);
-          j += utf8CharLen(c);
-          itemHeight += (c < 0x80) ? 30 : 56;
+          if (c < 0x80) {
+            int runStart = j;
+            while (j < item.length() && (unsigned char)item.charAt(j) < 0x80) j++;
+            String run = item.substring(runStart, j);
+            run.trim();
+            if (run.length() > 0) {
+              itemHeight += measureAsciiRunHeight(run);
+            }
+          } else {
+            j += utf8CharLen(c);
+            itemHeight += 56;
+          }
         }
         itemHeight += 10;
         
@@ -536,17 +590,35 @@ void calculateShoppingPages() {
         if (columnX < (leftMargin + 40)) break;
         
         // Simulate rendering: track Y for text that might wrap
-        int y = currentY + 28 + 5;  // after checkbox
+        int y = currentY + 28 + 10;  // after checkbox
         for (int j = 0; j < item.length(); ) {
           unsigned char c = item.charAt(j);
-          int charSpacing = (c < 0x80) ? 30 : 56;
-          if (y + charSpacing > maxY - 60) {
-            columnX -= columnSpacing;
-            if (columnX < (leftMargin + 40)) break;
-            y = startY;
+          if (c < 0x80) {
+            // Estimate ASCII run height
+            int runStart = j;
+            while (j < item.length() && (unsigned char)item.charAt(j) < 0x80) j++;
+            String run = item.substring(runStart, j);
+            run.trim();
+            if (run.length() == 0) continue;
+            M5.Display.setFont(&fonts::efontTW_24);
+            M5.Display.setTextSize(1.5);
+            int runHeight = M5.Display.textWidth(run) + 4;
+            if (y + runHeight > maxY - 60) {
+              columnX -= columnSpacing;
+              if (columnX < (leftMargin + 40)) break;
+              y = startY;
+            }
+            y += runHeight;
+          } else {
+            int charSpacing = 56;
+            if (y + charSpacing > maxY - 60) {
+              columnX -= columnSpacing;
+              if (columnX < (leftMargin + 40)) break;
+              y = startY;
+            }
+            j += utf8CharLen(c);
+            y += charSpacing;
           }
-          j += utf8CharLen(c);
-          y += charSpacing;
         }
         if (columnX < (leftMargin + 40)) break;
         
@@ -664,12 +736,25 @@ void drawShoppingList() {
       groupStartX = columnX;  // Mark start of new group
       
       // Group name already contains "G#." prefix from loadShoppingList
-      // Calculate group text height accurately (ASCII=30px, Chinese=56px)
+      // Calculate group text height: measure ASCII runs (split by words), CJK=56px each
       int groupTextHeight = 0;
+      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setTextSize(1.5);
       for (int j = 0; j < currentGroup.length(); ) {
         unsigned char c = currentGroup.charAt(j);
-        j += utf8CharLen(c);
-        groupTextHeight += (c < 0x80) ? 30 : 56;
+        if (c < 0x80) {
+          // Collect ASCII run and measure word-split height
+          int runStart = j;
+          while (j < currentGroup.length() && (unsigned char)currentGroup.charAt(j) < 0x80) j++;
+          String run = currentGroup.substring(runStart, j);
+          run.trim();
+          if (run.length() > 0) {
+            groupTextHeight += measureAsciiRunHeight(run);
+          }
+        } else {
+          j += utf8CharLen(c);
+          groupTextHeight += 56;
+        }
       }
       
       // Check if we have enough space to draw this group
@@ -697,28 +782,56 @@ bgWidth, groupTextHeight + bgPadding * 2,
       for (int j = 0; j < currentGroup.length(); ) {
         unsigned char c = currentGroup.charAt(j);
         bool isASCII = (c < 0x80);
-        int charStart = j;
-        uint32_t unicode = utf8Decode(currentGroup, j);
-        String ch = currentGroup.substring(charStart, j);
-        applyVerticalPunct(ch, unicode);
         
         if (isASCII) {
-          // Rotate ASCII 90° clockwise using sprite (white on grey)
-          LGFX_Sprite sprite(&M5.Display);
-          if (!sprite.createSprite(48, 48)) {
-            y += 30;  // Skip but advance position
-            continue;
+          // Collect consecutive ASCII characters into one run
+          int runStart = j;
+          while (j < currentGroup.length() && (unsigned char)currentGroup.charAt(j) < 0x80) j++;
+          String run = currentGroup.substring(runStart, j);
+          run.trim();
+          if (run.length() == 0) continue;
+          
+          // Split run into words and render each as a separate sprite (white on grey)
+          M5.Display.setFont(&fonts::efontTW_24);
+          M5.Display.setTextSize(1.5);
+          int textH = 45;
+          
+          int wp = 0;
+          int wordIdx = 0;
+          while (wp < (int)run.length()) {
+            while (wp < (int)run.length() && run.charAt(wp) == ' ') wp++;
+            if (wp >= (int)run.length()) break;
+            int we = wp;
+            while (we < (int)run.length() && run.charAt(we) != ' ') we++;
+            String word = run.substring(wp, we);
+            wp = we;
+            
+            if (wordIdx > 0) y += WORD_GAP;  // Space gap between words
+            int textW = M5.Display.textWidth(word);
+            int rotatedH = textW + 4;
+            
+            LGFX_Sprite sprite(&M5.Display);
+            if (!sprite.createSprite(textW + 4, textH)) {
+              y += rotatedH;
+              wordIdx++;
+              continue;
+            }
+            sprite.fillSprite(0x5AEB);  // Match grey background
+            sprite.setFont(&fonts::efontTW_24);
+            sprite.setTextColor(TFT_WHITE);
+            sprite.setTextSize(1.5);
+            sprite.setTextDatum(ML_DATUM);
+            sprite.drawString(word, 2, textH / 2);
+            sprite.pushRotateZoom(&M5.Display, columnX, y + rotatedH / 2, 90, 1.0, 1.0);
+            sprite.deleteSprite();
+            y += rotatedH;
+            wordIdx++;
           }
-          sprite.fillSprite(0x5AEB);  // Match grey background
-          sprite.setFont(&fonts::efontTW_24);
-          sprite.setTextColor(TFT_WHITE);
-          sprite.setTextSize(1.8);  // Larger text
-          sprite.drawString(ch, 5, 5);
-          sprite.pushRotateZoom(&M5.Display, columnX, y + 14, 90, 1.0, 1.0);
-          sprite.deleteSprite();
-          y += 30;  // ASCII spacing
         } else {
-          // Chinese - draw upright
+          int charStart = j;
+          uint32_t unicode = utf8Decode(currentGroup, j);
+          String ch = currentGroup.substring(charStart, j);
+          applyVerticalPunct(ch, unicode);
           if (ofrFontLoaded) {
             ofr.setFontSize(fontSizePt);
             ofr.setFontColor(TFT_WHITE, 0x5AEB);
@@ -745,12 +858,24 @@ bgWidth, groupTextHeight + bgPadding * 2,
     String item = shoppingList[i].itemName;
     
     if (item.length() > 0) {
-      // Calculate item height accurately (ASCII=30px, Chinese=56px)
-      int itemHeight = 28 + 5;  // checkbox + gap
+      // Calculate item height: measure ASCII runs (split by words), CJK=56px each
+      int itemHeight = 28 + 10;  // checkbox + gap
+      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setTextSize(1.5);
       for (int j = 0; j < item.length(); ) {
         unsigned char c = item.charAt(j);
-        j += utf8CharLen(c);
-        itemHeight += (c < 0x80) ? 30 : 56;
+        if (c < 0x80) {
+          int runStart = j;
+          while (j < item.length() && (unsigned char)item.charAt(j) < 0x80) j++;
+          String run = item.substring(runStart, j);
+          run.trim();
+          if (run.length() > 0) {
+            itemHeight += measureAsciiRunHeight(run);
+          }
+        } else {
+          j += utf8CharLen(c);
+          itemHeight += 56;
+        }
       }
       itemHeight += 10;  // Bottom spacing
       
@@ -797,8 +922,8 @@ bgWidth, groupTextHeight + bgPadding * 2,
         shoppingCheckboxCount++;
       }
       
-      // Draw item vertically below checkbox
-      int y = currentY + checkboxSize + 5;
+      // Draw item vertically below checkbox (25px gap to clear rotated ASCII sprites)
+      int y = currentY + checkboxSize + 10;
       int itemBottomY = y;  // Track maximum Y extent in the checkbox's column
       
       if (!g_binFont.loaded) {
@@ -806,52 +931,78 @@ bgWidth, groupTextHeight + bgPadding * 2,
         M5.Display.setTextSize(1.0);
       }
       
-      // Use sprite rotation for ASCII, normal rendering for Chinese
+      // Render item text vertically: collect ASCII runs, draw CJK upright
       for (int j = 0; j < item.length(); ) {
         unsigned char c = item.charAt(j);
-        String ch = "";
         bool isASCII = (c < 0x80);
-        int charSpacing = isASCII ? 30 : 56;
-        
-        // Check if next character will exceed bottom margin
-        if (y + charSpacing > maxY - 60) {
-          // Record bottom extent before wrapping to new column
-          if (y > itemBottomY) itemBottomY = y;
-          
-          // Move to next column and continue drawing this item
-          columnX -= columnSpacing;
-          
-          // Check if we've run out of horizontal space
-          if (columnX < (leftMargin + 40)) {
-            break;  // Stop rendering this item, no more space
-          }
-          
-          // Reset Y to top of new column (no checkbox, just text continues)
-          y = startY;
-        }
-        
-        int charStart = j;
-        uint32_t unicode = utf8Decode(item, j);
-        ch = item.substring(charStart, j);
-        applyVerticalPunct(ch, unicode);
         
         if (isASCII) {
-          // Rotate ASCII 90° clockwise using sprite (center at columnX)
-          LGFX_Sprite sprite(&M5.Display);
-          if (!sprite.createSprite(48, 48)) {
-            y += 30;  // Skip but advance position
-            continue;
+          // Collect consecutive ASCII characters into one run
+          int runStart = j;
+          while (j < item.length() && (unsigned char)item.charAt(j) < 0x80) j++;
+          String run = item.substring(runStart, j);
+          run.trim();
+          if (run.length() == 0) continue;
+          
+          // Split run into words and render each as a separate rotated sprite
+          M5.Display.setFont(&fonts::efontTW_24);
+          M5.Display.setTextSize(1.5);
+          int textH = 45;
+          
+          int wp = 0;
+          int wordIdx = 0;
+          while (wp < (int)run.length()) {
+            while (wp < (int)run.length() && run.charAt(wp) == ' ') wp++;
+            if (wp >= (int)run.length()) break;
+            int we = wp;
+            while (we < (int)run.length() && run.charAt(we) != ' ') we++;
+            String word = run.substring(wp, we);
+            wp = we;
+            
+            if (wordIdx > 0) y += WORD_GAP;  // Space gap between words
+            int textW = M5.Display.textWidth(word);
+            int rotatedH = textW + 4;
+            
+            // Check if rotated word fits in current column
+            if (y + rotatedH > maxY - 60) {
+              if (y > itemBottomY) itemBottomY = y;
+              columnX -= columnSpacing;
+              if (columnX < (leftMargin + 40)) break;
+              y = startY;
+            }
+            
+            LGFX_Sprite sprite(&M5.Display);
+            if (!sprite.createSprite(textW + 4, textH)) {
+              y += rotatedH;
+              wordIdx++;
+              continue;
+            }
+            sprite.fillSprite(TFT_WHITE);
+            sprite.setFont(&fonts::efontTW_24);
+            sprite.setTextColor(TFT_BLACK);
+            sprite.setTextSize(1.5);
+            sprite.setTextDatum(ML_DATUM);
+            sprite.drawString(word, 2, textH / 2);
+            sprite.pushRotateZoom(&M5.Display, columnX, y + rotatedH / 2, 90, 1.0, 1.0);
+            sprite.deleteSprite();
+            y += rotatedH;
+            wordIdx++;
           }
-          sprite.fillSprite(TFT_WHITE);
-          sprite.setFont(&fonts::efontTW_24);
-          sprite.setTextColor(TFT_BLACK);
-          sprite.setTextSize(1.8);  // Larger text size
-          sprite.drawString(ch, 5, 5);
-          sprite.pushRotateZoom(&M5.Display, columnX, y + 14, 90, 1.0, 1.0);
-          sprite.deleteSprite();
-          y += 30;  // ASCII spacing
         } else {
-          // Chinese - draw upright
+          int charSpacing = 56;
+          
+          // Check if next character will exceed bottom margin
+          if (y + charSpacing > maxY - 60) {
+            if (y > itemBottomY) itemBottomY = y;
+            columnX -= columnSpacing;
+            if (columnX < (leftMargin + 40)) break;
+            y = startY;
+          }
+          
+          int charStart = j;
+          uint32_t unicode = utf8Decode(item, j);
+          String ch = item.substring(charStart, j);
+          applyVerticalPunct(ch, unicode);
           if (ofrFontLoaded) {
             ofr.setFontSize(fontSizePt);
             ofr.setFontColor(TFT_BLACK, TFT_WHITE);

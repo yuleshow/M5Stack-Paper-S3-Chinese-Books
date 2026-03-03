@@ -13,6 +13,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include "ble_unlock.h"
 #include <HTTPClient.h>
 #include <USB.h>
 #include "USBMSC.h"

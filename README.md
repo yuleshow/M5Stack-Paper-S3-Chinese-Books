@@ -62,7 +62,15 @@ A complete traditional Chinese almanac with:
 - Browse and display JPG wallpapers from SD card
 - Full-screen e-ink display
 
-### 💤 Sleep Mode with Daily Mottos
+### 🔐 BLE Proximity Unlock
+- Auto-lock/unlock your Mac based on BLE proximity
+- Paper S3 acts as a passive BLE beacon (no pairing required)
+- macOS companion script monitors RSSI signal strength
+- Password stored securely in macOS Keychain (never in config files)
+- Configurable lock/unlock RSSI thresholds and timing
+- Installable as a macOS LaunchAgent for auto-start
+
+### �💤 Sleep Mode with Daily Mottos
 - Deep sleep with touch wake-up (GPIO 21)
 - Displays a random motto from `/mottos.txt` (10 built-in defaults if file missing)
 - Preserves state across deep sleep via RTC-persistent variables
@@ -129,6 +137,55 @@ esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x10000 M5Paper-S
 - [OpenFontRender](https://github.com/takkaO/OpenFontRender)
 - `espressif32@6.5.0` (Arduino framework)
 
+### BLE Proximity Unlock (macOS companion)
+
+The Paper S3 broadcasts as a BLE beacon. A macOS companion script monitors the signal and automatically locks/unlocks your Mac based on proximity.
+
+**1. Enable BLE on the device** — add to `config.ini` on SD card:
+
+```ini
+[unlock]
+enabled=true
+device_name=M5Paper-BLE
+```
+
+No pairing required — the device just needs to be advertising.
+
+**2. Install and run the companion script:**
+
+```bash
+pip install bleak
+python3 scripts/ble_unlock.py --password 'YOUR_MAC_PASSWORD'
+```
+
+The password is saved to **macOS Keychain** (not stored in any file). Subsequent runs don't need `--password`:
+
+```bash
+python3 scripts/ble_unlock.py
+```
+
+**3. (Optional) Install as a background service:**
+
+```bash
+python3 scripts/ble_unlock.py --install-service
+```
+
+This creates a macOS LaunchAgent that auto-starts on login. Password is read from Keychain.
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--password` | — | Mac login password (saved to Keychain) |
+| `--name` | `M5Paper-BLE` | BLE device name to monitor |
+| `--lock-threshold` | `-85` | RSSI below this triggers lock |
+| `--unlock-threshold` | `-70` | RSSI above this triggers unlock |
+| `--lock-delay` | `15` | Seconds of absence before locking |
+| `--scan-interval` | `3` | Seconds between BLE scans |
+| `--debug` | — | Enable verbose logging |
+
+See `python3 scripts/ble_unlock.py --help` for all options.
+
 ## SD Card Setup
 
 Place the following files on the SD card:
@@ -161,7 +218,7 @@ gmtoffset=-28800
 
 [weather]
 apikey=YOUR_OPENWEATHERMAP_API_KEY
-city=Pasadena,CA,US
+city=YOUR_CITY,YOUR_COUNTRY
 units=metric
 ```
 

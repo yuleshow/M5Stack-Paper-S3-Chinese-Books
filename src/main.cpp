@@ -5,6 +5,7 @@
 #include "s3cover_jpg.h"
 #include "sleeping_jpg.h"
 #include <esp_sleep.h>
+#include <driver/gpio.h>
 
 SET_LOOP_TASK_STACK_SIZE(32 * 1024);
 
@@ -69,9 +70,10 @@ void enterDeepSleep() {
   M5.Display.display();
   delay(2000);
   
-  // Configure touch wake-up
-  // GT911 touch INT pin on M5Paper S3 - active LOW pulse on touch
-  // Use ext0 wake on LOW level; ensure pin has pull-up
+  // Configure wake-up sources
+  // 1. Touch wake: GT911 INT pin on GPIO 21 - goes LOW on touch
+  // GT911 may power down during deep sleep, making touch wake unreliable.
+  // We enable it as a best-effort source.
   pinMode(GPIO_NUM_21, INPUT_PULLUP);
   delay(50);  // Let pin settle with pull-up
   
@@ -82,12 +84,29 @@ void enterDeepSleep() {
     pinWait++;
   }
   
-  if (digitalRead(GPIO_NUM_21) == LOW) {
-    Serial.println("WARNING: Touch INT pin stuck LOW - using timer wakeup as fallback");
-    esp_sleep_enable_timer_wakeup(30 * 60 * 1000000ULL);  // 30 min fallback
+  if (digitalRead(GPIO_NUM_21) != LOW) {
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_21, 0);  // Wake on LOW (touch)
+    Serial.println("Touch wake enabled (GPIO 21)");
+  } else {
+    Serial.println("WARNING: Touch INT pin stuck LOW - touch wake disabled");
   }
   
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_21, 0);  // Wake on LOW (touch)
+  // 2. USB charge wake: GPIO 4 is the charge status pin on M5Paper S3.
+  // It goes LOW when USB is connected (charging). Use ext1 to wake on LOW.
+  gpio_pullup_en(GPIO_NUM_4);
+  gpio_pulldown_dis(GPIO_NUM_4);
+  if (digitalRead(GPIO_NUM_4) != LOW) {
+    esp_sleep_enable_ext1_wakeup(1ULL << GPIO_NUM_4, ESP_EXT1_WAKEUP_ALL_LOW);
+    Serial.println("USB charge wake enabled (GPIO 4)");
+  } else {
+    Serial.println("WARNING: Charge pin already LOW - USB wake skipped");
+  }
+  
+  // 3. Timer wake: always enabled as a reliable fallback
+  // Wakes every 5 minutes to check for touch/activity, refresh motto, etc.
+  // The device will re-enter sleep immediately if no interaction occurs.
+  esp_sleep_enable_timer_wakeup(5 * 60 * 1000000ULL);  // 5 minutes
+  Serial.println("Timer wake enabled (5 min)");
   
   Serial.println("Entering deep sleep now");
   Serial.flush();
@@ -108,8 +127,38 @@ void setup() {
   
   if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
     Serial.println("Touch wake-up - resuming");
+  } else if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
+    Serial.println("USB cable wake-up (charging detected) - resuming");
   } else if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
-    Serial.println("Timer wake-up - resuming");
+    Serial.println("Timer wake-up - checking for interaction...");
+    
+    // Timer wake: briefly init M5 to check touch, then go back to sleep
+    // unless someone is actively touching the screen
+    auto cfgTimer = M5.config();
+    cfgTimer.clear_display = false;
+    M5.begin(cfgTimer);
+    delay(200);
+    M5.update();
+    
+    auto touch = M5.Touch.getDetail();
+    if (touch.isPressed()) {
+      Serial.println("Touch detected during timer wake - resuming fully");
+      // Fall through to normal boot
+    } else {
+      // No touch — check if external power was just connected
+      bool usbConnected = isExternalPowerConnected();
+      if (usbConnected) {
+        Serial.println("USB power detected during timer wake - resuming fully");
+        // Fall through to normal boot
+      } else {
+        Serial.println("No interaction - refreshing sleep screen and going back to sleep");
+        // Optionally refresh the motto on the sleep screen
+        // (keeps the display fresh and shows a new motto)
+        enterDeepSleep();
+        // enterDeepSleep won't return (unless USB is connected)
+        // If it returned, USB was just plugged in — fall through
+      }
+    }
   }
   
   auto cfg = M5.config();
@@ -132,10 +181,6 @@ void setup() {
     
     // Status bar: time (top-left) + battery (top-right)
     drawStatusBar();
-    
-    // Navigation icons: prev/next (bottom-left) + return (bottom-right)
-    drawNavBar(false, false);  // Show icons but greyed (no pages yet)
-    drawReturnButton();
     
     // Loading text centered
     drawSystemTextCentered("載入中...", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 36);
@@ -316,6 +361,12 @@ void setup() {
   Serial.printf("Config loaded - WiFi configured: %s\n", wifiConfig.configured ? "YES" : "NO");
   Serial.println("Timezone: " + timeConfig.timezone);
   
+  // BLE Proximity Unlock — deferred start (not at boot to avoid memory issues)
+  // Config is loaded but init is deferred to after display setup
+  if (bleUnlockConfig.enabled && bleUnlockConfig.password.length() > 0) {
+    Serial.println("BLE Unlock: configured, will start after welcome screen");
+  }
+  
   // Set timezone BEFORE reading RTC so mktime/getLocalTime work correctly
   configTzTime(timeConfig.timezone.c_str(), ntpServer);
   Serial.println("✓ Timezone configured: " + timeConfig.timezone);
@@ -393,6 +444,13 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   // Show welcome screen
   Serial.println("Drawing welcome screen...");
   drawWelcome();
+  
+  // Start BLE Proximity Unlock AFTER everything else is initialized
+  if (bleUnlockConfig.enabled && bleUnlockConfig.password.length() > 0) {
+    Serial.println("\n=== Starting BLE Proximity Unlock ===");
+    delay(500);  // Let system stabilize
+    bleUnlockInit();
+  }
   
   lastActivityTime = millis();
   Serial.println("Setup complete!");
@@ -472,28 +530,6 @@ void loop() {
       if (currentMode == MODE_SETUP && showingKeyboard) {
         drawWiFiSetup();  // Refresh screen to show entered password
       }
-    }
-  }
-  
-  // Power button - mode switching
-  if (M5.BtnPWR.wasPressed()) {
-    lastActivityTime = millis();
-    Serial.println("Power button pressed");
-    
-    if (currentMode == MODE_DASHBOARD || currentMode == MODE_BOOK_LIST || 
-               currentMode == MODE_READING || currentMode == MODE_TODO_LIST ||
-               currentMode == MODE_SHOPPING_LIST || currentMode == MODE_SETUP || 
-               currentMode == MODE_CLOCK) {
-      // From any mode, power button returns to dashboard
-      currentMode = MODE_DASHBOARD;
-      showingKeyboard = false;  // Reset keyboard state
-      showingTimezone = false;  // Reset timezone state
-      passwordInput = "";
-      drawDashboard();
-    } else if (currentMode == MODE_WELCOME) {
-      // From welcome, go to dashboard
-      currentMode = MODE_DASHBOARD;
-      drawDashboard();
     }
   }
   

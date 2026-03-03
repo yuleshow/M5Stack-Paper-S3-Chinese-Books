@@ -69,6 +69,14 @@ void loadWiFiConfig() {
         } else if (key == "units") {
           weatherConfig.units = value;
         }
+      } else if (section == "unlock") {
+        if (key == "enabled") {
+          bleUnlockConfig.enabled = (value == "true" || value == "1" || value == "yes");
+        } else if (key == "password") {
+          bleUnlockConfig.password = value;
+        } else if (key == "device_name") {
+          bleUnlockConfig.deviceName = value;
+        }
       }
     }
   }
@@ -85,6 +93,12 @@ void loadWiFiConfig() {
       weatherConfig.city.c_str(), weatherConfig.units.c_str());
   }
   Serial.println("Timezone: " + timeConfig.timezone);
+  
+  // BLE Unlock config
+  if (bleUnlockConfig.enabled && bleUnlockConfig.password.length() > 0) {
+    Serial.printf("BLE Unlock config loaded: device=%s\n",
+      bleUnlockConfig.deviceName.c_str());
+  }
   
   for (int i = 0; i < timezoneCount; i++) {
     if (timeConfig.timezone == String(timezones[i].tzString)) {
