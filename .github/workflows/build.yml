@@ -26,17 +26,19 @@ jobs:
       - name: Build firmware
         run: pio run
 
-      - name: Create merged firmware (bootloader + partitions + app)
+      - name: Create merged firmware (8MB + 16MB)
         run: |
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
-          esptool.py --chip esp32s3 merge_bin \
-            --flash_mode qio \
-            --flash_size 16MB \
-            -o .pio/build/m5stack_paper/merged-firmware.bin \
-            0x0    .pio/build/m5stack_paper/bootloader.bin \
-            0x8000 .pio/build/m5stack_paper/partitions.bin \
-            0xe000 "$BOOT_APP0" \
-            0x10000 .pio/build/m5stack_paper/firmware.bin
+          for SIZE in 8MB 16MB; do
+            esptool.py --chip esp32s3 merge_bin \
+              --flash_mode qio \
+              --flash_size $SIZE \
+              -o .pio/build/m5stack_paper/merged-firmware-${SIZE}.bin \
+              0x0    .pio/build/m5stack_paper/bootloader.bin \
+              0x8000 .pio/build/m5stack_paper/partitions.bin \
+              0xe000 "$BOOT_APP0" \
+              0x10000 .pio/build/m5stack_paper/firmware.bin
+          done
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
@@ -44,7 +46,8 @@ jobs:
           name: firmware
           path: |
             .pio/build/m5stack_paper/firmware.bin
-            .pio/build/m5stack_paper/merged-firmware.bin
+            .pio/build/m5stack_paper/merged-firmware-8MB.bin
+            .pio/build/m5stack_paper/merged-firmware-16MB.bin
 
   release:
     needs: build
@@ -68,23 +71,26 @@ jobs:
       - name: Build firmware
         run: pio run
 
-      - name: Create merged firmware (bootloader + partitions + app)
+      - name: Create merged firmware (8MB + 16MB)
         run: |
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
-          esptool.py --chip esp32s3 merge_bin \
-            --flash_mode qio \
-            --flash_size 16MB \
-            -o .pio/build/m5stack_paper/merged-firmware.bin \
-            0x0    .pio/build/m5stack_paper/bootloader.bin \
-            0x8000 .pio/build/m5stack_paper/partitions.bin \
-            0xe000 "$BOOT_APP0" \
-            0x10000 .pio/build/m5stack_paper/firmware.bin
+          for SIZE in 8MB 16MB; do
+            esptool.py --chip esp32s3 merge_bin \
+              --flash_mode qio \
+              --flash_size $SIZE \
+              -o .pio/build/m5stack_paper/merged-firmware-${SIZE}.bin \
+              0x0    .pio/build/m5stack_paper/bootloader.bin \
+              0x8000 .pio/build/m5stack_paper/partitions.bin \
+              0xe000 "$BOOT_APP0" \
+              0x10000 .pio/build/m5stack_paper/firmware.bin
+          done
 
       - name: Rename firmware with version
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           cp .pio/build/m5stack_paper/firmware.bin "M5Paper-S3-Chinese-Books-${VERSION}-app-only.bin"
-          cp .pio/build/m5stack_paper/merged-firmware.bin "M5Paper-S3-Chinese-Books-${VERSION}-merged.bin"
+          cp .pio/build/m5stack_paper/merged-firmware-8MB.bin "M5Paper-S3-Chinese-Books-${VERSION}-merged-8MB.bin"
+          cp .pio/build/m5stack_paper/merged-firmware-16MB.bin "M5Paper-S3-Chinese-Books-${VERSION}-merged-16MB.bin"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
