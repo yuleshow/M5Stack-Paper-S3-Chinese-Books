@@ -33,6 +33,7 @@ jobs:
             esptool.py --chip esp32s3 merge_bin \
               --flash_mode qio \
               --flash_size $SIZE \
+              --fill-flash-size $SIZE \
               -o .pio/build/m5stack_paper/merged-firmware-${SIZE}.bin \
               0x0    .pio/build/m5stack_paper/bootloader.bin \
               0x8000 .pio/build/m5stack_paper/partitions.bin \
@@ -78,6 +79,7 @@ jobs:
             esptool.py --chip esp32s3 merge_bin \
               --flash_mode qio \
               --flash_size $SIZE \
+              --fill-flash-size $SIZE \
               -o .pio/build/m5stack_paper/merged-firmware-${SIZE}.bin \
               0x0    .pio/build/m5stack_paper/bootloader.bin \
               0x8000 .pio/build/m5stack_paper/partitions.bin \
