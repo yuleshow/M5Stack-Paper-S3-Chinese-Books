@@ -387,6 +387,7 @@ extern int epubLoadedEndChapter;     // Last loaded chapter + 1 (exclusive)
 extern size_t epubLoadedBaseOffset;  // Virtual text offset where buffer starts
 extern String epubBasePath;          // OPF base path for resolving references
 extern size_t epubEstimatedTotalBytes; // Estimated total text across all chapters
+extern bool epubIsImageBased;         // True for manga/image-only EPUBs (1 chapter = 1 page)
 
 // Todo
 static const int MAX_TODO = 50;
@@ -517,7 +518,6 @@ void drawTodoList();
 void drawTodoDatePicker();
 
 // epub_reader
-String htmlToText(const String& html);
 size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
                        char* outBuf, size_t outBufSize,
                        const String& basePath);
@@ -525,6 +525,7 @@ String pathNormalize(const String& path);
 String epubGetTitle(const String& epubPath);
 bool epubLoad(const String& epubPath);
 bool epubLoadChapterRange(int startChapter);
+bool epubLoadSingleChapter(int chapterIndex);
 int epubChapterForOffset(size_t offset);
 void epubCleanup();
 bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH);

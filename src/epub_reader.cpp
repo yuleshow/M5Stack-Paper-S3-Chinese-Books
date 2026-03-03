@@ -6,7 +6,7 @@
 static uint16_t zipU16(const uint8_t* b) { return b[0] | (b[1] << 8); }
 static uint32_t zipU32(const uint8_t* b) { return b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24); }
 
-#define MAX_ZIP_ENTRIES 1000
+#define MAX_ZIP_ENTRIES 3000
 
 // Parse ZIP central directory and return entries
 int zipReadDirectory(File& f, ZipEntry* entries, int maxEntries) {
@@ -316,106 +316,9 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
   }
   return outPos;
 }
-String htmlToText(const String& html) {
-  // Pre-allocate with estimated size
-  String text;
-  text.reserve(html.length() / 2);
-  bool inTag = false;
-  bool inScript = false;   // Skip <script>/<style> content
-  bool lastWasNewline = false;
-  String tagName;
-
-  for (int i = 0; i < (int)html.length(); i++) {
-    char c = html.charAt(i);
-
-    if (c == '<') {
-      inTag = true;
-      tagName = "";
-      continue;
-    }
-    if (c == '>' && inTag) {
-      inTag = false;
-      tagName.toLowerCase();
-      // Check for block elements → insert newline
-      if (tagName.startsWith("script") || tagName.startsWith("style")) {
-        inScript = true;
-      } else if (tagName.startsWith("/script") || tagName.startsWith("/style")) {
-        inScript = false;
-      } else if (!inScript) {
-        if (tagName.startsWith("/p") || tagName.startsWith("/div") ||
-            tagName.startsWith("/h") || tagName.startsWith("br") ||
-            tagName.startsWith("/li") || tagName.startsWith("/tr")) {
-          if (!lastWasNewline) {
-            text += '\n';
-            lastWasNewline = true;
-          }
-        }
-      }
-      continue;
-    }
-    if (inTag) {
-      if (tagName.length() < 20) tagName += c;
-      continue;
-    }
-    if (inScript) continue;
-
-    // Handle HTML entities
-    if (c == '&') {
-      // Look for entity end
-      String entity = "&";
-      int j = i + 1;
-      while (j < (int)html.length() && j - i < 10 && html.charAt(j) != ';') {
-        entity += html.charAt(j);
-        j++;
-      }
-      if (j < (int)html.length() && html.charAt(j) == ';') {
-        entity += ';';
-        i = j; // Skip past entity
-        if (entity == "&amp;") { text += '&'; lastWasNewline = false; }
-        else if (entity == "&lt;") { text += '<'; lastWasNewline = false; }
-        else if (entity == "&gt;") { text += '>'; lastWasNewline = false; }
-        else if (entity == "&quot;") { text += '"'; lastWasNewline = false; }
-        else if (entity == "&apos;") { text += '\''; lastWasNewline = false; }
-        else if (entity == "&nbsp;") { text += ' '; lastWasNewline = false; }
-        else if (entity.startsWith("&#")) {
-          // Numeric entity — decode
-          long code = 0;
-          if (entity.charAt(2) == 'x' || entity.charAt(2) == 'X') {
-            code = strtol(entity.c_str() + 3, nullptr, 16);
-          } else {
-            code = strtol(entity.c_str() + 2, nullptr, 10);
-          }
-          if (code > 0) {
-            utf8Encode((uint32_t)code, text);
-          }
-          lastWasNewline = false;
-        }
-        // Unknown entity — skip
-        continue;
-      }
-    }
-
-    // Normal character
-    if (c == '\n' || c == '\r') {
-      if (!lastWasNewline) {
-        text += '\n';
-        lastWasNewline = true;
-      }
-    } else if (c == ' ' || c == '\t') {
-      // Collapse whitespace
-      if (text.length() > 0 && text.charAt(text.length() - 1) != ' ' && !lastWasNewline) {
-        text += ' ';
-      }
-    } else {
-      text += c;
-      lastWasNewline = false;
-    }
-  }
-  return text;
-}
 
 // Get directory part of a path (e.g., "OEBPS/content.opf" → "OEBPS/")
-String pathDir(const String& path) {
+static String pathDir(const String& path) {
   int lastSlash = path.lastIndexOf('/');
   if (lastSlash >= 0) return path.substring(0, lastSlash + 1);
   return "";
@@ -480,7 +383,7 @@ String epubGetTitle(const String& epubPath) {
     }
   }
   if (opfPath.length() == 0) {
-    for (int i = 0; i < MAX_ZIP_ENTRIES; i++) entries[i].~ZipEntry();
+    for (int i = 0; i < TITLE_MAX_ENTRIES; i++) entries[i].~ZipEntry();
     free(entries); f.close(); return "";
   }
 
@@ -577,7 +480,7 @@ bool epubLoad(const String& epubPath) {
 
   // Parse manifest: <item id="..." href="..." media-type="..."/>
   struct ManifestItem { String id; String href; bool isContent; };
-  const int MAX_MANIFEST = 500;
+  const int MAX_MANIFEST = 3000;
   ManifestItem* manifest = (ManifestItem*)ps_malloc(sizeof(ManifestItem) * MAX_MANIFEST);
   if (!manifest) { epubCleanup(); f.close(); return false; }
   for (int i = 0; i < MAX_MANIFEST; i++) new (&manifest[i]) ManifestItem();
@@ -613,7 +516,7 @@ bool epubLoad(const String& epubPath) {
   Serial.printf("EPUB: Manifest has %d items\n", manifestCount);
 
   // Parse spine: <itemref idref="..."/>
-  const int MAX_SPINE = 500;
+  const int MAX_SPINE = 1500;
   String* spineRefs = (String*)ps_malloc(sizeof(String) * MAX_SPINE);
   if (!spineRefs) {
     for (int i = 0; i < MAX_MANIFEST; i++) manifest[i].~ManifestItem();
@@ -645,9 +548,9 @@ bool epubLoad(const String& epubPath) {
   // Step 3: Build chapter index with estimated text sizes
   epubChapters = (EpubChapterInfo*)ps_malloc(sizeof(EpubChapterInfo) * spineCount);
   if (!epubChapters) {
-    for (int i = 0; i < 200; i++) spineRefs[i].~String();
+    for (int i = 0; i < MAX_SPINE; i++) spineRefs[i].~String();
     free(spineRefs);
-    for (int i = 0; i < 200; i++) manifest[i].~ManifestItem();
+    for (int i = 0; i < MAX_MANIFEST; i++) manifest[i].~ManifestItem();
     free(manifest); epubCleanup(); f.close(); return false;
   }
   epubChapterCount = 0;
@@ -698,6 +601,35 @@ bool epubLoad(const String& epubPath) {
   if (!epubLoadChapterRange(0)) {
     epubCleanup();
     return false;
+  }
+
+  // Step 5: Detect image-based EPUB (manga/comics)
+  // If most chapters have very little text (just image markers), treat as image-based
+  if (epubChapterCount >= 5) {
+    int loadedChapters = 0;
+    int imageOnlyChapters = 0;
+    for (int c = 0; c < epubChapterCount; c++) {
+      // Only count chapters that were actually loaded (actualTextSize > 0)
+      if (epubChapters[c].actualTextSize > 0) {
+        loadedChapters++;
+        // Image-only chapters typically have < 100 bytes (just image marker + minimal text)
+        if (epubChapters[c].actualTextSize < 100) {
+          imageOnlyChapters++;
+        }
+      }
+    }
+    float ratio = (loadedChapters > 0) ? (float)imageOnlyChapters / loadedChapters : 0.0f;
+    if (ratio > 0.7f) {
+      epubIsImageBased = true;
+      Serial.printf("EPUB: Detected as IMAGE-BASED (manga) — %d/%d loaded chapters are image-only (total: %d)\n",
+                    imageOnlyChapters, loadedChapters, epubChapterCount);
+      // Free the large text buffer — we'll load chapters one-at-a-time
+      if (epubFullText) {
+        free(epubFullText);
+        epubFullText = nullptr;
+        epubFullTextLen = 0;
+      }
+    }
   }
 
   return true;
@@ -861,6 +793,68 @@ bool epubLoadChapterRange(int startChapter) {
   return (chaptersLoaded > 0 && epubFullTextLen > 0);
 }
 
+// Load a single chapter for image-based (manga) EPUBs.
+// Extracts the chapter HTML, strips to text/image markers, stores in epubFullText.
+// Returns true on success.
+bool epubLoadSingleChapter(int chapterIndex) {
+  if (!epubChapters || chapterIndex < 0 || chapterIndex >= epubChapterCount) return false;
+  if (epubFilePath.isEmpty() || !epubZipEntries) return false;
+
+  // Free existing buffer
+  if (epubFullText) {
+    free(epubFullText);
+    epubFullText = nullptr;
+    epubFullTextLen = 0;
+  }
+
+  EpubChapterInfo& ch = epubChapters[chapterIndex];
+  ZipEntry& entry = epubZipEntries[ch.zipEntryIndex];
+
+  Serial.printf("EPUB IMG: Loading chapter %d/%d: %s\n",
+                chapterIndex + 1, epubChapterCount, entry.filename.c_str());
+
+  // Allocate a small buffer for the stripped text (just image marker + minimal text)
+  size_t bufferSize = max((size_t)4096, entry.uncompSize + 256);
+  epubFullText = (char*)ps_malloc(bufferSize);
+  if (!epubFullText) {
+    Serial.println("EPUB IMG: Failed to allocate chapter buffer");
+    return false;
+  }
+
+  // Open file and extract HTML
+  File f;
+  if (sdMutex) { xSemaphoreTake(sdMutex, portMAX_DELAY); f = SD.open(epubFilePath.c_str()); xSemaphoreGive(sdMutex); }
+  else { f = SD.open(epubFilePath.c_str()); }
+  if (!f) {
+    free(epubFullText); epubFullText = nullptr;
+    return false;
+  }
+
+  size_t rawLen = 0;
+  uint8_t* rawBuf = zipExtractFile(f, entry, rawLen);
+  f.close();
+
+  if (!rawBuf || rawLen == 0) {
+    if (rawBuf) free(rawBuf);
+    free(epubFullText); epubFullText = nullptr;
+    return false;
+  }
+
+  // Strip HTML to text/image markers
+  String chapterDir = pathDir(entry.filename);
+  epubFullTextLen = htmlStripDirect((const char*)rawBuf, rawLen,
+                                    epubFullText, bufferSize - 1, chapterDir);
+  free(rawBuf);
+
+  epubFullText[epubFullTextLen] = '\0';
+  epubLoadedStartChapter = chapterIndex;
+  epubLoadedEndChapter = chapterIndex + 1;
+
+  Serial.printf("EPUB IMG: Chapter %d loaded, %u bytes of content\n",
+                chapterIndex + 1, epubFullTextLen);
+  return (epubFullTextLen > 0);
+}
+
 // Find the chapter index that contains a given virtual text offset
 int epubChapterForOffset(size_t offset) {
   if (!epubChapters || epubChapterCount == 0) return 0;
@@ -894,6 +888,7 @@ void epubCleanup() {
   epubLoadedEndChapter = 0;
   epubLoadedBaseOffset = 0;
   epubEstimatedTotalBytes = 0;
+  epubIsImageBased = false;
 }
 
 // Parse JPEG dimensions from raw data (returns true if found)

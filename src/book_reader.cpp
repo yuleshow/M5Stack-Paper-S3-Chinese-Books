@@ -180,6 +180,11 @@ void updateBytesPerPage() {
 
 void recalculatePages() {
   updateBytesPerPage();
+  // Image-based EPUBs use chapter count, not byte-based pagination
+  if (currentBookIsEpub && epubIsImageBased) {
+    totalPages = epubChapterCount;
+    return;
+  }
   if (totalBookBytes > 0) {
     totalPages = (totalBookBytes / bytesPerPage) + 1;
   }
@@ -195,6 +200,23 @@ void recalculatePages() {
 
 bool loadCurrentPage() {
   if (currentBookPath.isEmpty()) return false;
+  
+  // Image-based EPUB (manga): load one chapter per page
+  if (currentBookIsEpub && epubIsImageBased && epubChapters) {
+    if (currentPage < 0) currentPage = 0;
+    if (currentPage >= epubChapterCount) currentPage = epubChapterCount - 1;
+    totalPages = epubChapterCount;
+    
+    if (!epubLoadSingleChapter(currentPage)) {
+      Serial.printf("EPUB IMG: Failed to load chapter %d\n", currentPage + 1);
+      return false;
+    }
+    
+    currentPageContent = String(epubFullText);
+    Serial.printf("EPUB IMG page %d/%d: %d bytes\n",
+                  currentPage + 1, totalPages, currentPageContent.length());
+    return true;
+  }
   
   // Use tracked page offset if available, otherwise fall back to estimate
   size_t pageOffset;
@@ -391,8 +413,15 @@ bool loadBook(int bookIndex) {
       return false;
     }
     // Use estimated total for page calculation (covers all chapters, not just loaded ones)
-    totalBookBytes = epubEstimatedTotalBytes;
-    recalculatePages();
+    if (epubIsImageBased) {
+      // Image-based (manga): each chapter = one page
+      totalPages = epubChapterCount;
+      totalBookBytes = epubChapterCount;  // Not used for page calc but keep consistent
+      Serial.printf("EPUB: Image-based mode — %d pages (1 chapter per page)\n", totalPages);
+    } else {
+      totalBookBytes = epubEstimatedTotalBytes;
+      recalculatePages();
+    }
     currentPage = loadReadingPosition();
     if (currentPage >= totalPages) currentPage = 0;
     loadBookmarks();
@@ -685,7 +714,8 @@ void drawReading() {
   
   // Correct next page byte offset based on actual bytes rendered
   // This prevents text from being skipped between pages
-  if (renderStopByte < (int)sampleText.length() && pageByteOffsets) {
+  // Skip for image-based EPUBs (they use chapter-index pagination instead of byte offsets)
+  if (!epubIsImageBased && renderStopByte < (int)sampleText.length() && pageByteOffsets) {
     size_t correctedNextStart = currentPageByteOffset + renderStopByte;
     
     // Always store/extend the corrected offset for the next page

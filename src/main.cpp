@@ -978,14 +978,16 @@ void loop() {
       // Font size decrease (字-)
       else if (y > 900 && x >= 155 && x <= 200) {
         if (readingFontSize > MIN_READING_FONT_SIZE) {
-          size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
-                              ? pageByteOffsets[currentPage]
-                              : (size_t)currentPage * bytesPerPage;
           readingFontSize -= FONT_SIZE_STEP;
           if (readingFontSize < MIN_READING_FONT_SIZE) readingFontSize = MIN_READING_FONT_SIZE;
-          recalculatePages();
-          currentPage = byteOffset / bytesPerPage;
-          if (currentPage >= totalPages) currentPage = totalPages - 1;
+          if (!(currentBookIsEpub && epubIsImageBased)) {
+            size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
+                                ? pageByteOffsets[currentPage]
+                                : (size_t)currentPage * bytesPerPage;
+            recalculatePages();
+            currentPage = byteOffset / bytesPerPage;
+            if (currentPage >= totalPages) currentPage = totalPages - 1;
+          }
           savePrefInt("ereader", "rdFontSz", readingFontSize);
           saveReadingPosition();
           loadCurrentPage();
@@ -995,14 +997,17 @@ void loop() {
       // Font size increase (字+)
       else if (y > 900 && x >= 230 && x <= 275) {
         if (readingFontSize < MAX_READING_FONT_SIZE) {
-          size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
-                              ? pageByteOffsets[currentPage]
-                              : (size_t)currentPage * bytesPerPage;
+          int savedPage = currentPage;  // Save for image-based EPUBs
           readingFontSize += FONT_SIZE_STEP;
           if (readingFontSize > MAX_READING_FONT_SIZE) readingFontSize = MAX_READING_FONT_SIZE;
-          recalculatePages();
-          currentPage = byteOffset / bytesPerPage;
-          if (currentPage >= totalPages) currentPage = totalPages - 1;
+          if (!(currentBookIsEpub && epubIsImageBased)) {
+            size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
+                                ? pageByteOffsets[savedPage]
+                                : (size_t)savedPage * bytesPerPage;
+            recalculatePages();
+            currentPage = byteOffset / bytesPerPage;
+            if (currentPage >= totalPages) currentPage = totalPages - 1;
+          }
           savePrefInt("ereader", "rdFontSz", readingFontSize);
           saveReadingPosition();
           loadCurrentPage();

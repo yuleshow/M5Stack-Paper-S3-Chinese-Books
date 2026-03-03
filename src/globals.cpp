@@ -275,6 +275,7 @@ int epubLoadedEndChapter = 0;
 size_t epubLoadedBaseOffset = 0;
 String epubBasePath = "";
 size_t epubEstimatedTotalBytes = 0;
+bool epubIsImageBased = false;
 
 // Todo
 TodoItem todoList[MAX_TODO];
