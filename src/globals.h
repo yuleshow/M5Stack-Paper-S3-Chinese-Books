@@ -32,6 +32,23 @@ extern "C" {
 // ==================== UTF-8 Utility Functions ====================
 #include "utf8_utils.h"
 
+// ==================== Debug Logging (Throttled) ====================
+#define ENABLE_DEBUG_LOG 0
+#if ENABLE_DEBUG_LOG
+  #define DEBUG_LOG(fmt, ...) Serial.printf("[DBG] " fmt "\n", ##__VA_ARGS__)
+  static unsigned long lastDebugTime = 0;
+  #define DEBUG_LOG_THROTTLE(interval_ms, fmt, ...) do { \
+    unsigned long now = millis(); \
+    if (now - lastDebugTime > interval_ms) { \
+      lastDebugTime = now; \
+      Serial.printf("[THR] " fmt "\n", ##__VA_ARGS__); \
+    } \
+  } while(0)
+#else
+  #define DEBUG_LOG(fmt, ...)
+  #define DEBUG_LOG_THROTTLE(interval_ms, fmt, ...)
+#endif
+
 // ==================== Named Constants ====================
 
 // E-ink grayscale-safe colors (M5Paper S3 is 4-bit grayscale)

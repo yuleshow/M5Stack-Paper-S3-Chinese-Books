@@ -225,6 +225,8 @@ bool fetchWeather() {
   }
 
   HTTPClient http;
+  http.setConnectTimeout(3000);
+  http.setTimeout(5000);
   String encodedCity = weatherConfig.city;
   encodedCity.replace(" ", "%20");
   String url = "http://api.openweathermap.org/data/2.5/weather?q=" +

@@ -96,7 +96,7 @@ void enterDeepSleep() {
   gpio_pullup_en(GPIO_NUM_4);
   gpio_pulldown_dis(GPIO_NUM_4);
   if (digitalRead(GPIO_NUM_4) != LOW) {
-    esp_sleep_enable_ext1_wakeup(1ULL << GPIO_NUM_4, ESP_EXT1_WAKEUP_ALL_LOW);
+    esp_sleep_enable_ext1_wakeup(1ULL << GPIO_NUM_4, ESP_EXT1_WAKEUP_ANY_LOW);
     Serial.println("USB charge wake enabled (GPIO 4)");
   } else {
     Serial.println("WARNING: Charge pin already LOW - USB wake skipped");
@@ -497,9 +497,9 @@ void loop() {
     }
   }
 
-  // Idle sleep: auto-sleep after 10 minutes of inactivity (when not charging)
-  bool isCharging = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
-  if (lastActivityTime > 0 && !isCharging && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
+  // Idle sleep: auto-sleep after 10 minutes of inactivity (when no external power)
+  bool hasExternalPower = isExternalPowerConnected();
+  if (lastActivityTime > 0 && !hasExternalPower && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
     if (currentMode != MODE_CLOCK) {
       Serial.println("Idle timeout - entering deep sleep");
       enterDeepSleep();
@@ -518,17 +518,26 @@ void loop() {
     }
   }
   
-  // Handle Serial commands for WiFi password entry
-  if (Serial.available() > 0) {
-    String cmd = Serial.readStringUntil('\n');
-    cmd.trim();
-    
-    if (cmd.startsWith("wifi_password=")) {
-      passwordInput = cmd.substring(14);  // Get everything after "wifi_password="
-      Serial.println("Password set: " + passwordInput);
-      
-      if (currentMode == MODE_SETUP && showingKeyboard) {
-        drawWiFiSetup();  // Refresh screen to show entered password
+  // Handle Serial commands for WiFi password entry (non-blocking)
+  static String serialCmdBuffer;
+  while (Serial.available() > 0) {
+    char ch = (char)Serial.read();
+    if (ch == '\r') continue;
+    if (ch == '\n') {
+      serialCmdBuffer.trim();
+      if (serialCmdBuffer.startsWith("wifi_password=")) {
+        passwordInput = serialCmdBuffer.substring(14);  // Get everything after "wifi_password="
+        Serial.println("Password set: " + passwordInput);
+        
+        if (currentMode == MODE_SETUP && showingKeyboard) {
+          drawWiFiSetup();  // Refresh screen to show entered password
+        }
+      }
+      serialCmdBuffer = "";
+    } else {
+      serialCmdBuffer += ch;
+      if (serialCmdBuffer.length() > 256) {
+        serialCmdBuffer = "";
       }
     }
   }
@@ -559,7 +568,7 @@ void loop() {
     lastActivityTime = millis();
     lastTouchProcessedTime = millis();
     
-    Serial.printf("Touch: %d, %d (mode=%d)\n", x, y, currentMode);
+    DEBUG_LOG_THROTTLE(200, "Touch: %d, %d (mode=%d)", x, y, currentMode);
     
     if (currentMode == MODE_WELCOME) {
       // Any touch on welcome screen goes to dashboard
@@ -573,7 +582,7 @@ void loop() {
         const auto& icon = g_icons[i];
         if (x >= icon.x && x <= (icon.x + icon.w) &&
             y >= icon.y && y <= (icon.y + icon.h)) {
-          Serial.printf("Icon %d touched: %s\n", i, icon.label);
+          DEBUG_LOG("Icon %d touched: %s", i, icon.label);
           
           // Icon 0 is E-Book
           if (i == 0) {
@@ -582,38 +591,38 @@ void loop() {
           }
           // Icon 1 is Calendar (日曆/農民曆)
           else if (i == 1) {
-            Serial.println("Opening calendar...");
+            DEBUG_LOG("Opening calendar...");
             currentMode = MODE_CALENDAR;
             drawCalendar();
           }
           // Icon 2 is Todo List (待辦事項)
           else if (i == 2) {
-            Serial.println("Opening todo list...");
+            DEBUG_LOG("Opening todo list...");
             loadTodoList();
             currentMode = MODE_TODO_LIST;
             drawTodoList();
           }
           // Icon 3 is Shopping List (採辦)
           else if (i == 3) {
-            Serial.println("Opening shopping list...");
+            DEBUG_LOG("Opening shopping list...");
             currentMode = MODE_SHOPPING_LIST;
             drawShoppingList();
           }
           // Icon 4 is Weather (天氣)
           else if (i == 4) {
-            Serial.println("Opening weather...");
+            DEBUG_LOG("Opening weather...");
             currentMode = MODE_WEATHER;
             drawWeather();
           }
           // Icon 5 is Wallpaper (壁紙)
           else if (i == 5) {
-            Serial.println("Opening wallpaper list...");
+            DEBUG_LOG("Opening wallpaper list...");
             currentMode = MODE_WALLPAPER_LIST;
             drawWallpaperList();
           }
           // Icon 6 is Settings (設定)
           else if (i == 6) {
-            Serial.println("Opening settings...");
+            DEBUG_LOG("Opening settings...");
             currentMode = MODE_SETUP;
             setupSubmenu = 0;  // Start at main setup menu
             loadWiFiConfig();  // Load existing config if any
@@ -641,19 +650,19 @@ void loop() {
       }
       // Left icon (tomorrow) - lower-left nav bar
       else if (touchedPrevPage(x, y)) {
-        Serial.println("Calendar: next day");
+        DEBUG_LOG("Calendar: next day");
         calendarDayOffset++;
         drawCalendar();
       }
       // Right icon (yesterday) - lower-left nav bar
       else if (touchedNextPage(x, y)) {
-        Serial.println("Calendar: previous day");
+        DEBUG_LOG("Calendar: previous day");
         calendarDayOffset--;
         drawCalendar();
       }
       // Tap on big date number - open date picker
       else if (x > 100 && x < 440 && y > 80 && y < 290) {
-        Serial.println("Calendar: open date picker");
+        DEBUG_LOG("Calendar: open date picker");
         int py, pm, pd, pw;
         getDateWithOffset(calendarDayOffset, py, pm, pd, pw);
         pickerYear = py;
@@ -668,7 +677,7 @@ void loop() {
     else if (currentMode == MODE_CALENDAR_PICKER) {
       int W = M5.Display.width();
       if (touchedReturnButton(x, y)) {
-        Serial.println("Picker: back to calendar");
+        DEBUG_LOG("Picker: back to calendar");
         currentMode = MODE_CALENDAR;
         drawCalendar();
       }
@@ -958,7 +967,7 @@ void loop() {
       // Vertical CJK: left button = NEXT page (forward in book)
       // Only respond if the left arrow is visible (hasNext)
       else if (touchedPrevPage(x, y) && currentPage < totalPages - 1) {
-        Serial.printf("LEFT arrow - page %d -> %d\n", currentPage, currentPage + 1);
+        DEBUG_LOG_THROTTLE(1000, "LEFT arrow - page %d -> %d", currentPage, currentPage + 1);
         currentPage++;
         if (loadCurrentPage()) {
           saveReadingPosition();
@@ -968,7 +977,7 @@ void loop() {
       // Vertical CJK: right button = PREV page (backward in book)
       // Only respond if the right arrow is visible (hasPrev)
       else if (touchedNextPage(x, y) && currentPage > 0) {
-        Serial.printf("RIGHT arrow - page %d -> %d\n", currentPage, currentPage - 1);
+        DEBUG_LOG_THROTTLE(1000, "RIGHT arrow - page %d -> %d", currentPage, currentPage - 1);
         currentPage--;
         if (loadCurrentPage()) {
           saveReadingPosition();
@@ -1157,7 +1166,7 @@ void loop() {
             
             // Toggle checkbox
             shoppingList[idx].checked = !shoppingList[idx].checked;
-            Serial.printf("Shopping %d toggled: %s (checkbox at %d,%d)\n", idx,
+            DEBUG_LOG_THROTTLE(300, "Shopping %d toggled: %s (checkbox at %d,%d)", idx,
               shoppingList[idx].checked ? "checked" : "unchecked", cbX, cbY);
             
             // Save checked items to SD card
@@ -1273,7 +1282,7 @@ void loop() {
       }
     }
     else if (currentMode == MODE_TODO_LIST) {
-      Serial.printf("Todo touch: x=%d y=%d\n", x, y);
+      DEBUG_LOG_THROTTLE(500, "Todo touch: x=%d y=%d", x, y);
       // Vertical CJK: left button = NEXT page (forward)
       if (touchedPrevPage(x, y)) {
         if (currentTodoPage < totalTodoPages - 1) {
@@ -1459,7 +1468,7 @@ void loop() {
               
               // Toggle checkbox
               todoList[idx].checked = !todoList[idx].checked;
-              Serial.printf("Todo %d toggled: %s (checkbox at %d,%d)\n", idx,
+              DEBUG_LOG_THROTTLE(300, "Todo %d toggled: %s (checkbox at %d,%d)", idx,
                 todoList[idx].checked ? "checked" : "unchecked", cbX, cbY);
               
               // Save checked items
