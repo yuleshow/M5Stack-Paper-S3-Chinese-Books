@@ -58,13 +58,12 @@ void enterDeepSleep() {
   drawMottoOnSleep();
 
   // Small "休眠中 Sleeping" text at bottom-right corner
-  M5.Display.setFont(&fonts::efontTW_24);
-  M5.Display.setTextSize(0.8);
-  M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.setTextDatum(BR_DATUM);
-  M5.Display.drawString("休眠中 Sleeping", w - 10, h - 10);
-  M5.Display.setTextDatum(TL_DATUM);
+  drawSystemText("休眠中", w - 180, h - 30, 20);
+  M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_BLACK);
+  M5.Display.setCursor(w - 90, h - 25);
+  M5.Display.print("Sleeping");
   M5.Display.endWrite();
 
   M5.Display.display();
@@ -241,6 +240,10 @@ void setup() {
     Serial.println("Loading mottos...");
     loadMottos();
 
+    // Load custom calendar events from SD card
+    Serial.println("Loading custom calendar events...");
+    loadCustomEvents();
+
     // Try to load a TTF font for better character coverage
     Serial.println("Scanning and loading fonts...");
     
@@ -360,6 +363,12 @@ void setup() {
   loadWiFiConfig();
   Serial.printf("Config loaded - WiFi configured: %s\n", wifiConfig.configured ? "YES" : "NO");
   Serial.println("Timezone: " + timeConfig.timezone);
+
+  // Load auto-sleep setting
+  prefs.begin("ereader", true);
+  autoSleepEnabled = prefs.getBool("autoSleep", false);  // Default: disabled
+  prefs.end();
+  Serial.printf("Auto-sleep setting loaded: %s\n", autoSleepEnabled ? "ENABLED" : "DISABLED");
   
   // BLE Proximity Unlock — deferred start (not at boot to avoid memory issues)
   // Config is loaded but init is deferred to after display setup
@@ -422,7 +431,7 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   webServerEnabled = true;  // Always enable web server by default
   savePrefBool("m5paper", "webServer", true);
   usbMSCEnabled = loadPrefBool("m5paper", "usbMSC", false);
-  useSDCardIcons = loadPrefBool("m5paper", "sdIcons", true);
+  useSDCardIcons = loadPrefBool("m5paper", "sdIcons", false);
   useSxwnlCalendar = loadPrefBool("m5paper", "sxwnl", false);
   Serial.printf("Web server enabled: %s\n", webServerEnabled ? "YES" : "NO");
   Serial.printf("USB MSC enabled: %s\n", usbMSCEnabled ? "YES" : "NO");
@@ -480,7 +489,7 @@ void loop() {
       (millis() - weatherData.fetchTime > WEATHER_REFRESH_INTERVAL)) {
     Serial.println("Weather auto-refresh triggered");
     if (fetchWeather()) {
-      drawWeather();
+      drawWeather(true);
     }
   }
   
@@ -497,12 +506,14 @@ void loop() {
     }
   }
 
-  // Idle sleep: auto-sleep after 10 minutes of inactivity (when no external power)
-  bool hasExternalPower = isExternalPowerConnected();
-  if (lastActivityTime > 0 && !hasExternalPower && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
-    if (currentMode != MODE_CLOCK) {
-      Serial.println("Idle timeout - entering deep sleep");
-      enterDeepSleep();
+  // Idle sleep: auto-sleep after 10 minutes of inactivity (when enabled and no external power)
+  if (autoSleepEnabled) {
+    bool hasExternalPower = isExternalPowerConnected();
+    if (lastActivityTime > 0 && !hasExternalPower && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
+      if (currentMode != MODE_CLOCK) {
+        Serial.println("Idle timeout - entering deep sleep");
+        enterDeepSleep();
+      }
     }
   }
   
@@ -598,7 +609,6 @@ void loop() {
           // Icon 2 is Todo List (待辦事項)
           else if (i == 2) {
             DEBUG_LOG("Opening todo list...");
-            loadTodoList();
             currentMode = MODE_TODO_LIST;
             drawTodoList();
           }
@@ -612,7 +622,7 @@ void loop() {
           else if (i == 4) {
             DEBUG_LOG("Opening weather...");
             currentMode = MODE_WEATHER;
-            drawWeather();
+            drawWeather(true);
           }
           // Icon 5 is Wallpaper (壁紙)
           else if (i == 5) {
@@ -625,7 +635,7 @@ void loop() {
             DEBUG_LOG("Opening settings...");
             currentMode = MODE_SETUP;
             setupSubmenu = 0;  // Start at main setup menu
-            loadWiFiConfig();  // Load existing config if any
+            setupMenuPage = 0;
             drawSetupMenu();
           }
           // Icon 7 is Sleep — show sleeping page for testing (tap to cycle mottos)
@@ -1229,7 +1239,7 @@ void loop() {
       // Refresh button (lower-left, uses prev page position)
       else if (touchedPrevPage(x, y)) {
         weatherData.valid = false;  // Force refresh
-        drawWeather();
+        drawWeather(true);
       }
       // °C/°F toggle button (next page icon area: NAV_NEXT_X)
       else if (touchedNextPage(x, y)) {
@@ -1683,71 +1693,103 @@ void loop() {
         // Main setup menu
         int y1 = 85;
         int itemHeight = 100;
-        
-        // WiFi Settings item (first item)
-        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-          Serial.println("WiFi settings selected");
-          setupSubmenu = 1;
-          showingKeyboard = false;
-          showingTimezone = false;
-          scanWiFiNetworks();
-          drawWiFiSetup();
+
+        // Menu paging
+        // Left arrow (touchedPrevPage) = go forward/next page
+        if (touchedPrevPage(x, y) && setupMenuPage < 1) {
+          setupMenuPage++;
+          drawSetupMenu();
           return;
         }
-        
-        // Timezone Settings item (second item)
-        y1 += itemHeight + 18;
-        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-          Serial.println("Timezone settings selected");
-          setupSubmenu = 2;
-          showingTimezone = true;
-          drawWiFiSetup();
+        // Right arrow (touchedNextPage) = go back/previous page
+        if (touchedNextPage(x, y) && setupMenuPage > 0) {
+          setupMenuPage--;
+          drawSetupMenu();
           return;
         }
-        
-        // Web Server Settings item (third item)
-        y1 += itemHeight + 18;
-        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-          Serial.println("Web server settings selected");
-          setupSubmenu = 3;
-          drawWebServerSetup();
-          return;
-        }
-        
-        // USB MSC Settings item (fourth item)
-        y1 += itemHeight + 18;
-        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-          Serial.println("USB MSC settings selected");
-          setupSubmenu = 4;
-          drawUSBMSCSetup();
-          return;
-        }
-        
-        // Icon Source Settings item (fifth item)
-        y1 += itemHeight + 18;
-        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-          Serial.println("Icon source settings selected");
-          setupSubmenu = 5;
-          drawIconSetup();
-          return;
-        }
-        
-        // Calendar Calculation Settings item (sixth item)
-        y1 += itemHeight + 18;
-        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-          Serial.println("Calendar settings selected");
-          setupSubmenu = 6;
-          drawCalendarSetup();
-          return;
-        }
-        
-        // Bluetooth Settings item (seventh item)
-        y1 += itemHeight + 18;
-        if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-          Serial.println("Bluetooth settings selected");
-          setupSubmenu = 7;
-          drawBluetoothSetup();
-          return;
+
+        if (setupMenuPage == 0) {
+          // Page 1: 5 items
+          
+          // WiFi Settings item
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("WiFi settings selected");
+            setupSubmenu = 1;
+            showingKeyboard = false;
+            showingTimezone = false;
+            scanWiFiNetworks();
+            drawWiFiSetup();
+            return;
+          }
+          
+          // Timezone Settings item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Timezone settings selected");
+            setupSubmenu = 2;
+            showingTimezone = true;
+            drawWiFiSetup();
+            return;
+          }
+          
+          // Web Server Settings item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Web server settings selected");
+            setupSubmenu = 3;
+            drawWebServerSetup();
+            return;
+          }
+          
+          // USB MSC Settings item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("USB MSC settings selected");
+            setupSubmenu = 4;
+            drawUSBMSCSetup();
+            return;
+          }
+          
+          // Icon Source Settings item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Icon source settings selected");
+            setupSubmenu = 5;
+            drawIconSetup();
+            return;
+          }
+        } else {
+          // Page 2: 3 items
+          
+          // Calendar Calculation Settings item
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Calendar settings selected");
+            setupSubmenu = 6;
+            drawCalendarSetup();
+            return;
+          }
+          
+          // Bluetooth Settings item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Bluetooth settings selected");
+            setupSubmenu = 7;
+            drawBluetoothSetup();
+            return;
+          }
+          
+          // Auto-Sleep Settings item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Auto-sleep settings selected - toggling");
+            autoSleepEnabled = !autoSleepEnabled;
+            prefs.begin("ereader", false);
+            prefs.putBool("autoSleep", autoSleepEnabled);
+            prefs.end();
+            Serial.printf("Auto-sleep toggled to: %d\n", autoSleepEnabled);
+            drawSetupMenu();
+            return;
+          }
         }
         
         // Return button (lower-right)
@@ -2031,24 +2073,25 @@ void loop() {
       }
       else if (setupSubmenu == 4) {
         // USB MSC setup submenu
-        int btnY = 380;  // Match drawUSBMSCSetup
+        int btnY = 400;  // Match drawUSBMSCSetup
         
-        // Toggle button
-        if (x >= 20 && x <= 260 && y >= btnY && y <= btnY + 100) {
+        // Toggle button (full width)
+        if (x >= 20 && x <= 520 && y >= btnY && y <= btnY + 90) {
           Serial.println("USB MSC toggle button touched");
           
           if (usbMSCActive) {
             Serial.println("Stopping USB MSC...");
             
-            // Show restarting message
+            // Show restarting message using pre-rendered label bitmaps (SD unavailable during MSC)
             M5.Display.startWrite();
             M5.Display.fillRect(0, 300, DISPLAY_WIDTH, 200, TFT_WHITE);
-            drawSystemText("重新啟動中...", 100, 330, 32);
+            drawSystemTextCentered("重新啟動中...", DISPLAY_WIDTH / 2, 340, 32);
             M5.Display.setFont(&fonts::Font2);
             M5.Display.setTextSize(1);
             M5.Display.setTextColor(TFT_BLACK);
-            M5.Display.setCursor(80, 380);
-            M5.Display.print("Restarting device...");
+            M5.Display.setTextDatum(MC_DATUM);
+            M5.Display.drawString("Restarting device...", DISPLAY_WIDTH / 2, 390);
+            M5.Display.setTextDatum(TL_DATUM);
             M5.Display.endWrite();
             M5.Display.display();
             

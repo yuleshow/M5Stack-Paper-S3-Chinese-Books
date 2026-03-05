@@ -663,8 +663,8 @@ void getHourInfo(int dayGanIdx, char hourBuf[][16], char hourZhiBuf[][8]) {
   }
 }
 
-// ===== Festivals (道教節日, 民俗節日, 佛教節日) =====
-enum FestivalType : uint8_t { FEST_FOLK = 0, FEST_TAOIST = 1, FEST_BUDDHIST = 2 };
+// ===== Festivals (道教節日, 民俗節日, 佛教節日, 西方節日, 自訂) =====
+enum FestivalType : uint8_t { FEST_FOLK = 0, FEST_TAOIST = 1, FEST_BUDDHIST = 2, FEST_US = 3, FEST_CUSTOM = 4 };
 
 struct Festival {
   uint8_t month;
@@ -804,7 +804,293 @@ int dayOfWeek(int y, int m, int d) {
   return (int)((jdn + 1) % 7);  // 0=Sunday
 }
 
+// Nth weekday of month (weekday: 0=Sun..6=Sat, nth: 1..5). Returns 0 if not exists.
+static int nthWeekdayOfMonth(int year, int month, int weekday, int nth) {
+  int firstDow = dayOfWeek(year, month, 1);
+  int day = 1 + ((weekday - firstDow + 7) % 7) + (nth - 1) * 7;
+  int dim = solarMonthDays(year, month);
+  return (day <= dim) ? day : 0;
+}
+
+// Last weekday of month (weekday: 0=Sun..6=Sat)
+static int lastWeekdayOfMonth(int year, int month, int weekday) {
+  int dim = solarMonthDays(year, month);
+  int lastDow = dayOfWeek(year, month, dim);
+  return dim - ((lastDow - weekday + 7) % 7);
+}
+
+// Gregorian Easter Sunday (valid for years 1583+)
+static void calcEasterSunday(int year, int &month, int &day) {
+  int a = year % 19;
+  int b = year / 100;
+  int c = year % 100;
+  int d = b / 4;
+  int e = b % 4;
+  int f = (b + 8) / 25;
+  int g = (b - f + 1) / 3;
+  int h = (19 * a + b - d - g + 15) % 30;
+  int i = c / 4;
+  int k = c % 4;
+  int l = (32 + 2 * e + 2 * i - h - k) % 7;
+  int m = (a + 11 * h + 22 * l) / 451;
+  month = (h + l - 7 * m + 114) / 31;
+  day = ((h + l - 7 * m + 114) % 31) + 1;
+}
+
+// Look up major Western holidays/events (U.S. + Christian + Mexico) for a given solar date
+int lookupUSHolidays(int year, int month, int day, const char* names[], uint8_t types[], int maxResults) {
+  int count = 0;
+
+  auto addHoliday = [&](const char* name) {
+    if (count < maxResults) {
+      names[count] = name;
+      types[count] = FEST_US;
+      count++;
+    }
+  };
+
+  // Fixed-date major holidays / events
+  // Christian
+  if (month == 1 && day == 6) addHoliday("主顯節");
+  if (month == 12 && day == 24) addHoliday("平安夜");
+  if (month == 12 && day == 25) addHoliday("聖誕節");
+
+  // U.S.
+  if (month == 1 && day == 1) addHoliday("美國元旦");
+  if (month == 6 && day == 19) addHoliday("六月節");
+  if (month == 7 && day == 4) addHoliday("美國獨立日");
+  if (month == 11 && day == 11) addHoliday("退伍軍人節");
+
+  // Western cultural (shared)
+  if (month == 10 && day == 31) addHoliday("萬聖節");
+
+  // Mexico
+  // if (month == 2 && day == 5) addHoliday("墨西哥憲法日");
+  // if (month == 3 && day == 21) addHoliday("胡亞雷斯誕辰紀念日");
+  if (month == 5 && day == 5) addHoliday("五月五日節");
+  if (month == 9 && day == 16) addHoliday("墨西哥獨立日");
+  if (month == 11 && day == 2) addHoliday("亡靈節");
+  // if (month == 11 && day == 20) addHoliday("墨西哥革命紀念日");
+  // if (month == 12 && day == 12) addHoliday("瓜達露佩聖母日");
+
+  // Movable holidays
+  int em = 0, ed = 0;
+  calcEasterSunday(year, em, ed);
+  if (month == em && day == ed) addHoliday("復活節");
+
+  // Christian holidays relative to Easter
+  long easterJDN = solarDayNumber(year, em, ed);
+  auto isEasterOffset = [&](int offsetDays) {
+    int y2 = 0, m2 = 0, d2 = 0;
+    jdToDate((double)(easterJDN + offsetDays), y2, m2, d2);
+    return (y2 == year && m2 == month && d2 == day);
+  };
+  if (isEasterOffset(-46)) addHoliday("聖灰星期三");
+  if (isEasterOffset(-7)) addHoliday("聖枝主日");
+  if (isEasterOffset(-2)) addHoliday("耶穌受難日");
+  if (isEasterOffset(+1)) addHoliday("復活節星期一");
+  if (isEasterOffset(+39)) addHoliday("耶穌升天節");
+  if (isEasterOffset(+49)) addHoliday("聖靈降臨節");
+
+  if (month == 1 && day == nthWeekdayOfMonth(year, 1, 1, 3)) addHoliday("馬丁路德金紀念日");      // 3rd Mon Jan
+  if (month == 2 && day == nthWeekdayOfMonth(year, 2, 1, 3)) addHoliday("總統日");                // 3rd Mon Feb
+  if (month == 5 && day == nthWeekdayOfMonth(year, 5, 0, 2)) addHoliday("母親節");                // 2nd Sun May
+  if (month == 5 && day == lastWeekdayOfMonth(year, 5, 1)) addHoliday("陣亡將士紀念日");          // Last Mon May
+  if (month == 6 && day == nthWeekdayOfMonth(year, 6, 0, 3)) addHoliday("父親節");                // 3rd Sun Jun
+  if (month == 9 && day == nthWeekdayOfMonth(year, 9, 1, 1)) addHoliday("勞動節");                // 1st Mon Sep
+  if (month == 10 && day == nthWeekdayOfMonth(year, 10, 1, 2)) addHoliday("哥倫布日");            // 2nd Mon Oct
+  if (month == 11 && day == nthWeekdayOfMonth(year, 11, 4, 4)) addHoliday("感恩節");              // 4th Thu Nov
+
+  // Diwali (Hindu festival of lights) — dates from Hindu lunisolar calendar (Amavasya of Kartik)
+  static const struct { int16_t y; uint8_t m, d; } diwaliDates[] = {
+    {2024,11,1}, {2025,10,20}, {2026,11,8}, {2027,10,29}, {2028,10,17},
+    {2029,11,5}, {2030,10,26}, {2031,11,14}, {2032,11,2}, {2033,10,22},
+    {2034,11,10}, {2035,10,31}, {2036,10,19}, {2037,11,7}, {2038,10,27},
+    {2039,11,15}, {2040,11,3}, {2041,10,24}, {2042,11,12}, {2043,11,1},
+    {2044,10,20}, {2045,11,8}, {2046,10,29}, {2047,10,17}, {2048,11,5},
+    {2049,10,25}, {2050,11,13},
+  };
+  for (int i = 0; i < (int)(sizeof(diwaliDates)/sizeof(diwaliDates[0])); i++) {
+    if (year == diwaliDates[i].y && month == diwaliDates[i].m && day == diwaliDates[i].d) {
+      addHoliday("排燈節");
+      break;
+    }
+  }
+
+  // Eid al-Fitr (開齋節) — dates from Islamic Hijri calendar (1 Shawwal)
+  static const struct { int16_t y; uint8_t m, d; } eidDates[] = {
+    {2024,4,10}, {2025,3,30}, {2026,3,20}, {2027,3,9}, {2028,2,27},
+    {2029,2,14}, {2030,2,4}, {2031,1,24}, {2032,1,14}, {2032,12,2},
+    {2033,11,22}, {2034,11,11}, {2035,11,1}, {2036,10,20}, {2037,10,9},
+    {2038,9,29}, {2039,9,18}, {2040,9,6}, {2041,8,27}, {2042,8,16},
+    {2043,8,5}, {2044,7,25}, {2045,7,15}, {2046,7,4}, {2047,6,23},
+    {2048,6,12}, {2049,6,1}, {2050,5,22},
+  };
+  for (int i = 0; i < (int)(sizeof(eidDates)/sizeof(eidDates[0])); i++) {
+    if (year == eidDates[i].y && month == eidDates[i].m && day == eidDates[i].d) {
+      addHoliday("開齋節");
+      break;
+    }
+  }
+
+  return count;
+}
+
+// ===== Custom events from SD card =====
+
+enum CustomEventType : uint8_t { EVT_BIRTHDAY = 0, EVT_ANNUAL = 1, EVT_MEMORIAL = 2 };
+enum CustomCalendar : uint8_t { CAL_SOLAR = 0, CAL_LUNAR = 1 };
+
+struct CustomEvent {
+  CustomEventType evtType;
+  CustomCalendar  calendar;
+  uint8_t month;
+  uint8_t day;
+  char name[32];    // UTF-8 name (Chinese)
+  int16_t year;     // birth/start year (0 = not set)
+};
+
+static const int MAX_CUSTOM_EVENTS = 32;
+static CustomEvent customEvents[MAX_CUSTOM_EVENTS];
+static int customEventCount = 0;
+
+// Load custom events from /calendar_events.csv on SD card
+void loadCustomEvents() {
+  customEventCount = 0;
+  if (!sdCardAvailable) return;
+
+  ScopedSDLock lock;
+  File f = SD.open("/calendar_events.csv", FILE_READ);
+  if (!f) {
+    Serial.println("No /calendar_events.csv found");
+    return;
+  }
+
+  while (f.available() && customEventCount < MAX_CUSTOM_EVENTS) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0 || line.charAt(0) == '#') continue;
+
+    // Parse: type,calendar,month,day,name[,year]
+    int p1 = line.indexOf(',');
+    if (p1 < 0) continue;
+    int p2 = line.indexOf(',', p1 + 1);
+    if (p2 < 0) continue;
+    int p3 = line.indexOf(',', p2 + 1);
+    if (p3 < 0) continue;
+    int p4 = line.indexOf(',', p3 + 1);
+    if (p4 < 0) continue;
+
+    String sType = line.substring(0, p1);
+    String sCal  = line.substring(p1 + 1, p2);
+    int month    = line.substring(p2 + 1, p3).toInt();
+    int day      = line.substring(p3 + 1, p4).toInt();
+    sType.trim(); sCal.trim();
+
+    // Name and optional year
+    String rest = line.substring(p4 + 1);
+    rest.trim();
+    String sName;
+    int16_t year = 0;
+    int p5 = rest.lastIndexOf(',');
+    if (p5 > 0) {
+      // Check if the part after last comma is a number (year)
+      String tail = rest.substring(p5 + 1);
+      tail.trim();
+      bool isNum = tail.length() > 0;
+      for (unsigned i = 0; i < tail.length(); i++) {
+        if (!isDigit(tail.charAt(i))) { isNum = false; break; }
+      }
+      if (isNum && tail.toInt() > 1800) {
+        year = (int16_t)tail.toInt();
+        sName = rest.substring(0, p5);
+      } else {
+        sName = rest;
+      }
+    } else {
+      sName = rest;
+    }
+    sName.trim();
+
+    if (month < 1 || month > 12 || day < 1 || day > 31 || sName.length() == 0) continue;
+
+    CustomEvent& evt = customEvents[customEventCount];
+    if (sType == "birthday")       evt.evtType = EVT_BIRTHDAY;
+    else if (sType == "memorial")  evt.evtType = EVT_MEMORIAL;
+    else                           evt.evtType = EVT_ANNUAL;
+
+    evt.calendar = (sCal == "lunar") ? CAL_LUNAR : CAL_SOLAR;
+    evt.month = (uint8_t)month;
+    evt.day   = (uint8_t)day;
+    evt.year  = year;
+    strncpy(evt.name, sName.c_str(), sizeof(evt.name) - 1);
+    evt.name[sizeof(evt.name) - 1] = '\0';
+    customEventCount++;
+  }
+  f.close();
+  Serial.printf("Loaded %d custom calendar events\n", customEventCount);
+}
+
+// Temporary buffers for custom event display strings (with age/years suffix)
+static char customDispBuf[MAX_CUSTOM_EVENTS][48];
+
+// Look up custom events matching a given date
+// sYear/sMonth/sDay = solar date, lMonth/lDay = lunar date (0 if no lunar data)
+int lookupCustomEvents(int sYear, int sMonth, int sDay,
+                       int lMonth, int lDay,
+                       const char* names[], uint8_t types[], int maxResults) {
+  int count = 0;
+  for (int i = 0; i < customEventCount && count < maxResults; i++) {
+    const CustomEvent& evt = customEvents[i];
+    bool match = false;
+    if (evt.calendar == CAL_SOLAR) {
+      match = (evt.month == sMonth && evt.day == sDay);
+    } else {
+      match = (lMonth > 0 && evt.month == lMonth && evt.day == lDay);
+    }
+    if (!match) continue;
+
+    // Build display string
+    if (evt.year > 0 && evt.evtType == EVT_BIRTHDAY) {
+      int age = sYear - evt.year;
+      if (age > 0) {
+        snprintf(customDispBuf[count], sizeof(customDispBuf[count]),
+                 "%s(%d歲)", evt.name, age);
+      } else {
+        strncpy(customDispBuf[count], evt.name, sizeof(customDispBuf[count]) - 1);
+      }
+    } else if (evt.year > 0 && evt.evtType == EVT_MEMORIAL) {
+      int years = sYear - evt.year;
+      if (years > 0) {
+        snprintf(customDispBuf[count], sizeof(customDispBuf[count]),
+                 "%s(第%d年)", evt.name, years);
+      } else {
+        strncpy(customDispBuf[count], evt.name, sizeof(customDispBuf[count]) - 1);
+      }
+    } else {
+      strncpy(customDispBuf[count], evt.name, sizeof(customDispBuf[count]) - 1);
+    }
+    customDispBuf[count][sizeof(customDispBuf[count]) - 1] = '\0';
+    names[count] = customDispBuf[count];
+    types[count] = FEST_CUSTOM;
+    count++;
+  }
+  return count;
+}
+
 // ===== Bitmap helper functions for font-free calendar rendering =====
+
+// Check if a given date has any festival, holiday, or custom event (for grid dot marker)
+static bool hasAnyEvent(int sYear, int sMonth, int sDay, int lMonth, int lDay, int lYear) {
+  const char* tmpN[1]; uint8_t tmpT[1];
+  // Check lunar festivals
+  if (lMonth > 0 && lookupFestivals(lMonth, lDay, lYear, tmpN, tmpT, 1) > 0) return true;
+  // Check western/movable holidays
+  if (lookupUSHolidays(sYear, sMonth, sDay, tmpN, tmpT, 1) > 0) return true;
+  // Check custom events from SD card
+  if (lookupCustomEvents(sYear, sMonth, sDay, lMonth, lDay, tmpN, tmpT, 1) > 0) return true;
+  return false;
+}
 
 // Get width of a bitmap for text at given size, 0 if not found
 static int getBitmapWidth(const char* text, int size) {
@@ -1081,6 +1367,19 @@ void drawCalendarPicker() {
     if (st) {
       drawSystemTextCentered(st, cx, cy + 68, 20, (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY, dayBg);
     }
+
+    // Holiday/event dot marker
+    {
+      int lm = 0, ld = 0, ly = 0;
+      if (hasLunarData(pickerYear, pickerMonth, d)) {
+        LunarDate tmpLd = solarToLunar(pickerYear, pickerMonth, d);
+        lm = tmpLd.month; ld = tmpLd.day; ly = tmpLd.year;
+      }
+      if (hasAnyEvent(pickerYear, pickerMonth, d, lm, ld, ly)) {
+        uint16_t dotColor = (isSelected || isToday) ? TFT_WHITE : EPD_DARK_GRAY;
+        M5.Display.fillCircle(cx + cellW / 2 - 10, cy + 2, 3, dotColor);
+      }
+    }
     
     col++;
     if (col >= 7) { col = 0; row++; }
@@ -1126,7 +1425,7 @@ void getDateWithOffset(int offset, int &outYear, int &outMonth, int &outDay, int
 // Draw the Chinese Almanac page
 void drawCalendar() {
   Serial.println("drawCalendar() start");
-  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.setEpdMode(epd_mode_t::epd_fast);
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
@@ -1232,15 +1531,22 @@ void drawCalendar() {
       rightY += 42;
     }
     
-    // All festivals (民俗/道教/佛教) next to big day
+    // All festivals (民俗/道教/佛教/西方/自訂) next to big day
+    const char* festNames[12];
+    uint8_t festTypes[12];
+    int festCount = 0;
     if (hasLunar) {
-      const char* festNames[4];
-      uint8_t festTypes[4];
-      int festCount = lookupFestivals(lunar.month, lunar.day, lunar.year, festNames, festTypes, 4);
-      for (int i = 0; i < festCount; i++) {
-        drawSystemText(festNames[i], rightX, rightY, 28);
-        rightY += 36;
-      }
+      festCount += lookupFestivals(lunar.month, lunar.day, lunar.year,
+                                   festNames + festCount, festTypes + festCount, 12 - festCount);
+    }
+    festCount += lookupUSHolidays(sYear, sMonth, sDay,
+                                  festNames + festCount, festTypes + festCount, 12 - festCount);
+    festCount += lookupCustomEvents(sYear, sMonth, sDay,
+                                    hasLunar ? lunar.month : 0, hasLunar ? lunar.day : 0,
+                                    festNames + festCount, festTypes + festCount, 12 - festCount);
+    for (int i = 0; i < festCount && i < 4; i++) {
+      drawSystemText(festNames[i], rightX, rightY, 28);
+      rightY += 36;
     }
   }
   
@@ -1279,16 +1585,26 @@ void drawCalendar() {
     drawSystemText(weekNames[wday], wkX, bannerTextY, bannerTextSize, TFT_WHITE, TFT_BLACK);
   }
   
-  // ===== Festival display (道教/民俗/佛教節日) — only for 1900+ =====
-  if (hasLunar) {
-    const char* festNames[4];
-    uint8_t festTypes[4];
-    int festCount = lookupFestivals(lunar.month, lunar.day, lunar.year, festNames, festTypes, 4);
+  // ===== Festival display (道教/民俗/佛教/西方/自訂節日) =====
+  {
+    const char* festNames[12];
+    uint8_t festTypes[12];
+    int festCount = 0;
+    if (hasLunar) {
+      festCount += lookupFestivals(lunar.month, lunar.day, lunar.year,
+                                   festNames + festCount, festTypes + festCount, 12 - festCount);
+    }
+    festCount += lookupUSHolidays(sYear, sMonth, sDay,
+                                  festNames + festCount, festTypes + festCount, 12 - festCount);
+    festCount += lookupCustomEvents(sYear, sMonth, sDay,
+                                    hasLunar ? lunar.month : 0, hasLunar ? lunar.day : 0,
+                                    festNames + festCount, festTypes + festCount, 12 - festCount);
+
     if (festCount > 0) {
       int fy = 333;
-      const char* catNames[] = {"民俗", "道教", "佛教"};
+      const char* catNames[] = {"民俗", "道教", "佛教", "西方", "個人"};
       int xp = 20;
-      for (int i = 0; i < festCount && i < 3; i++) {
+      for (int i = 0; i < festCount && i < 4; i++) {
         if (i > 0) xp += 12;
         xp += drawSystemText(catNames[festTypes[i]], xp, fy, 20, EPD_DARK_GRAY);
         xp += 2;

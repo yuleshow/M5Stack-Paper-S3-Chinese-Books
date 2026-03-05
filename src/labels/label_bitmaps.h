@@ -1,5 +1,5 @@
 // Auto-generated master label bitmap header
-// Do not edit — regenerate with scripts/convert_labels.py
+// Do not edit — regenerate with convert_labels.py
 #pragma once
 
 #include <pgmspace.h>
@@ -26,6 +26,9 @@
 #include "label_file_server.h"
 #include "label_usb_msc.h"
 #include "label_icon_source.h"
+#include "label_calendar_calc.h"
+#include "label_bluetooth.h"
+#include "label_auto_sleep.h"
 #include "label_not_set.h"
 #include "label_status.h"
 #include "label_current.h"
@@ -37,6 +40,15 @@
 #include "label_enabled_wifi.h"
 #include "label_sd_desc_status.h"
 #include "label_builtin_status.h"
+#include "label_connected_22.h"
+#include "label_saved_22.h"
+#include "label_configured_22.h"
+#include "label_running_22.h"
+#include "label_enabled_22.h"
+#include "label_sxwnl_calendar.h"
+#include "label_meeus_algorithm.h"
+#include "label_sleep_enabled.h"
+#include "label_sleep_disabled.h"
 #include "label_sd_priority_32.h"
 #include "label_builtin_icons_32.h"
 #include "label_sd_priority_28.h"
@@ -51,13 +63,28 @@
 #include "label_builtin_desc2.h"
 #include "label_builtin_desc3.h"
 #include "label_usb_title.h"
+#include "label_msc_running.h"
 #include "label_sd_connected.h"
 #include "label_sd_unavailable.h"
 #include "label_restart_warning.h"
 #include "label_sd_as_usb.h"
+#include "label_msc_stop_btn.h"
+#include "label_msc_start_btn.h"
+#include "label_msc_help.h"
 #include "label_full_sd_access.h"
 #include "label_rw_all_files.h"
 #include "label_close_restart.h"
+#include "label_file_not_found.h"
+#include "label_file_too_large.h"
+#include "label_use_smaller_img.h"
+#include "label_cannot_open_file.h"
+#include "label_out_of_memory.h"
+#include "label_cannot_load_img.h"
+#include "label_gimp_export.h"
+#include "label_gimp_step1.h"
+#include "label_gimp_step2.h"
+#include "label_gimp_step3.h"
+#include "label_sleeping.h"
 #include "label_webserver_title.h"
 #include "label_starting_server.h"
 #include "label_waiting_wifi.h"
@@ -461,6 +488,8 @@
 #include "label_fest_cat_folk.h"
 #include "label_fest_cat_taoist.h"
 #include "label_fest_cat_buddhist.h"
+#include "label_fest_cat_western.h"
+#include "label_fest_cat_custom.h"
 #include "label_fest_chunjie.h"
 #include "label_fest_powu.h"
 #include "label_fest_yuanxiao.h"
@@ -1202,7 +1231,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1186;
+const int kLabelBitmapCount = 1215;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -1225,6 +1254,9 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"檔案上傳伺服器", 32, label_file_server_w, label_file_server_h, label_file_server_bitmap},
   {"USB 外接磁碟", 32, label_usb_msc_w, label_usb_msc_h, label_usb_msc_bitmap},
   {"圖標來源", 32, label_icon_source_w, label_icon_source_h, label_icon_source_bitmap},
+  {"曆法計算", 32, label_calendar_calc_w, label_calendar_calc_h, label_calendar_calc_bitmap},
+  {"藍牙", 32, label_bluetooth_w, label_bluetooth_h, label_bluetooth_bitmap},
+  {"自動休眠", 32, label_auto_sleep_w, label_auto_sleep_h, label_auto_sleep_bitmap},
   {"未設定", 22, label_not_set_w, label_not_set_h, label_not_set_bitmap},
   {"狀態: ", 32, label_status_w, label_status_h, label_status_bitmap},
   {"目前: ", 32, label_current_w, label_current_h, label_current_bitmap},
@@ -1236,6 +1268,15 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"已啟用 (需連接WiFi)", 22, label_enabled_wifi_w, label_enabled_wifi_h, label_enabled_wifi_bitmap},
   {"SD 卡優先（可自訂圖標）", 22, label_sd_desc_status_w, label_sd_desc_status_h, label_sd_desc_status_bitmap},
   {"內建圖標（速度較快）", 22, label_builtin_status_w, label_builtin_status_h, label_builtin_status_bitmap},
+  {"已連接", 22, label_connected_22_w, label_connected_22_h, label_connected_22_bitmap},
+  {"已儲存", 22, label_saved_22_w, label_saved_22_h, label_saved_22_bitmap},
+  {"已設定", 22, label_configured_22_w, label_configured_22_h, label_configured_22_bitmap},
+  {"執行中", 22, label_running_22_w, label_running_22_h, label_running_22_bitmap},
+  {"已啟用", 22, label_enabled_22_w, label_enabled_22_h, label_enabled_22_bitmap},
+  {"壽星天文曆（許劍偉）", 22, label_sxwnl_calendar_w, label_sxwnl_calendar_h, label_sxwnl_calendar_bitmap},
+  {"Meeus 天文算法（精度較高）", 22, label_meeus_algorithm_w, label_meeus_algorithm_h, label_meeus_algorithm_bitmap},
+  {"已啟用 - 10分鐘無操作自動休眠", 22, label_sleep_enabled_w, label_sleep_enabled_h, label_sleep_enabled_bitmap},
+  {"未啟用 - 保持開啟", 22, label_sleep_disabled_w, label_sleep_disabled_h, label_sleep_disabled_bitmap},
   {"SD 卡優先", 32, label_sd_priority_32_w, label_sd_priority_32_h, label_sd_priority_32_bitmap},
   {"內建圖標", 32, label_builtin_icons_32_w, label_builtin_icons_32_h, label_builtin_icons_32_bitmap},
   {"SD 卡優先", 28, label_sd_priority_28_w, label_sd_priority_28_h, label_sd_priority_28_bitmap},
@@ -1250,13 +1291,28 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"• 啟動速度較快", 22, label_builtin_desc2_w, label_builtin_desc2_h, label_builtin_desc2_bitmap},
   {"• 不需要 SD 卡", 22, label_builtin_desc3_w, label_builtin_desc3_h, label_builtin_desc3_bitmap},
   {"USB 外接磁碟", 40, label_usb_title_w, label_usb_title_h, label_usb_title_bitmap},
-  {"✓ SD 卡已連接到電腦", 22, label_sd_connected_w, label_sd_connected_h, label_sd_connected_bitmap},
-  {"⚠ 裝置無法存取 SD 卡", 22, label_sd_unavailable_w, label_sd_unavailable_h, label_sd_unavailable_bitmap},
-  {"❗關閉將重新啟動裝置", 24, label_restart_warning_w, label_restart_warning_h, label_restart_warning_bitmap},
-  {"將整張 SD 卡作為 USB 磁碟", 22, label_sd_as_usb_w, label_sd_as_usb_h, label_sd_as_usb_bitmap},
-  {"• 完整 SD 卡存取", 20, label_full_sd_access_w, label_full_sd_access_h, label_full_sd_access_bitmap},
-  {"• 可讀寫所有檔案", 20, label_rw_all_files_w, label_rw_all_files_h, label_rw_all_files_bitmap},
-  {"• 關閉將重新啟動", 20, label_close_restart_w, label_close_restart_h, label_close_restart_bitmap},
+  {"執行中", 32, label_msc_running_w, label_msc_running_h, label_msc_running_bitmap},
+  {"SD 卡已連接到電腦", 24, label_sd_connected_w, label_sd_connected_h, label_sd_connected_bitmap},
+  {"裝置無法存取 SD 卡", 24, label_sd_unavailable_w, label_sd_unavailable_h, label_sd_unavailable_bitmap},
+  {"關閉將重新啟動裝置", 24, label_restart_warning_w, label_restart_warning_h, label_restart_warning_bitmap},
+  {"將整張 SD 卡作為 USB 磁碟", 24, label_sd_as_usb_w, label_sd_as_usb_h, label_sd_as_usb_bitmap},
+  {"關閉 USB 磁碟", 36, label_msc_stop_btn_w, label_msc_stop_btn_h, label_msc_stop_btn_bitmap},
+  {"啟用 USB 磁碟", 36, label_msc_start_btn_w, label_msc_start_btn_h, label_msc_start_btn_bitmap},
+  {"說明", 32, label_msc_help_w, label_msc_help_h, label_msc_help_bitmap},
+  {"完整 SD 卡存取", 28, label_full_sd_access_w, label_full_sd_access_h, label_full_sd_access_bitmap},
+  {"可讀寫所有檔案", 28, label_rw_all_files_w, label_rw_all_files_h, label_rw_all_files_bitmap},
+  {"關閉將重新啟動", 28, label_close_restart_w, label_close_restart_h, label_close_restart_bitmap},
+  {"找不到檔案", 24, label_file_not_found_w, label_file_not_found_h, label_file_not_found_bitmap},
+  {"檔案過大", 24, label_file_too_large_w, label_file_too_large_h, label_file_too_large_bitmap},
+  {"請使用小於4MB的圖片", 24, label_use_smaller_img_w, label_use_smaller_img_h, label_use_smaller_img_bitmap},
+  {"無法開啟檔案", 24, label_cannot_open_file_w, label_cannot_open_file_h, label_cannot_open_file_bitmap},
+  {"記憶體不足", 24, label_out_of_memory_w, label_out_of_memory_h, label_out_of_memory_bitmap},
+  {"無法載入圖片", 24, label_cannot_load_img_w, label_cannot_load_img_h, label_cannot_load_img_bitmap},
+  {"GIMP 匯出設定:", 20, label_gimp_export_w, label_gimp_export_h, label_gimp_export_bitmap},
+  {"1. 使用「匯出為」", 20, label_gimp_step1_w, label_gimp_step1_h, label_gimp_step1_bitmap},
+  {"2. 取消勾選「漸進式」", 20, label_gimp_step2_w, label_gimp_step2_h, label_gimp_step2_bitmap},
+  {"3. 或改用 BMP 格式", 20, label_gimp_step3_w, label_gimp_step3_h, label_gimp_step3_bitmap},
+  {"休眠中", 20, label_sleeping_w, label_sleeping_h, label_sleeping_bitmap},
   {"檔案上傳伺服器", 40, label_webserver_title_w, label_webserver_title_h, label_webserver_title_bitmap},
   {"正在啟動伺服器...", 22, label_starting_server_w, label_starting_server_h, label_starting_server_bitmap},
   {"等待 WiFi 連接...", 22, label_waiting_wifi_w, label_waiting_wifi_h, label_waiting_wifi_bitmap},
@@ -1660,6 +1716,8 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"民俗", 20, label_fest_cat_folk_w, label_fest_cat_folk_h, label_fest_cat_folk_bitmap},
   {"道教", 20, label_fest_cat_taoist_w, label_fest_cat_taoist_h, label_fest_cat_taoist_bitmap},
   {"佛教", 20, label_fest_cat_buddhist_w, label_fest_cat_buddhist_h, label_fest_cat_buddhist_bitmap},
+  {"西方", 20, label_fest_cat_western_w, label_fest_cat_western_h, label_fest_cat_western_bitmap},
+  {"個人", 20, label_fest_cat_custom_w, label_fest_cat_custom_h, label_fest_cat_custom_bitmap},
   {"春節", 20, label_fest_chunjie_w, label_fest_chunjie_h, label_fest_chunjie_bitmap},
   {"破五節", 20, label_fest_powu_w, label_fest_powu_h, label_fest_powu_bitmap},
   {"元宵節", 20, label_fest_yuanxiao_w, label_fest_yuanxiao_h, label_fest_yuanxiao_bitmap},

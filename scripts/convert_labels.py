@@ -55,13 +55,18 @@ LABELS = [
     ("關閉",         32, "disable"),        # setup_ui/usb_msc: size 32
     ("說明:",        22, "help"),           # setup_ui/usb_msc: size 22
 
-    # ── Setup menu items (drawn at size 32 in menu list) ──
+    # ── Setup menu items Page 1 (drawn at size 32 in menu list) ──
     ("設定",         40, "settings_title"),       # setup_ui.cpp L544: size 40
     ("WiFi 設定",    32, "wifi_settings"),        # setup_ui.cpp L555: size 32
     ("時區設定",     32, "timezone_settings"),    # setup_ui.cpp L574: size 32
     ("檔案上傳伺服器", 32, "file_server"),        # setup_ui.cpp L586: size 32
     ("USB 外接磁碟", 32, "usb_msc"),              # setup_ui.cpp L604: size 32
     ("圖標來源",     32, "icon_source"),          # setup_ui.cpp L619: size 32
+
+    # ── Setup menu items Page 2 (drawn at size 32 in menu list) ──
+    ("曆法計算",     32, "calendar_calc"),        # setup_ui.cpp L712: size 32
+    ("藍牙",         32, "bluetooth"),             # setup_ui.cpp L724: size 32
+    ("自動休眠",     32, "auto_sleep"),            # setup_ui.cpp L734: size 32
 
     # ── Setup status text (drawn at size 32 and 22) ──
     ("未設定",       22, "not_set"),         # setup_ui.cpp L564: size 22
@@ -75,6 +80,15 @@ LABELS = [
     ("已啟用 (需連接WiFi)", 22, "enabled_wifi"),    # setup_ui.cpp L592: size 22
     ("SD 卡優先（可自訂圖標）", 22, "sd_desc_status"),  # setup_ui.cpp L622: size 22
     ("內建圖標（速度較快）", 22, "builtin_status"),     # setup_ui.cpp L624: size 22
+    ("已連接",       22, "connected_22"),       # setup_ui.cpp main menu WiFi: size 22
+    ("已儲存",       22, "saved_22"),           # setup_ui.cpp main menu WiFi: size 22
+    ("已設定",       22, "configured_22"),      # setup_ui.cpp main menu timezone: size 22
+    ("執行中",       22, "running_22"),         # setup_ui.cpp main menu web: size 22
+    ("已啟用",       22, "enabled_22"),         # setup_ui.cpp main menu web: size 22
+    ("壽星天文曆（許劍偉）", 22, "sxwnl_calendar"),     # setup_ui.cpp L714: size 22
+    ("Meeus 天文算法（精度較高）", 22, "meeus_algorithm"),  # setup_ui.cpp L716: size 22
+    ("已啟用 - 10分鐘無操作自動休眠", 22, "sleep_enabled"),    # setup_ui.cpp L737: size 22
+    ("未啟用 - 保持開啟", 22, "sleep_disabled"),          # setup_ui.cpp L739: size 22
 
     # ── Icon setup (actual sizes from setup_ui.cpp) ──
     ("SD 卡優先",        32, "sd_priority_32"),     # setup_ui.cpp L500: size 32
@@ -92,14 +106,33 @@ LABELS = [
     ("• 不需要 SD 卡",             22, "builtin_desc3"),  # setup_ui.cpp L514: size 22
 
     # ── USB MSC (actual sizes from usb_msc_handler.cpp) ──
-    ("USB 外接磁碟",               40, "usb_title"),         # usb_msc: L208: size 40
-    ("✓ SD 卡已連接到電腦",        22, "sd_connected"),      # usb_msc: L215: size 22
-    ("⚠ 裝置無法存取 SD 卡",      22, "sd_unavailable"),    # usb_msc: L221: size 22
-    ("❗關閉將重新啟動裝置",       24, "restart_warning"),   # usb_msc: L228: size 24
-    ("將整張 SD 卡作為 USB 磁碟",  22, "sd_as_usb"),        # usb_msc: L238: size 22
-    ("• 完整 SD 卡存取",           20, "full_sd_access"),    # usb_msc: L258: size 20
-    ("• 可讀寫所有檔案",           20, "rw_all_files"),      # usb_msc: L264: size 20
-    ("• 關閉將重新啟動",           20, "close_restart"),     # usb_msc: L269: size 20
+    ("USB 外接磁碟",               40, "usb_title"),         # usb_msc title
+    ("執行中",                     32, "msc_running"),       # usb_msc status
+    ("SD 卡已連接到電腦",          24, "sd_connected"),      # usb_msc info
+    ("裝置無法存取 SD 卡",         24, "sd_unavailable"),    # usb_msc info
+    ("關閉將重新啟動裝置",         24, "restart_warning"),   # usb_msc warning
+    ("將整張 SD 卡作為 USB 磁碟",  24, "sd_as_usb"),        # usb_msc info
+    ("關閉 USB 磁碟",              36, "msc_stop_btn"),      # usb_msc button
+    ("啟用 USB 磁碟",              36, "msc_start_btn"),     # usb_msc button
+    ("說明",                       32, "msc_help"),          # usb_msc info title
+    ("完整 SD 卡存取",             28, "full_sd_access"),    # usb_msc info
+    ("可讀寫所有檔案",             28, "rw_all_files"),      # usb_msc info
+    ("關閉將重新啟動",             28, "close_restart"),     # usb_msc info
+
+    # ── Wallpaper errors (wallpaper.cpp) ──
+    ("找不到檔案",                 24, "file_not_found"),    # wallpaper.cpp error
+    ("檔案過大",                   24, "file_too_large"),    # wallpaper.cpp error
+    ("請使用小於4MB的圖片",        24, "use_smaller_img"),   # wallpaper.cpp error
+    ("無法開啟檔案",               24, "cannot_open_file"),  # wallpaper.cpp error
+    ("記憶體不足",                 24, "out_of_memory"),     # wallpaper.cpp error
+    ("無法載入圖片",               24, "cannot_load_img"),   # wallpaper.cpp error
+    ("GIMP 匯出設定:",             20, "gimp_export"),       # wallpaper.cpp help
+    ("1. 使用「匯出為」",          20, "gimp_step1"),        # wallpaper.cpp help
+    ("2. 取消勾選「漸進式」",      20, "gimp_step2"),        # wallpaper.cpp help
+    ("3. 或改用 BMP 格式",         20, "gimp_step3"),        # wallpaper.cpp help
+
+    # ── Sleep screen (main.cpp) ──
+    ("休眠中",                     20, "sleeping"),          # main.cpp sleep label
 
     # ── Web server (actual sizes from setup_ui.cpp) ──
     ("檔案上傳伺服器",             40, "webserver_title"),   # setup_ui.cpp L417: size 40
@@ -531,6 +564,8 @@ LABELS = [
     ("民俗", 20, "fest_cat_folk"),
     ("道教", 20, "fest_cat_taoist"),
     ("佛教", 20, "fest_cat_buddhist"),
+    ("西方", 20, "fest_cat_western"),
+    ("個人", 20, "fest_cat_custom"),
 
     # ── Calendar: 民俗節日 (size 20, detail page) ──
     ("春節",   20, "fest_chunjie"),

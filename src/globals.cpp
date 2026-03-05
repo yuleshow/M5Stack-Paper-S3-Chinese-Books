@@ -13,6 +13,7 @@ const unsigned long IDLE_SLEEP_TIMEOUT = 10 * 60 * 1000;  // 10 minutes
 WebServer* webServer = nullptr;
 bool webServerEnabled = false;
 bool webServerRunning = false;
+bool autoSleepEnabled = false;  // Start with auto-sleep disabled (user can enable in settings)
 
 // Pending nav touch (for mid-render touch detection)
 bool pendingNavTouch = false;
@@ -20,8 +21,10 @@ int pendingTouchX = 0;
 int pendingTouchY = 0;
 unsigned long lastTouchProcessedTime = 0;  // Debounce: time of last processed touch
 bool usbMSCEnabled = false;
-bool useSDCardIcons = true;
+bool useSDCardIcons = false;
 bool usbMSCActive = false;
+int setupFastRefreshCount = 0;
+int todoFastRefreshCount = 0;
 bool useSxwnlCalendar = false;  // Default: Meeus (our way)
 bool bluetoothEnabled = false;
 bool bluetoothActive = false;
@@ -119,7 +122,7 @@ void scanBLEDevices() {
   pBLEScan->setInterval(100);
   pBLEScan->setWindow(99);
   
-  BLEScanResults foundDevices = pBLEScan->start(5, false);  // 5 second scan
+  BLEScanResults foundDevices = pBLEScan->start(2, false);  // 2 second scan (shorter to reduce UI blocking)
   
   int count = foundDevices.getCount();
   Serial.printf("BLE scan found %d devices\n", count);
@@ -345,6 +348,7 @@ String passwordInput = "";
 bool keyboardShift = false;
 bool keyboardSymbols = false;
 int setupSubmenu = 0;
+int setupMenuPage = 0;
 unsigned long lastClockUpdate = 0;
 int lastClockMinute = -1;
 

@@ -1,0 +1,33 @@
+# 自訂日曆事件 / Custom Calendar Events
+# 格式: 類型,曆法,月,日,名稱[,年份]
+# Format: type,calendar,month,day,name[,year]
+#
+# 類型 (type):
+#   birthday  - 生日 (顯示歲數, 需填年份)
+#   annual    - 每年紀念日/節日
+#   memorial  - 忌日/紀念 (需填年份, 顯示第N年)
+#
+# 曆法 (calendar):
+#   solar     - 國曆/公曆
+#   lunar     - 農曆
+#
+# 月 (month): 1-12
+# 日 (day):   1-31
+# 名稱 (name): 事件名稱 (中文)
+# 年份 (year): 出生年/起始年 (僅 birthday/memorial 需要)
+#
+# 範例 / Examples:
+#
+# ── 家人生日 (Family Birthdays) ──
+birthday,solar,3,15,爸爸生日,1955
+birthday,solar,8,22,媽媽生日,1960
+birthday,lunar,1,16,奶奶生日,1930
+birthday,solar,6,1,兒童節寶寶生日,2020
+#
+# ── 紀念日 (Anniversaries) ──
+annual,solar,5,20,結婚紀念日
+annual,solar,2,14,情人節
+annual,lunar,7,7,七夕情人節
+#
+# ── 忌日 (Memorial) ──
+memorial,lunar,3,5,爺爺忌日,2018

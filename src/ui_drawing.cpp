@@ -9,9 +9,9 @@
 bool checkNavTouch() {
   if (pendingNavTouch) return true;  // Already have a pending touch
   
-  // Debounce: ignore touches within 1s of last processed touch
+  // Debounce: ignore touches within 300ms of last processed touch
   // Prevents ghost touches from e-ink refresh noise
-  if (millis() - lastTouchProcessedTime < 1000) return false;
+  if (millis() - lastTouchProcessedTime < 300) return false;
   
   M5.update();
   auto t = M5.Touch.getDetail();

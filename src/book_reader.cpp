@@ -168,8 +168,8 @@ void scanBooks() {
 }
 
 void updateBytesPerPage() {
-  int charH = readingFontSize + readingFontSize / 2;
-  int colSp = readingFontSize + readingFontSize / 2;
+  int charH = readingFontSize + readingFontSize / 5;  // 1.2x font size
+  int colSp = readingFontSize + readingFontSize / 5;  // 1.2x font size
   // Must match rendering: charsPerColumn uses VERTICAL_TEXT_MAX_Y, not READING_AREA_BOTTOM
   int charsPerCol = (VERTICAL_TEXT_MAX_Y - READING_AREA_TOP) / charH;
   int numCols = (READING_AREA_RIGHT - READING_AREA_LEFT) / colSp;
@@ -455,16 +455,13 @@ bool loadBook(int bookIndex) {
 void drawBookList() {
   Serial.println("Drawing book list...");
   
-  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.setEpdMode(epd_mode_t::epd_fast);
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   
   // Status bar + nav bar first
   drawStatusBar();
   drawReturnButton();
-  
-  Serial.println("Waiting for screen clear...");
-  delay(100);
   
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -491,8 +488,6 @@ void drawBookList() {
   Serial.println("Calling display()...");
   M5.Display.endWrite();
   M5.Display.display();
-  
-  delay(500);  // Brief wait for e-ink refresh
   Serial.println("Book list displayed");
 }
 
@@ -571,8 +566,8 @@ void drawReading() {
     fontSizePt = DEFAULT_READING_FONT_SIZE;
   }
   
-  int charHeight = fontSizePt + (fontSizePt / 2);  // ~1.5x font size for spacing
-  int columnSpacing = fontSizePt + (fontSizePt / 2);
+  int charHeight = fontSizePt + (fontSizePt / 5);  // ~1.2x font size for spacing
+  int columnSpacing = fontSizePt + (fontSizePt / 5);
   int charsPerColumn = (VERTICAL_TEXT_MAX_Y - READING_AREA_TOP) / charHeight;
   int columnX = READING_AREA_RIGHT - columnSpacing;
   int startY = READING_AREA_TOP;
@@ -651,14 +646,17 @@ void drawReading() {
     }
     
     // Draw character using the selected renderer
+    // Vertically center each glyph within its charHeight cell
+    int vOffset = (charHeight - fontSizePt) / 2;
     if (renderer == FONT_OFR) {
       // OpenFontRender: draw single character string at position
       // Center the character in the column
       int drawX = columnX;
-      ofr.setCursor(drawX - fontSizePt / 2, currentY);
+      int drawY = currentY + vOffset;
+      ofr.setCursor(drawX - fontSizePt / 2, drawY);
       ofr.setFontSize(fontSizePt);
       ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-      uint16_t drawn = ofr.cdrawString(ch.c_str(), drawX, currentY, TFT_BLACK, TFT_WHITE);
+      uint16_t drawn = ofr.cdrawString(ch.c_str(), drawX, drawY, TFT_BLACK, TFT_WHITE);
       if (drawn > 0) {
         charsDrawn++;
         currentY += charHeight;
@@ -673,10 +671,11 @@ void drawReading() {
     } else if (renderer == FONT_BINFONT && ch.length() > 0) {
       GlyphIndex* glyph = findGlyph(unicode);
       if (glyph && glyph->width > 0) {
+        int drawY = currentY + (charHeight - glyph->height) / 2;
         if (charsDrawn < 5) {
-          Serial.printf("Drawing char %d: U+%04X at x=%d y=%d\n", charsDrawn, unicode, columnX - glyph->width/2, currentY);
+          Serial.printf("Drawing char %d: U+%04X at x=%d y=%d\n", charsDrawn, unicode, columnX - glyph->width/2, drawY);
         }
-        if (drawBinFontChar(unicode, columnX - glyph->width/2, currentY)) {
+        if (drawBinFontChar(unicode, columnX - glyph->width/2, drawY)) {
           charsDrawn++;
           currentY += charHeight;
           charIndex++;
@@ -689,9 +688,10 @@ void drawReading() {
       }
     } else {
       // Built-in font
+      int drawY = currentY + vOffset;
       M5.Display.setFont(&fonts::lgfxJapanMincho_28);
       M5.Display.setTextSize(1.4);
-      M5.Display.setCursor(columnX - 15, currentY);
+      M5.Display.setCursor(columnX - 15, drawY);
       M5.Display.print(ch);
       charsDrawn++;
       currentY += charHeight;

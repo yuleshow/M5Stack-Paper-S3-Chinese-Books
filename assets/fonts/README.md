@@ -16,7 +16,8 @@ The firmware prefers **`GenYoMinTW-Regular.ttf`** (源様明體) as the system U
 
 ## Font Roles
 
-- **System font** — Used for all UI text rendering (menus, labels, status). Auto-selected at boot.
+- **System font** — Used for all UI text rendering (menus, labels, status). Auto-selected at boot. Default: **`GenYoMinTW-Regular.ttf`** (源様明體).
+- **Motto font** — Used for the vertical motto text on the sleep screen. Default: **`TW-Kai-98_1.ttf`** (全字庫正楷體), from the [CNS11643 全字庫](https://data.gov.tw/dataset/5961) open data project by 數位發展部 (Ministry of Digital Affairs). Licensed under OFL-1.1. Download: [Fonts_Kai.zip](https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip). Falls back to built-in `efontTW_24` if not available.
 - **Reading font** — User-selectable per-book font via the font menu. Saved in preferences.
 
 ## Notes

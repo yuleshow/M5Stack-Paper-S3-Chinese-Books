@@ -1,4 +1,6 @@
 #include "globals.h"
+#include "tusb.h"
+#include "driver/periph_ctrl.h"
 
 // USB MSC callbacks for direct SD card sector access
 static int32_t onMSCWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t bufsize) {
@@ -175,20 +177,24 @@ void stopUSBMSC() {
   }
   
   Serial.println("Stopping USB Mass Storage...");
-  Serial.println("Device will restart in 2 seconds...");
   
   // Save state before restarting
   savePrefBool("m5paper", "usbMSC", false);
   
-  // End USB MSC cleanly before restart
+  // End USB MSC
   msc.end();
   usbMSCActive = false;
   
-  Serial.flush();  // Ensure serial output is sent
-  delay(2000);     // Let user read the message
+  // Disconnect USB OTG from host
+  tud_disconnect();
+  delay(100);
   
-  // Restart device - cleanest way to fully reinitialize USB stack
-  ESP.restart();
+  // Disable USB OTG peripheral at hardware level so esp_restart()
+  // can complete cleanly on ESP32-S3.
+  periph_module_disable(PERIPH_USB_MODULE);
+  delay(100);
+  
+  esp_restart();
 }
 
 void drawUSBMSCSetup() {
@@ -210,69 +216,75 @@ void drawUSBMSCSetup() {
   
   // Current status
   if (usbMSCActive) {
-    drawSystemText("狀態：", 20, 120, 32);
+    drawSystemText("狀態: ", 20, 120, 32);
     drawSystemText("執行中", 160, 120, 32, EPD_DARK_GRAY);
     
-    drawSystemText("✓ SD 卡已連接到電腦", 20, 180, 22);
+    drawSystemText("SD 卡已連接到電腦", 20, 180, 24);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
     M5.Display.setCursor(20, 210);
-    M5.Display.println("✓ SD card connected to computer");
+    M5.Display.print("SD card connected to computer");
     
-    drawSystemText("⚠ 裝置無法存取 SD 卡", 20, 250, 22, EPD_DARK_GRAY);
+    drawSystemText("裝置無法存取 SD 卡", 20, 250, 24, EPD_DARK_GRAY);
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
     M5.Display.setCursor(20, 280);
-    M5.Display.println("  Device cannot access SD card");
+    M5.Display.print("Device cannot access SD card");
     
-    drawSystemText("❗關閉將重新啟動裝置", 20, 320, 24, EPD_DARK_GRAY);
+    drawSystemText("關閉將重新啟動裝置", 20, 320, 24, EPD_DARK_GRAY);
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
     M5.Display.setCursor(20, 350);
-    M5.Display.println("  Disabling will restart device");
+    M5.Display.print("Disabling will restart device");
   } else {
-    drawSystemText("狀態：", 20, 120, 32);
+    drawSystemText("狀態: ", 20, 120, 32);
     drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
     
-    drawSystemText("將整張 SD 卡作為 USB 磁碟", 20, 180, 22);
+    drawSystemText("將整張 SD 卡作為 USB 磁碟", 20, 180, 24);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
     M5.Display.setCursor(20, 210);
-    M5.Display.println("Expose entire SD card as USB drive");
+    M5.Display.print("Expose entire SD card as USB drive");
   }
   
-  // Toggle button
-  int btnY = 380;
+  // Toggle button (full width)
+  int btnY = 400;
   if (usbMSCActive) {
-    M5.Display.fillRect(20, btnY, 240, 100, TFT_BLACK);
-    drawSystemText("關閉", 75, btnY + 35, 32, TFT_WHITE, TFT_BLACK);
+    M5.Display.fillRect(20, btnY, 500, 90, TFT_BLACK);
+    drawSystemTextCentered("關閉 USB 磁碟", 270, btnY + 28, 36, TFT_WHITE, TFT_BLACK);
   } else {
-    M5.Display.fillRect(20, btnY, 240, 100, EPD_DARK_GRAY);
-    drawSystemText("啟用", 75, btnY + 35, 32, TFT_WHITE, EPD_DARK_GRAY);
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("啟用 USB 磁碟", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
   }
   
-  // Info box
-  M5.Display.drawRect(280, btnY, 240, 280, TFT_BLACK);
-  drawSystemText("說明:", 290, btnY + 10, 22);
-  drawSystemText("• 完整 SD 卡存取", 290, btnY + 40, 20);
+  // Info section — large, filling the lower half
+  int infoY = 530;
+  M5.Display.drawRect(20, infoY, 500, 370, TFT_BLACK);
+  
+  drawSystemText("說明", 30, infoY + 15, 32);
+  M5.Display.drawLine(20, infoY + 55, 520, infoY + 55, EPD_LIGHT_GRAY);
+  
+  drawSystemText("完整 SD 卡存取", 40, infoY + 75, 28);
   M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.setCursor(290, btnY + 70);
-  M5.Display.println("  Full SD card access");
-  drawSystemText("• 可讀寫所有檔案", 290, btnY + 110, 20);
+  M5.Display.setCursor(40, infoY + 110);
+  M5.Display.print("Full SD card access");
+  
+  drawSystemText("可讀寫所有檔案", 40, infoY + 155, 28);
   M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1);
-  M5.Display.setCursor(290, btnY + 140);
-  M5.Display.println("  Read/write all files");
-  drawSystemText("• 關閉將重新啟動", 290, btnY + 180, 20, EPD_DARK_GRAY);
+  M5.Display.setCursor(40, infoY + 190);
+  M5.Display.print("Read/write all files");
+  
+  drawSystemText("關閉將重新啟動", 40, infoY + 245, 28, EPD_DARK_GRAY);
   M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.setCursor(290, btnY + 210);
-  M5.Display.println("  Disable restarts");
+  M5.Display.setCursor(40, infoY + 280);
+  M5.Display.print("Disabling will restart device");
   
   M5.Display.endWrite();
   M5.Display.display();

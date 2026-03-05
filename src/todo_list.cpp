@@ -315,7 +315,10 @@ void calculateTodoPages() {
 }
 
 void drawTodoList() {
-  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  // Compromise mode: mostly fast refresh, periodic quality refresh to clean ghosting
+  todoFastRefreshCount++;
+  bool doCleanRefresh = (todoFastRefreshCount % 5 == 0);
+  M5.Display.setEpdMode(doCleanRefresh ? epd_mode_t::epd_quality : epd_mode_t::epd_fast);
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
@@ -339,13 +342,14 @@ void drawTodoList() {
   }
   
   // Use OFR TTF font if loaded, else binary font, else built-in
-  if (!ofrFontLoaded && !g_binFont.loaded) {
+  bool useOfr = ofrFontLoaded;
+  if (!useOfr && !g_binFont.loaded) {
     M5.Display.setFont(&fonts::efontTW_24);
     M5.Display.setTextSize(1.2);
   }
   
   // Vertical text layout parameters
-  int fontSizePt = ofrFontLoaded ? 36 : (g_binFont.loaded ? g_binFont.fontSize : 30);
+  int fontSizePt = useOfr ? 36 : (g_binFont.loaded ? g_binFont.fontSize : 30);
   int charHeight = fontSizePt + 8;
   int columnSpacing = fontSizePt + 15;
   int startY = VERTICAL_TEXT_START_Y;
@@ -368,6 +372,7 @@ void drawTodoList() {
     // Check for nav touch between items
     if (checkNavTouch()) {
       Serial.println("Nav touch during todo render - aborting");
+      M5.Display.endWrite();
       return;
     }
     
@@ -434,7 +439,7 @@ void drawTodoList() {
           continue;
         }
         sprite.fillSprite(TFT_WHITE);
-        if (ofrFontLoaded) {
+        if (useOfr) {
           ofr.setDrawer(sprite);
           ofr.setFontSize(28);
           ofr.setFontColor(EPD_DARK_GRAY, TFT_WHITE);
@@ -453,7 +458,7 @@ void drawTodoList() {
         y += 24;
       }
       M5.Display.setTextColor(TFT_BLACK);
-      if (ofrFontLoaded) {
+      if (useOfr) {
         ofr.setFontColor(TFT_BLACK, TFT_WHITE);
       }
     }

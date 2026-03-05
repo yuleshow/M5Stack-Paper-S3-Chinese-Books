@@ -649,7 +649,7 @@ void calculateShoppingPages() {
 }
 
 void drawShoppingList() {
-  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.setEpdMode(epd_mode_t::epd_fast);
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);

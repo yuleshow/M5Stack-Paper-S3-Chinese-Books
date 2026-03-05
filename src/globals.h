@@ -308,12 +308,15 @@ extern String currentFont;
 extern String currentBook;
 extern unsigned long lastActivityTime;
 extern const unsigned long IDLE_SLEEP_TIMEOUT;
+extern bool autoSleepEnabled;  // Toggle for idle auto-sleep feature
 extern WebServer* webServer;
 extern bool webServerEnabled;
 extern bool webServerRunning;
 extern bool usbMSCEnabled;
 extern bool useSDCardIcons;
 extern bool usbMSCActive;
+extern int setupFastRefreshCount;
+extern int todoFastRefreshCount;
 extern bool useSxwnlCalendar;  // true = 壽星天文曆, false = Meeus (our way)
 extern bool bluetoothEnabled;
 extern bool bluetoothActive;
@@ -472,6 +475,7 @@ extern String passwordInput;
 extern bool keyboardShift;
 extern bool keyboardSymbols;
 extern int setupSubmenu;
+extern int setupMenuPage;
 extern unsigned long lastClockUpdate;
 extern int lastClockMinute;
 
@@ -590,6 +594,7 @@ void redrawWeatherUnits();
 void drawCalendarPicker();
 void drawCalendarYearMonth();
 void drawCalendar();
+void loadCustomEvents();
 void getDateWithOffset(int offset, int &outYear, int &outMonth, int &outDay, int &outWeekDay);
 int dayOfWeek(int y, int m, int d);
 int solarMonthDays(int y, int m);

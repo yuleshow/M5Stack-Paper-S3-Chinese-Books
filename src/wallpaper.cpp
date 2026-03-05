@@ -335,11 +335,11 @@ void drawWallpaper() {
   if (!testFile) {
     Serial.printf("FAILED to open: '%s'\n", filepath.c_str());
     
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setFont(&fonts::efontTW_24);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.drawString("找不到檔案", M5.Display.width() / 2, M5.Display.height() / 2 - 30);
+    drawSystemTextCentered("找不到檔案", M5.Display.width() / 2, M5.Display.height() / 2 - 40, 24);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
+    M5.Display.setTextColor(TFT_BLACK);
+    M5.Display.setTextDatum(MC_DATUM);
     M5.Display.drawString(filepath, M5.Display.width() / 2, M5.Display.height() / 2 + 20);
     M5.Display.setTextDatum(TL_DATUM);
     M5.Display.endWrite();
@@ -355,13 +355,8 @@ void drawWallpaper() {
   // Check if file is too large (4MB limit for PSRAM)
   if (fileSize > 4000000) {
     Serial.println("File too large!");
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setFont(&fonts::efontTW_24);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextSize(1);
-    M5.Display.drawString("檔案過大", M5.Display.width() / 2, M5.Display.height() / 2 - 30);
-    M5.Display.drawString("請使用小於4MB的圖片", M5.Display.width() / 2, M5.Display.height() / 2 + 20);
-    M5.Display.setTextDatum(TL_DATUM);
+    drawSystemTextCentered("檔案過大", M5.Display.width() / 2, M5.Display.height() / 2 - 40, 24);
+    drawSystemTextCentered("請使用小於4MB的圖片", M5.Display.width() / 2, M5.Display.height() / 2 + 10, 24);
     M5.Display.endWrite();
     M5.Display.display();
     return;
@@ -371,11 +366,7 @@ void drawWallpaper() {
   File imgFile = SD.open(filepath.c_str());
   if (!imgFile) {
     Serial.println("Failed to reopen file");
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setFont(&fonts::efontTW_24);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.drawString("無法開啟檔案", M5.Display.width() / 2, M5.Display.height() / 2);
-    M5.Display.setTextDatum(TL_DATUM);
+    drawSystemTextCentered("無法開啟檔案", M5.Display.width() / 2, M5.Display.height() / 2 - 12, 24);
     M5.Display.endWrite();
     M5.Display.display();
     return;
@@ -387,11 +378,7 @@ void drawWallpaper() {
   }
   if (!buf) {
     Serial.println("Failed to allocate memory for image!");
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setFont(&fonts::efontTW_24);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.drawString("記憶體不足", M5.Display.width() / 2, M5.Display.height() / 2);
-    M5.Display.setTextDatum(TL_DATUM);
+    drawSystemTextCentered("記憶體不足", M5.Display.width() / 2, M5.Display.height() / 2 - 12, 24);
     M5.Display.endWrite();
     M5.Display.display();
     imgFile.close();
@@ -473,17 +460,11 @@ void drawWallpaper() {
   if (!loaded) {
     Serial.println("=== IMAGE DECODE FAILED ===");
     
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setFont(&fonts::efontTW_24);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextSize(1);
-    M5.Display.drawString("無法載入圖片", M5.Display.width() / 2, M5.Display.height() / 2 - 80);
-    M5.Display.setTextSize(0.7);
-    M5.Display.drawString("GIMP 匯出設定:", M5.Display.width() / 2, M5.Display.height() / 2 - 30);
-    M5.Display.drawString("1. 使用「匯出為」", M5.Display.width() / 2, M5.Display.height() / 2);
-    M5.Display.drawString("2. 取消勾選「漸進式」", M5.Display.width() / 2, M5.Display.height() / 2 + 30);
-    M5.Display.drawString("3. 或改用 BMP 格式", M5.Display.width() / 2, M5.Display.height() / 2 + 60);
-    M5.Display.setTextDatum(TL_DATUM);
+    drawSystemTextCentered("無法載入圖片", M5.Display.width() / 2, M5.Display.height() / 2 - 80, 24);
+    drawSystemTextCentered("GIMP 匯出設定:", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 20);
+    drawSystemTextCentered("1. 使用「匯出為」", M5.Display.width() / 2, M5.Display.height() / 2, 20);
+    drawSystemTextCentered("2. 取消勾選「漸進式」", M5.Display.width() / 2, M5.Display.height() / 2 + 30, 20);
+    drawSystemTextCentered("3. 或改用 BMP 格式", M5.Display.width() / 2, M5.Display.height() / 2 + 60, 20);
   }
   
   M5.Display.endWrite();

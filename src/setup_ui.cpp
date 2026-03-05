@@ -593,8 +593,11 @@ void drawCalendarSetup() {
 
 void drawSetupMenu() {
   Serial.println("Drawing setup menu...");
-  
-  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  // Compromise mode: mostly fast refresh, periodic quality refresh to clean ghosting
+  setupFastRefreshCount++;
+  bool doCleanRefresh = (setupFastRefreshCount % 5 == 0);
+  const uint16_t cardTextBg = TFT_LIGHTGRAY;
+  M5.Display.setEpdMode(doCleanRefresh ? epd_mode_t::epd_quality : epd_mode_t::epd_fast);
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
@@ -603,118 +606,143 @@ void drawSetupMenu() {
   drawStatusBar();
   drawReturnButton();
   
+  // Menu items (paged)
+  const int totalPages = 2;
+
   // Title
   drawSystemText("設定", 20, 25, 40);
-  
-  // Menu items
+  {
+    char pageBuf[8];
+    snprintf(pageBuf, sizeof(pageBuf), "%d/%d", setupMenuPage + 1, totalPages);
+    drawSystemText(pageBuf, 500, 30, 22);
+  }
+  bool showPrev = (setupMenuPage > 0);
+  bool showNext = (setupMenuPage < totalPages - 1);
+  drawNavBar(showPrev, showNext);
+
   int y = 85;
   int itemHeight = 100;
-  
-  // WiFi Settings item
-  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-  
-  drawSystemText("WiFi 設定", 40, y + 18, 32);
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    String wifiStatus = "已連接：" + String(WiFi.SSID());
-    drawSystemText(wifiStatus.c_str(), 40, y + 62, 22);
-  } else if (wifiConfig.configured) {
-    String wifiStatus = "已儲存：" + String(wifiConfig.ssid);
-    drawSystemText(wifiStatus.c_str(), 40, y + 62, 22);
+
+  if (setupMenuPage == 0) {
+    // Page 1: 5 items
+    
+    // WiFi Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("WiFi 設定", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (WiFi.status() == WL_CONNECTED) {
+      drawSystemText("已連接", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else if (wifiConfig.configured) {
+      drawSystemText("已儲存", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("未設定", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + 18;
+
+    // Timezone Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("時區設定", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    drawSystemText("已設定", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+
+    y += itemHeight + 18;
+
+    // Web Server Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("檔案上傳伺服器", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (webServerRunning) {
+      drawSystemText("執行中", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else if (webServerEnabled) {
+      drawSystemText("已啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("未啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + 18;
+
+    // USB Mass Storage item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("USB 外接磁碟", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (usbMSCActive) {
+      drawSystemText("執行中 - 裝置停用", 40, y + 62, 22, EPD_DARK_GRAY, cardTextBg);
+    } else {
+      drawSystemText("未啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + 18;
+
+    // Icon Source Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("圖標來源", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (useSDCardIcons) {
+      drawSystemText("SD 卡優先（可自訂圖標）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("內建圖標（速度較快）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
   } else {
-    drawSystemText("未設定", 40, y + 62, 22);
-  }
-  
-  y += itemHeight + 18;
-  
-  // Timezone Settings item
-  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-  
-  drawSystemText("時區設定", 40, y + 18, 32);
-  
-  String tzStatus = "目前：" + String(timezones[selectedTimezone].name);
-  drawSystemText(tzStatus.c_str(), 40, y + 62, 22);
-  
-  y += itemHeight + 18;
-  
-  // Web Server Settings item
-  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-  
-  drawSystemText("檔案上傳伺服器", 40, y + 18, 32);
-  
-  if (webServerRunning) {
-    String srvStatus = "執行中: http://" + WiFi.localIP().toString();
-    drawSystemText(srvStatus.c_str(), 40, y + 62, 22);
-  } else if (webServerEnabled) {
-    drawSystemText("已啟用 (需連接WiFi)", 40, y + 62, 22);
-  } else {
-    drawSystemText("未啟用", 40, y + 62, 22);
-  }
-  
-  y += itemHeight + 18;
-  
-  // USB Mass Storage item
-  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-  
-  drawSystemText("USB 外接磁碟", 40, y + 18, 32);
-  
-  if (usbMSCActive) {
-    drawSystemText("執行中 - 裝置停用", 40, y + 62, 22, EPD_DARK_GRAY);
-  } else {
-    drawSystemText("未啟用", 40, y + 62, 22);
-  }
-  
-  y += itemHeight + 18;
-  
-  // Icon Source Settings item (fifth item)
-  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-  
-  drawSystemText("圖標來源", 40, y + 18, 32);
-  
-  if (useSDCardIcons) {
-    drawSystemText("SD 卡優先（可自訂圖標）", 40, y + 62, 22);
-  } else {
-    drawSystemText("內建圖標（速度較快）", 40, y + 62, 22);
-  }
-  
-  y += itemHeight + 18;
-  
-  // Calendar Calculation Settings item (sixth item)
-  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-  
-  drawSystemText("曆法計算", 40, y + 18, 32);
-  
-  if (useSxwnlCalendar) {
-    drawSystemText("壽星天文曆（許劍偉）", 40, y + 62, 22);
-  } else {
-    drawSystemText("Meeus 天文算法（精度較高）", 40, y + 62, 22);
-  }
-  
-  y += itemHeight + 18;
-  
-  // Bluetooth Settings item (seventh item)
-  M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-  M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-  M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-  
-  drawSystemText("藍牙", 40, y + 18, 32);
-  
-  if (bluetoothActive) {
-    drawSystemText("已啟用", 40, y + 62, 22);
-  } else {
-    drawSystemText("未啟用", 40, y + 62, 22);
+    // Page 2: 3 items
+    
+    // Calendar Calculation Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("曆法計算", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (useSxwnlCalendar) {
+      drawSystemText("壽星天文曆（許劍偉）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("Meeus 天文算法（精度較高）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + 18;
+
+    // Bluetooth Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("藍牙", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (bluetoothActive) {
+      drawSystemText("已啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("未啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + 18;
+
+    // Auto-Sleep Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("自動休眠", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (autoSleepEnabled) {
+      drawSystemText("已啟用 - 10分鐘無操作自動休眠", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("未啟用 - 保持開啟", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
   }
   
   // Universal return button (lower-right)
