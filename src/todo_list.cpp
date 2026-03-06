@@ -344,7 +344,7 @@ void drawTodoList() {
   // Use OFR TTF font if loaded, else binary font, else built-in
   bool useOfr = ofrFontLoaded;
   if (!useOfr && !g_binFont.loaded) {
-    M5.Display.setFont(&fonts::efontTW_24);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1.2);
   }
   
@@ -426,7 +426,7 @@ void drawTodoList() {
     if (todoList[i].date.length() > 0) {
       M5.Display.setTextColor(EPD_DARK_GRAY);
       if (!g_binFont.loaded) {
-        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setFont(&fonts::Font2);
         M5.Display.setTextSize(1.0);
       }
       
@@ -447,7 +447,7 @@ void drawTodoList() {
           ofr.drawString(ch.c_str(), 11, 10, EPD_DARK_GRAY, TFT_WHITE);  // Faux bold
           ofr.setDrawer(M5.Display);  // Restore
         } else {
-          sprite.setFont(&fonts::efontTW_24);
+          sprite.setFont(&fonts::Font2);
           sprite.setTextColor(EPD_DARK_GRAY);
           sprite.setTextSize(1.8);
           sprite.drawString(ch, 8, 8);
@@ -468,7 +468,7 @@ void drawTodoList() {
     
     // Draw task vertically
     if (!g_binFont.loaded) {
-      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextSize(1.0);
     }
     
@@ -539,7 +539,7 @@ void drawTodoList() {
             ofr.drawString(ch.c_str(), 11, 10, TFT_BLACK, TFT_WHITE);  // Faux bold
             ofr.setDrawer(M5.Display);  // Restore
           } else {
-            sprite.setFont(&fonts::efontTW_24);
+            sprite.setFont(&fonts::Font2);
             sprite.setTextColor(TFT_BLACK);
             sprite.setTextSize(1.8);
             sprite.drawString(ch, 8, 8);
@@ -584,7 +584,7 @@ void drawTodoList() {
   }
   
   // Page indicator next to right arrow, larger font
-  M5.Display.setFont(&fonts::efontTW_24);
+  M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1.0);
   M5.Display.setCursor(155, 910);
   M5.Display.printf("%d/%d", currentTodoPage + 1, totalTodoPages);

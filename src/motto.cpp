@@ -218,7 +218,7 @@ void drawMottoOnSleep() {
       ofr.setFontColor(TFT_BLACK, TFT_WHITE);
       ofr.cdrawString(ch.c_str(), cx, cy, TFT_BLACK, TFT_WHITE);
     } else {
-      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
       M5.Display.setTextSize(1);
       M5.Display.setTextDatum(MC_DATUM);
@@ -261,7 +261,7 @@ void drawMottoOnSleep() {
         ofr.setFontColor(TFT_BLACK, TFT_WHITE);
         ofr.cdrawString(ch.c_str(), cx, cy, TFT_BLACK, TFT_WHITE);
       } else {
-        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setFont(&fonts::Font2);
         M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
         M5.Display.setTextSize(1);
         M5.Display.setTextDatum(MC_DATUM);

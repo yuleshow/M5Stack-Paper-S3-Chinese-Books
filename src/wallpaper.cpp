@@ -152,29 +152,21 @@ void drawWallpaperList() {
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.setFont(&fonts::efontTW_24);
   
   // Status bar
   drawStatusBar();
   
-  // Title + view toggle button at top
-  M5.Display.setTextSize(1.5);
-  M5.Display.setTextDatum(TL_DATUM);
-  M5.Display.drawString("壁紙選擇", 20, 30);
-  M5.Display.setTextSize(1);
+  // Title
+  drawSystemText("壁紙選擇", 20, 30, 36);
   
   // View toggle button (top-right, below status bar)
   int toggleX = 380, toggleY = 30, toggleW = 140, toggleH = 40;
   M5.Display.fillRoundRect(toggleX, toggleY, toggleW, toggleH, 6, TFT_BLACK);
-  M5.Display.setTextDatum(MC_DATUM);
-  M5.Display.setTextColor(TFT_WHITE);
   if (wallpaperViewMode == 0) {
-    M5.Display.drawString("切換縮圖", toggleX + toggleW / 2, toggleY + toggleH / 2 + 2);
+    drawSystemTextCentered("切換縮圖", toggleX + toggleW / 2, toggleY + toggleH / 2 - 12, 24, TFT_WHITE, TFT_BLACK);
   } else {
-    M5.Display.drawString("切換列表", toggleX + toggleW / 2, toggleY + toggleH / 2 + 2);
+    drawSystemTextCentered("切換列表", toggleX + toggleW / 2, toggleY + toggleH / 2 - 12, 24, TFT_WHITE, TFT_BLACK);
   }
-  M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.setTextDatum(TL_DATUM);
   
   // Load wallpaper files if not loaded
   if (wallpaperCount == 0) {
@@ -182,11 +174,9 @@ void drawWallpaperList() {
   }
   
   if (wallpaperCount == 0) {
-    M5.Display.setTextSize(1);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.drawString("SD卡中沒有壁紙", M5.Display.width() / 2, M5.Display.height() / 2 - 20);
-    M5.Display.drawString("請在 /wallpapers 資料夾中", M5.Display.width() / 2, M5.Display.height() / 2 + 20);
-    M5.Display.drawString("添加圖片檔案", M5.Display.width() / 2, M5.Display.height() / 2 + 60);
+    drawSystemTextCentered("SD卡中沒有壁紙", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 24);
+    drawSystemTextCentered("請在 /wallpapers 資料夾中", M5.Display.width() / 2, M5.Display.height() / 2 + 10, 24);
+    drawSystemTextCentered("添加圖片檔案", M5.Display.width() / 2, M5.Display.height() / 2 + 50, 24);
     M5.Display.setTextDatum(TL_DATUM);
     drawReturnButton();
   } else if (wallpaperViewMode == 0) {
@@ -213,7 +203,7 @@ void drawWallpaperList() {
     // Scroll indicator (top center, between title and toggle)
     if (wallpaperCount > maxVisible) {
       M5.Display.setTextSize(1);
-      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextDatum(MC_DATUM);
       char buf[32];
       snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);
@@ -265,7 +255,7 @@ void drawWallpaperList() {
     // Scroll indicator (top center, between title and toggle)
     if (wallpaperCount > maxVisible) {
       M5.Display.setTextSize(1);
-      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextDatum(MC_DATUM);
       char buf[32];
       snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);

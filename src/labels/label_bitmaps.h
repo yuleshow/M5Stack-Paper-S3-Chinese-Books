@@ -47,21 +47,32 @@
 #include "label_enabled_22.h"
 #include "label_sxwnl_calendar.h"
 #include "label_meeus_algorithm.h"
+#include "label_calendar_title.h"
+#include "label_sxwnl_32.h"
+#include "label_meeus_32.h"
+#include "label_switch_meeus_btn.h"
+#include "label_switch_sxwnl_btn.h"
+#include "label_meeus_28.h"
+#include "label_sxwnl_28.h"
+#include "label_meeus_desc1.h"
+#include "label_meeus_desc2.h"
+#include "label_meeus_desc3.h"
+#include "label_sxwnl_desc1.h"
+#include "label_sxwnl_desc2.h"
+#include "label_sxwnl_desc3.h"
 #include "label_sleep_enabled.h"
 #include "label_sleep_disabled.h"
 #include "label_sd_priority_32.h"
 #include "label_builtin_icons_32.h"
+#include "label_switch_builtin_btn.h"
+#include "label_switch_sd_btn.h"
 #include "label_sd_priority_28.h"
 #include "label_builtin_icons_28.h"
-#include "label_switch_to.h"
-#include "label_sd_priority_desc.h"
-#include "label_builtin_desc.h"
 #include "label_sd_desc1.h"
 #include "label_sd_desc2.h"
 #include "label_sd_desc3.h"
 #include "label_builtin_desc1.h"
 #include "label_builtin_desc2.h"
-#include "label_builtin_desc3.h"
 #include "label_usb_title.h"
 #include "label_msc_running.h"
 #include "label_sd_connected.h"
@@ -86,12 +97,13 @@
 #include "label_gimp_step3.h"
 #include "label_sleeping.h"
 #include "label_webserver_title.h"
+#include "label_stop_server_btn.h"
+#include "label_start_server_btn.h"
 #include "label_starting_server.h"
 #include "label_waiting_wifi.h"
 #include "label_enter_ip.h"
-#include "label_enable_desc1.h"
-#include "label_enable_desc2.h"
-#include "label_enable_desc3.h"
+#include "label_enable_upload_desc.h"
+#include "label_supported_types.h"
 #include "label_srv_books.h"
 #include "label_srv_fonts.h"
 #include "label_srv_wallpapers.h"
@@ -102,6 +114,12 @@
 #include "label_usb_ok.h"
 #include "label_usb_fail.h"
 #include "label_not_found.h"
+#include "label_wallpaper_title.h"
+#include "label_switch_thumbnail.h"
+#include "label_switch_list.h"
+#include "label_no_wallpaper.h"
+#include "label_add_wallpaper_hint.h"
+#include "label_add_image_files.h"
 #include "label_booklist_title.h"
 #include "label_touch_select.h"
 #include "label_font_smaller.h"
@@ -1231,7 +1249,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1215;
+const int kLabelBitmapCount = 1233;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -1275,21 +1293,32 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"已啟用", 22, label_enabled_22_w, label_enabled_22_h, label_enabled_22_bitmap},
   {"壽星天文曆（許劍偉）", 22, label_sxwnl_calendar_w, label_sxwnl_calendar_h, label_sxwnl_calendar_bitmap},
   {"Meeus 天文算法（精度較高）", 22, label_meeus_algorithm_w, label_meeus_algorithm_h, label_meeus_algorithm_bitmap},
+  {"曆法計算", 40, label_calendar_title_w, label_calendar_title_h, label_calendar_title_bitmap},
+  {"壽星天文曆", 32, label_sxwnl_32_w, label_sxwnl_32_h, label_sxwnl_32_bitmap},
+  {"Meeus 天文算法", 32, label_meeus_32_w, label_meeus_32_h, label_meeus_32_bitmap},
+  {"切換為 Meeus 天文算法", 36, label_switch_meeus_btn_w, label_switch_meeus_btn_h, label_switch_meeus_btn_bitmap},
+  {"切換為 壽星天文曆", 36, label_switch_sxwnl_btn_w, label_switch_sxwnl_btn_h, label_switch_sxwnl_btn_bitmap},
+  {"Meeus 天文算法", 28, label_meeus_28_w, label_meeus_28_h, label_meeus_28_bitmap},
+  {"壽星天文曆", 28, label_sxwnl_28_w, label_sxwnl_28_h, label_sxwnl_28_bitmap},
+  {"• 精度約 1 分鐘", 24, label_meeus_desc1_w, label_meeus_desc1_h, label_meeus_desc1_bitmap},
+  {"• 二分搜索求解太陽黃經", 24, label_meeus_desc2_w, label_meeus_desc2_h, label_meeus_desc2_bitmap},
+  {"• 與公佈曆書完全一致", 24, label_meeus_desc3_w, label_meeus_desc3_h, label_meeus_desc3_bitmap},
+  {"• 許劍偉開源算法", 24, label_sxwnl_desc1_w, label_sxwnl_desc1_h, label_sxwnl_desc1_bitmap},
+  {"• 最大誤差約 30 分鐘", 24, label_sxwnl_desc2_w, label_sxwnl_desc2_h, label_sxwnl_desc2_bitmap},
+  {"• 計算速度較快", 24, label_sxwnl_desc3_w, label_sxwnl_desc3_h, label_sxwnl_desc3_bitmap},
   {"已啟用 - 10分鐘無操作自動休眠", 22, label_sleep_enabled_w, label_sleep_enabled_h, label_sleep_enabled_bitmap},
   {"未啟用 - 保持開啟", 22, label_sleep_disabled_w, label_sleep_disabled_h, label_sleep_disabled_bitmap},
   {"SD 卡優先", 32, label_sd_priority_32_w, label_sd_priority_32_h, label_sd_priority_32_bitmap},
   {"內建圖標", 32, label_builtin_icons_32_w, label_builtin_icons_32_h, label_builtin_icons_32_bitmap},
+  {"切換為 內建圖標", 36, label_switch_builtin_btn_w, label_switch_builtin_btn_h, label_switch_builtin_btn_bitmap},
+  {"切換為 SD 卡優先", 36, label_switch_sd_btn_w, label_switch_sd_btn_h, label_switch_sd_btn_bitmap},
   {"SD 卡優先", 28, label_sd_priority_28_w, label_sd_priority_28_h, label_sd_priority_28_bitmap},
   {"內建圖標", 28, label_builtin_icons_28_w, label_builtin_icons_28_h, label_builtin_icons_28_bitmap},
-  {"切換為", 28, label_switch_to_w, label_switch_to_h, label_switch_to_bitmap},
-  {"SD 卡優先:", 24, label_sd_priority_desc_w, label_sd_priority_desc_h, label_sd_priority_desc_bitmap},
-  {"內建圖標:", 24, label_builtin_desc_w, label_builtin_desc_h, label_builtin_desc_bitmap},
-  {"• 先從 /icons/ 讀取", 22, label_sd_desc1_w, label_sd_desc1_h, label_sd_desc1_bitmap},
-  {"• 找不到則用內建圖標", 22, label_sd_desc2_w, label_sd_desc2_h, label_sd_desc2_bitmap},
-  {"• 可自行更換圖標", 22, label_sd_desc3_w, label_sd_desc3_h, label_sd_desc3_bitmap},
-  {"• 直接使用韌體內的圖標", 22, label_builtin_desc1_w, label_builtin_desc1_h, label_builtin_desc1_bitmap},
-  {"• 啟動速度較快", 22, label_builtin_desc2_w, label_builtin_desc2_h, label_builtin_desc2_bitmap},
-  {"• 不需要 SD 卡", 22, label_builtin_desc3_w, label_builtin_desc3_h, label_builtin_desc3_bitmap},
+  {"• 先從 /icons/ 讀取", 24, label_sd_desc1_w, label_sd_desc1_h, label_sd_desc1_bitmap},
+  {"• 找不到則用內建圖標", 24, label_sd_desc2_w, label_sd_desc2_h, label_sd_desc2_bitmap},
+  {"• 可自行更換圖標", 24, label_sd_desc3_w, label_sd_desc3_h, label_sd_desc3_bitmap},
+  {"• 直接使用韌體內的圖標", 24, label_builtin_desc1_w, label_builtin_desc1_h, label_builtin_desc1_bitmap},
+  {"• 啟動速度較快", 24, label_builtin_desc2_w, label_builtin_desc2_h, label_builtin_desc2_bitmap},
   {"USB 外接磁碟", 40, label_usb_title_w, label_usb_title_h, label_usb_title_bitmap},
   {"執行中", 32, label_msc_running_w, label_msc_running_h, label_msc_running_bitmap},
   {"SD 卡已連接到電腦", 24, label_sd_connected_w, label_sd_connected_h, label_sd_connected_bitmap},
@@ -1314,22 +1343,29 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"3. 或改用 BMP 格式", 20, label_gimp_step3_w, label_gimp_step3_h, label_gimp_step3_bitmap},
   {"休眠中", 20, label_sleeping_w, label_sleeping_h, label_sleeping_bitmap},
   {"檔案上傳伺服器", 40, label_webserver_title_w, label_webserver_title_h, label_webserver_title_bitmap},
-  {"正在啟動伺服器...", 22, label_starting_server_w, label_starting_server_h, label_starting_server_bitmap},
-  {"等待 WiFi 連接...", 22, label_waiting_wifi_w, label_waiting_wifi_h, label_waiting_wifi_bitmap},
+  {"關閉伺服器", 36, label_stop_server_btn_w, label_stop_server_btn_h, label_stop_server_btn_bitmap},
+  {"啟用伺服器", 36, label_start_server_btn_w, label_start_server_btn_h, label_start_server_btn_bitmap},
+  {"正在啟動伺服器...", 28, label_starting_server_w, label_starting_server_h, label_starting_server_bitmap},
+  {"等待 WiFi 連接...", 28, label_waiting_wifi_w, label_waiting_wifi_h, label_waiting_wifi_bitmap},
   {"在電腦或手機瀏覽器中輸入上方 IP 位址", 20, label_enter_ip_w, label_enter_ip_h, label_enter_ip_bitmap},
-  {"啟用後可通過", 20, label_enable_desc1_w, label_enable_desc1_h, label_enable_desc1_bitmap},
-  {"網站上傳檔案到", 20, label_enable_desc2_w, label_enable_desc2_h, label_enable_desc2_bitmap},
-  {"SD 卡，包括:", 20, label_enable_desc3_w, label_enable_desc3_h, label_enable_desc3_bitmap},
-  {"• 電子書 (books/)", 20, label_srv_books_w, label_srv_books_h, label_srv_books_bitmap},
-  {"• 字體 (fonts/)", 20, label_srv_fonts_w, label_srv_fonts_h, label_srv_fonts_bitmap},
-  {"• 壁紙 (wallpapers/)", 20, label_srv_wallpapers_w, label_srv_wallpapers_h, label_srv_wallpapers_bitmap},
-  {"• 待辦/購物清單", 20, label_srv_lists_w, label_srv_lists_h, label_srv_lists_bitmap},
+  {"啟用後可通過網站上傳檔案", 24, label_enable_upload_desc_w, label_enable_upload_desc_h, label_enable_upload_desc_bitmap},
+  {"支援的檔案類型", 28, label_supported_types_w, label_supported_types_h, label_supported_types_bitmap},
+  {"• 電子書 (books/)", 24, label_srv_books_w, label_srv_books_h, label_srv_books_bitmap},
+  {"• 字體 (fonts/)", 24, label_srv_fonts_w, label_srv_fonts_h, label_srv_fonts_bitmap},
+  {"• 壁紙 (wallpapers/)", 24, label_srv_wallpapers_w, label_srv_wallpapers_h, label_srv_wallpapers_bitmap},
+  {"• 待辦/購物清單", 24, label_srv_lists_w, label_srv_lists_h, label_srv_lists_bitmap},
   {"重新啟動中...", 32, label_restarting_w, label_restarting_h, label_restarting_bitmap},
   {"啟動 USB 中...", 32, label_starting_usb_w, label_starting_usb_h, label_starting_usb_bitmap},
   {"請查看序列輸出以了解詳情", 22, label_see_serial_w, label_see_serial_h, label_see_serial_bitmap},
   {"✓ 成功啟動", 28, label_usb_ok_w, label_usb_ok_h, label_usb_ok_bitmap},
   {"✗ 啟動失敗 - 請查看序列輸出", 24, label_usb_fail_w, label_usb_fail_h, label_usb_fail_bitmap},
   {"找不到", 28, label_not_found_w, label_not_found_h, label_not_found_bitmap},
+  {"壁紙選擇", 36, label_wallpaper_title_w, label_wallpaper_title_h, label_wallpaper_title_bitmap},
+  {"切換縮圖", 24, label_switch_thumbnail_w, label_switch_thumbnail_h, label_switch_thumbnail_bitmap},
+  {"切換列表", 24, label_switch_list_w, label_switch_list_h, label_switch_list_bitmap},
+  {"SD卡中沒有壁紙", 24, label_no_wallpaper_w, label_no_wallpaper_h, label_no_wallpaper_bitmap},
+  {"請在 /wallpapers 資料夾中", 24, label_add_wallpaper_hint_w, label_add_wallpaper_hint_h, label_add_wallpaper_hint_bitmap},
+  {"添加圖片檔案", 24, label_add_image_files_w, label_add_image_files_h, label_add_image_files_bitmap},
   {"電子書列表", 36, label_booklist_title_w, label_booklist_title_h, label_booklist_title_bitmap},
   {"觸控選擇書籍", 18, label_touch_select_w, label_touch_select_h, label_touch_select_bitmap},
   {"字-", 28, label_font_smaller_w, label_font_smaller_h, label_font_smaller_bitmap},

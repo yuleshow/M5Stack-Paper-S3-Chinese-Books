@@ -24,7 +24,7 @@ void drawFontMenu() {
   
   delay(100);
   
-  M5.Display.setFont(&fonts::lgfxJapanMincho_24);
+  M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_BLACK);
   
@@ -103,8 +103,8 @@ void drawFontMenu() {
   // Page indicator next to right arrow, larger font
   if (totalPages > 1) {
     M5.Display.setCursor(155, 910);
-    M5.Display.setFont(&fonts::efontTW_24);
-    M5.Display.setTextSize(1.0);
+    M5.Display.setFont(&fonts::Font2);
+    M5.Display.setTextSize(1);
     M5.Display.printf("%d/%d", fontMenuPage + 1, totalPages);
   }
   
@@ -392,7 +392,6 @@ void drawClock() {
   M5.Display.drawRoundRect(centerX - 60, 10, 120, 50, 8, TFT_BLACK);
   M5.Display.drawRoundRect(centerX - 59, 11, 118, 48, 7, TFT_BLACK);
   M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.setFont(&fonts::efontTW_24);
   drawSystemTextCentered("時鐘", centerX, 28, 28);
   
   // Universal return button (lower-right)
@@ -417,7 +416,7 @@ void drawWebServerSetup() {
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
-  // Status bar + nav bar first
+  // Status bar + return button
   drawStatusBar();
   drawReturnButton();
   
@@ -431,58 +430,62 @@ void drawWebServerSetup() {
     drawSystemText("執行中", 160, 120, 32, EPD_DARK_GRAY);
     
     // Display IP address prominently
-    M5.Display.drawRect(15, 170, 500, 80, TFT_BLACK);
-    M5.Display.drawRect(16, 171, 498, 78, TFT_BLACK);
+    M5.Display.drawRect(15, 170, 510, 80, TFT_BLACK);
+    M5.Display.drawRect(16, 171, 508, 78, TFT_BLACK);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1.5);
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setCursor(25, 185);
     M5.Display.print("IP: http://");
-    M5.Display.setTextColor(TFT_BLACK);
     M5.Display.print(WiFi.localIP().toString());
-    M5.Display.setTextColor(TFT_BLACK);
     
     drawSystemText("在電腦或手機瀏覽器中輸入上方 IP 位址", 20, 270, 20);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setCursor(20, 300);
-    M5.Display.println("Enter above IP in computer/phone browser");
+    M5.Display.print("Enter above IP in computer/phone browser");
   } else if (webServerEnabled) {
     drawSystemText("已啟用", 160, 120, 32, EPD_DARK_GRAY);
     
     if (WiFi.status() == WL_CONNECTED) {
-      drawSystemText("正在啟動伺服器...", 20, 180, 22);
+      drawSystemText("正在啟動伺服器...", 20, 200, 28);
     } else {
-      drawSystemText("等待 WiFi 連接...", 20, 180, 22);
+      drawSystemText("等待 WiFi 連接...", 20, 200, 28);
     }
   } else {
     drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
   }
   
-  // Toggle button
+  // Toggle button (full width, matching MSC layout)
   int btnY = 400;
   if (webServerEnabled) {
-    M5.Display.fillRect(20, btnY, 240, 100, TFT_BLACK);
-    drawSystemText("關閉", 75, btnY + 35, 32, TFT_WHITE, TFT_BLACK);
+    M5.Display.fillRect(20, btnY, 500, 90, TFT_BLACK);
+    drawSystemTextCentered("關閉伺服器", 270, btnY + 28, 36, TFT_WHITE, TFT_BLACK);
   } else {
-    M5.Display.fillRect(20, btnY, 240, 100, EPD_DARK_GRAY);
-    drawSystemText("啟用", 75, btnY + 35, 32, TFT_WHITE, EPD_DARK_GRAY);
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("啟用伺服器", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
   }
   
-  // Info box
-  M5.Display.drawRect(280, btnY, 240, 250, TFT_BLACK);
-  drawSystemText("說明：", 290, btnY + 10, 22);
-  drawSystemText("啟用後可通過", 290, btnY + 40, 20);
-  drawSystemText("網站上傳檔案到", 290, btnY + 70, 20);
-  drawSystemText("SD 卡，包括:", 290, btnY + 100, 20);
-  drawSystemText("• 電子書 (books/)", 290, btnY + 130, 20);
-  drawSystemText("• 字體 (fonts/)", 290, btnY + 160, 20);
-  drawSystemText("• 壁紙 (wallpapers/)", 290, btnY + 190, 20);
-  drawSystemText("• 待辦/購物清單", 290, btnY + 220, 20);
+  // Info section — large, filling the lower half
+  int infoY = 530;
+  M5.Display.drawRect(20, infoY, 500, 370, TFT_BLACK);
   
-  // Universal return button (lower-right)
-  drawReturnButton();
+  drawSystemText("說明", 30, infoY + 15, 32);
+  M5.Display.drawLine(20, infoY + 55, 520, infoY + 55, EPD_LIGHT_GRAY);
+  
+  drawSystemText("啟用後可通過網站上傳檔案", 40, infoY + 75, 24);
+  M5.Display.setFont(&fonts::Font2);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_BLACK);
+  M5.Display.setCursor(40, infoY + 105);
+  M5.Display.print("Upload files via web browser");
+  
+  drawSystemText("支援的檔案類型", 40, infoY + 145, 28);
+  drawSystemText("• 電子書 (books/)", 40, infoY + 185, 24);
+  drawSystemText("• 字體 (fonts/)", 40, infoY + 220, 24);
+  drawSystemText("• 壁紙 (wallpapers/)", 40, infoY + 255, 24);
+  drawSystemText("• 待辦/購物清單", 40, infoY + 290, 24);
   
   M5.Display.endWrite();
   M5.Display.display();
@@ -512,28 +515,31 @@ void drawIconSetup() {
     drawSystemText("內建圖標", 160, 120, 32, EPD_DARK_GRAY);
   }
   
-  // Description
-  drawSystemText("SD 卡優先:", 20, 200, 24);
-  drawSystemText("• 先從 /icons/ 讀取", 20, 240, 22);
-  drawSystemText("• 找不到則用內建圖標", 20, 275, 22);
-  drawSystemText("• 可自行更換圖標", 20, 310, 22);
-  
-  drawSystemText("內建圖標:", 20, 370, 24);
-  drawSystemText("• 直接使用韌體內的圖標", 20, 410, 22);
-  drawSystemText("• 啟動速度較快", 20, 445, 22);
-  drawSystemText("• 不需要 SD 卡", 20, 480, 22);
-  
-  // Toggle button
-  int btnY = 550;
+  // Toggle button (full width, matching MSC layout)
+  int btnY = 400;
   if (useSDCardIcons) {
-    M5.Display.fillRect(20, btnY, 240, 100, EPD_DARK_GRAY);
-    drawSystemText("切換為", 50, btnY + 15, 28, TFT_WHITE, EPD_DARK_GRAY);
-    drawSystemText("內建圖標", 50, btnY + 55, 28, TFT_WHITE, EPD_DARK_GRAY);
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("切換為 內建圖標", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
   } else {
-    M5.Display.fillRect(20, btnY, 240, 100, EPD_DARK_GRAY);
-    drawSystemText("切換為", 50, btnY + 15, 28, TFT_WHITE, EPD_DARK_GRAY);
-    drawSystemText("SD 卡優先", 50, btnY + 55, 28, TFT_WHITE, EPD_DARK_GRAY);
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("切換為 SD 卡優先", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
   }
+  
+  // Info section — large, filling the lower half
+  int infoY = 530;
+  M5.Display.drawRect(20, infoY, 500, 370, TFT_BLACK);
+  
+  drawSystemText("說明", 30, infoY + 15, 32);
+  M5.Display.drawLine(20, infoY + 55, 520, infoY + 55, EPD_LIGHT_GRAY);
+  
+  drawSystemText("SD 卡優先", 40, infoY + 75, 28);
+  drawSystemText("• 先從 /icons/ 讀取", 40, infoY + 115, 24);
+  drawSystemText("• 找不到則用內建圖標", 40, infoY + 150, 24);
+  drawSystemText("• 可自行更換圖標", 40, infoY + 185, 24);
+  
+  drawSystemText("內建圖標", 40, infoY + 235, 28);
+  drawSystemText("• 直接使用韌體內的圖標", 40, infoY + 275, 24);
+  drawSystemText("• 啟動速度較快", 40, infoY + 310, 24);
   
   M5.Display.endWrite();
   M5.Display.display();
@@ -563,28 +569,32 @@ void drawCalendarSetup() {
     drawSystemText("Meeus 天文算法", 160, 120, 32, EPD_DARK_GRAY);
   }
   
-  // Description
-  drawSystemText("Meeus 天文算法:", 20, 200, 24);
-  drawSystemText("• 精度約 1 分鐘", 20, 240, 22);
-  drawSystemText("• 二分搜索求解太陽黃經", 20, 275, 22);
-  drawSystemText("• 與公佈曆書完全一致", 20, 310, 22);
-  
-  drawSystemText("壽星天文曆:", 20, 370, 24);
-  drawSystemText("• 許劍偉開源算法", 20, 410, 22);
-  drawSystemText("• 最大誤差約 30 分鐘", 20, 445, 22);
-  drawSystemText("• 計算速度較快", 20, 480, 22);
-  
-  // Toggle button
-  int btnY = 550;
+  // Toggle button (full width, matching MSC layout)
+  int btnY = 400;
   if (useSxwnlCalendar) {
-    M5.Display.fillRect(20, btnY, 280, 100, EPD_DARK_GRAY);
-    drawSystemText("切換為", 50, btnY + 15, 28, TFT_WHITE, EPD_DARK_GRAY);
-    drawSystemText("Meeus 天文算法", 50, btnY + 55, 28, TFT_WHITE, EPD_DARK_GRAY);
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("切換為 Meeus 天文算法", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
   } else {
-    M5.Display.fillRect(20, btnY, 280, 100, EPD_DARK_GRAY);
-    drawSystemText("切換為", 50, btnY + 15, 28, TFT_WHITE, EPD_DARK_GRAY);
-    drawSystemText("壽星天文曆", 50, btnY + 55, 28, TFT_WHITE, EPD_DARK_GRAY);
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("切換為 壽星天文曆", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
   }
+  
+  // Info section — large, filling the lower half
+  int infoY = 530;
+  M5.Display.drawRect(20, infoY, 500, 370, TFT_BLACK);
+  
+  drawSystemText("說明", 30, infoY + 15, 32);
+  M5.Display.drawLine(20, infoY + 55, 520, infoY + 55, EPD_LIGHT_GRAY);
+  
+  drawSystemText("Meeus 天文算法", 40, infoY + 75, 28);
+  drawSystemText("• 精度約 1 分鐘", 40, infoY + 115, 24);
+  drawSystemText("• 二分搜索求解太陽黃經", 40, infoY + 150, 24);
+  drawSystemText("• 與公佈曆書完全一致", 40, infoY + 185, 24);
+  
+  drawSystemText("壽星天文曆", 40, infoY + 235, 28);
+  drawSystemText("• 許劍偉開源算法", 40, infoY + 275, 24);
+  drawSystemText("• 最大誤差約 30 分鐘", 40, infoY + 310, 24);
+  drawSystemText("• 計算速度較快", 40, infoY + 345, 24);
   
   M5.Display.endWrite();
   M5.Display.display();

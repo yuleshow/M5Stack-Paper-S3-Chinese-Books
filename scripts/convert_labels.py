@@ -85,25 +85,38 @@ LABELS = [
     ("已設定",       22, "configured_22"),      # setup_ui.cpp main menu timezone: size 22
     ("執行中",       22, "running_22"),         # setup_ui.cpp main menu web: size 22
     ("已啟用",       22, "enabled_22"),         # setup_ui.cpp main menu web: size 22
-    ("壽星天文曆（許劍偉）", 22, "sxwnl_calendar"),     # setup_ui.cpp L714: size 22
-    ("Meeus 天文算法（精度較高）", 22, "meeus_algorithm"),  # setup_ui.cpp L716: size 22
+    ("壽星天文曆（許劍偉）", 22, "sxwnl_calendar"),     # setup_ui.cpp: menu card
+    ("Meeus 天文算法（精度較高）", 22, "meeus_algorithm"),  # setup_ui.cpp: menu card
+
+    # ── Calendar setup detail page (setup_ui.cpp) ──
+    ("曆法計算",                   40, "calendar_title"),    # title
+    ("壽星天文曆",                 32, "sxwnl_32"),          # status
+    ("Meeus 天文算法",             32, "meeus_32"),          # status
+    ("切換為 Meeus 天文算法",      36, "switch_meeus_btn"),  # toggle button
+    ("切換為 壽星天文曆",          36, "switch_sxwnl_btn"),  # toggle button
+    ("Meeus 天文算法",             28, "meeus_28"),          # info heading
+    ("壽星天文曆",                 28, "sxwnl_28"),          # info heading
+    ("• 精度約 1 分鐘",            24, "meeus_desc1"),       # info
+    ("• 二分搜索求解太陽黃經",     24, "meeus_desc2"),       # info
+    ("• 與公佈曆書完全一致",       24, "meeus_desc3"),       # info
+    ("• 許劍偉開源算法",           24, "sxwnl_desc1"),      # info
+    ("• 最大誤差約 30 分鐘",       24, "sxwnl_desc2"),      # info
+    ("• 計算速度較快",             24, "sxwnl_desc3"),      # info
     ("已啟用 - 10分鐘無操作自動休眠", 22, "sleep_enabled"),    # setup_ui.cpp L737: size 22
     ("未啟用 - 保持開啟", 22, "sleep_disabled"),          # setup_ui.cpp L739: size 22
 
     # ── Icon setup (actual sizes from setup_ui.cpp) ──
-    ("SD 卡優先",        32, "sd_priority_32"),     # setup_ui.cpp L500: size 32
-    ("內建圖標",         32, "builtin_icons_32"),   # setup_ui.cpp L502: size 32
-    ("SD 卡優先",        28, "sd_priority_28"),     # setup_ui.cpp L525: size 28 (button)
-    ("內建圖標",         28, "builtin_icons_28"),   # setup_ui.cpp L521: size 28 (button)
-    ("切換為",           28, "switch_to"),          # setup_ui.cpp L520/524: size 28
-    ("SD 卡優先:",       24, "sd_priority_desc"),   # setup_ui.cpp L506: size 24
-    ("內建圖標:",        24, "builtin_desc"),       # setup_ui.cpp L511: size 24
-    ("• 先從 /icons/ 讀取",        22, "sd_desc1"),       # setup_ui.cpp L507: size 22
-    ("• 找不到則用內建圖標",       22, "sd_desc2"),       # setup_ui.cpp L508: size 22
-    ("• 可自行更換圖標",           22, "sd_desc3"),       # setup_ui.cpp L509: size 22
-    ("• 直接使用韌體內的圖標",     22, "builtin_desc1"),  # setup_ui.cpp L512: size 22
-    ("• 啟動速度較快",             22, "builtin_desc2"),  # setup_ui.cpp L513: size 22
-    ("• 不需要 SD 卡",             22, "builtin_desc3"),  # setup_ui.cpp L514: size 22
+    ("SD 卡優先",        32, "sd_priority_32"),     # setup_ui.cpp: status size 32
+    ("內建圖標",         32, "builtin_icons_32"),   # setup_ui.cpp: status size 32
+    ("切換為 內建圖標",  36, "switch_builtin_btn"), # setup_ui.cpp: toggle button
+    ("切換為 SD 卡優先", 36, "switch_sd_btn"),      # setup_ui.cpp: toggle button
+    ("SD 卡優先",        28, "sd_priority_28"),     # setup_ui.cpp: info section
+    ("內建圖標",         28, "builtin_icons_28"),   # setup_ui.cpp: info section
+    ("• 先從 /icons/ 讀取",        24, "sd_desc1"),       # setup_ui.cpp: info
+    ("• 找不到則用內建圖標",       24, "sd_desc2"),       # setup_ui.cpp: info
+    ("• 可自行更換圖標",           24, "sd_desc3"),       # setup_ui.cpp: info
+    ("• 直接使用韌體內的圖標",     24, "builtin_desc1"),  # setup_ui.cpp: info
+    ("• 啟動速度較快",             24, "builtin_desc2"),  # setup_ui.cpp: info
 
     # ── USB MSC (actual sizes from usb_msc_handler.cpp) ──
     ("USB 外接磁碟",               40, "usb_title"),         # usb_msc title
@@ -135,17 +148,18 @@ LABELS = [
     ("休眠中",                     20, "sleeping"),          # main.cpp sleep label
 
     # ── Web server (actual sizes from setup_ui.cpp) ──
-    ("檔案上傳伺服器",             40, "webserver_title"),   # setup_ui.cpp L417: size 40
-    ("正在啟動伺服器...",          22, "starting_server"),   # setup_ui.cpp L447: size 22
-    ("等待 WiFi 連接...",          22, "waiting_wifi"),      # setup_ui.cpp L449: size 22
-    ("在電腦或手機瀏覽器中輸入上方 IP 位址", 20, "enter_ip"),  # setup_ui.cpp L437: size 20
-    ("啟用後可通過",               20, "enable_desc1"),      # setup_ui.cpp L468: size 20
-    ("網站上傳檔案到",             20, "enable_desc2"),      # setup_ui.cpp L469: size 20
-    ("SD 卡，包括:",               20, "enable_desc3"),      # setup_ui.cpp L470: size 20
-    ("• 電子書 (books/)",          20, "srv_books"),         # setup_ui.cpp L471: size 20
-    ("• 字體 (fonts/)",            20, "srv_fonts"),         # setup_ui.cpp L472: size 20
-    ("• 壁紙 (wallpapers/)",       20, "srv_wallpapers"),   # setup_ui.cpp L473: size 20
-    ("• 待辦/購物清單",            20, "srv_lists"),         # setup_ui.cpp L474: size 20
+    ("檔案上傳伺服器",             40, "webserver_title"),   # setup_ui.cpp: title
+    ("關閉伺服器",                 36, "stop_server_btn"),   # setup_ui.cpp: toggle button
+    ("啟用伺服器",                 36, "start_server_btn"),  # setup_ui.cpp: toggle button
+    ("正在啟動伺服器...",          28, "starting_server"),   # setup_ui.cpp: status
+    ("等待 WiFi 連接...",          28, "waiting_wifi"),      # setup_ui.cpp: status
+    ("在電腦或手機瀏覽器中輸入上方 IP 位址", 20, "enter_ip"),  # setup_ui.cpp: hint
+    ("啟用後可通過網站上傳檔案",   24, "enable_upload_desc"), # setup_ui.cpp: info
+    ("支援的檔案類型",             28, "supported_types"),    # setup_ui.cpp: info
+    ("• 電子書 (books/)",          24, "srv_books"),         # setup_ui.cpp: info
+    ("• 字體 (fonts/)",            24, "srv_fonts"),         # setup_ui.cpp: info
+    ("• 壁紙 (wallpapers/)",       24, "srv_wallpapers"),   # setup_ui.cpp: info
+    ("• 待辦/購物清單",            24, "srv_lists"),         # setup_ui.cpp: info
 
     # ── Loading / boot (actual sizes from main.cpp) ──
     ("重新啟動中...",  32, "restarting"),          # main.cpp L1724: size 32
@@ -154,6 +168,14 @@ LABELS = [
     ("✓ 成功啟動",     28, "usb_ok"),               # main.cpp L1750: size 28
     ("✗ 啟動失敗 - 請查看序列輸出", 24, "usb_fail"), # main.cpp L1752: size 24
     ("找不到",         28, "not_found"),            # main.cpp L1044: size 28
+
+    # ── Wallpaper picker title ──
+    ("壁紙選擇",     36, "wallpaper_title"),    # wallpaper.cpp: title at top of picker
+    ("切換縮圖",     24, "switch_thumbnail"),   # wallpaper.cpp: toggle button
+    ("切換列表",     24, "switch_list"),        # wallpaper.cpp: toggle button
+    ("SD卡中沒有壁紙",       24, "no_wallpaper"),       # wallpaper.cpp: empty state
+    ("請在 /wallpapers 資料夾中", 24, "add_wallpaper_hint"), # wallpaper.cpp: empty state
+    ("添加圖片檔案", 24, "add_image_files"),    # wallpaper.cpp: empty state
 
     # ── Book reader (actual sizes from book_reader.cpp) ──
     ("電子書列表",   36, "booklist_title"),     # book_reader.cpp L370: size 36

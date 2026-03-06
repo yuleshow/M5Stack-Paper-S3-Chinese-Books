@@ -288,7 +288,7 @@ int drawSystemText(const char* text, int x, int y, int size, uint16_t color, uin
     ofr.setFontColor(color, bg);
     return (int)ofr.drawString(text, x, y, color, bg);
   } else {
-    M5.Display.setFont(&fonts::efontTW_24);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextColor(color);
     M5.Display.setCursor(x, y);
     M5.Display.print(text);
@@ -314,7 +314,7 @@ void drawSystemTextCentered(const char* text, int centerX, int y, int size, uint
     ofr.setFontColor(color, bg);
     ofr.cdrawString(text, centerX, y, color, bg);
   } else {
-    M5.Display.setFont(&fonts::efontTW_24);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextColor(color);
     M5.Display.setTextDatum(TC_DATUM);
     M5.Display.drawString(text, centerX, y);

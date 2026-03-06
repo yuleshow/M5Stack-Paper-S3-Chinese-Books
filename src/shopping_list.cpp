@@ -415,7 +415,7 @@ static int measureAsciiRunHeight(const String& run) {
 // Returns the final Y position after drawing
 int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
   int y = startY;
-  M5.Display.setFont(&fonts::efontTW_24);
+  M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1.5);
   
   for (int j = 0; j < text.length(); ) {
@@ -433,7 +433,7 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
       if (run.length() == 0) continue;
       
       // Split run into words and render each word as a separate sprite
-      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextSize(1.5);
       int textH = charSpacing;
       
@@ -458,7 +458,7 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
           continue;
         }
         sprite.fillSprite(TFT_WHITE);
-        sprite.setFont(&fonts::efontTW_24);
+        sprite.setFont(&fonts::Font2);
         sprite.setTextColor(TFT_BLACK);
         sprite.setTextSize(1.5);
         sprite.setTextDatum(ML_DATUM);
@@ -533,7 +533,7 @@ void calculateShoppingPages() {
         
         // Calculate group text height: measure ASCII runs (split by words), CJK=56px each
         int groupTextHeight = 0;
-        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setFont(&fonts::Font2);
         M5.Display.setTextSize(1.5);
         for (int j = 0; j < currentGroup.length(); ) {
           unsigned char c = currentGroup.charAt(j);
@@ -562,7 +562,7 @@ void calculateShoppingPages() {
       if (item.length() > 0) {
         int itemHeight = 28 + 10;  // checkbox + gap
         // Estimate height: measure ASCII runs (split by words), CJK=56px each
-        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setFont(&fonts::Font2);
         M5.Display.setTextSize(1.5);
         for (int j = 0; j < item.length(); ) {
           unsigned char c = item.charAt(j);
@@ -600,7 +600,7 @@ void calculateShoppingPages() {
             String run = item.substring(runStart, j);
             run.trim();
             if (run.length() == 0) continue;
-            M5.Display.setFont(&fonts::efontTW_24);
+            M5.Display.setFont(&fonts::Font2);
             M5.Display.setTextSize(1.5);
             int runHeight = M5.Display.textWidth(run) + 4;
             if (y + runHeight > maxY - 60) {
@@ -674,7 +674,7 @@ void drawShoppingList() {
   
   // Use MingLiU binary font if loaded
   if (!g_binFont.loaded) {
-    M5.Display.setFont(&fonts::efontTW_24);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1.2);
   }
   
@@ -738,7 +738,7 @@ void drawShoppingList() {
       // Group name already contains "G#." prefix from loadShoppingList
       // Calculate group text height: measure ASCII runs (split by words), CJK=56px each
       int groupTextHeight = 0;
-      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextSize(1.5);
       for (int j = 0; j < currentGroup.length(); ) {
         unsigned char c = currentGroup.charAt(j);
@@ -774,7 +774,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
       M5.Display.setTextColor(TFT_WHITE);  // White text for group
       
       if (!g_binFont.loaded) {
-        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setFont(&fonts::Font2);
         M5.Display.setTextSize(1.0);
       }
       
@@ -792,7 +792,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
           if (run.length() == 0) continue;
           
           // Split run into words and render each as a separate sprite (white on grey)
-          M5.Display.setFont(&fonts::efontTW_24);
+          M5.Display.setFont(&fonts::Font2);
           M5.Display.setTextSize(1.5);
           int textH = 45;
           
@@ -817,7 +817,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
               continue;
             }
             sprite.fillSprite(0x5AEB);  // Match grey background
-            sprite.setFont(&fonts::efontTW_24);
+            sprite.setFont(&fonts::Font2);
             sprite.setTextColor(TFT_WHITE);
             sprite.setTextSize(1.5);
             sprite.setTextDatum(ML_DATUM);
@@ -860,7 +860,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
     if (item.length() > 0) {
       // Calculate item height: measure ASCII runs (split by words), CJK=56px each
       int itemHeight = 28 + 10;  // checkbox + gap
-      M5.Display.setFont(&fonts::efontTW_24);
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextSize(1.5);
       for (int j = 0; j < item.length(); ) {
         unsigned char c = item.charAt(j);
@@ -927,7 +927,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
       int itemBottomY = y;  // Track maximum Y extent in the checkbox's column
       
       if (!g_binFont.loaded) {
-        M5.Display.setFont(&fonts::efontTW_24);
+        M5.Display.setFont(&fonts::Font2);
         M5.Display.setTextSize(1.0);
       }
       
@@ -945,7 +945,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
           if (run.length() == 0) continue;
           
           // Split run into words and render each as a separate rotated sprite
-          M5.Display.setFont(&fonts::efontTW_24);
+          M5.Display.setFont(&fonts::Font2);
           M5.Display.setTextSize(1.5);
           int textH = 45;
           
@@ -978,7 +978,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
               continue;
             }
             sprite.fillSprite(TFT_WHITE);
-            sprite.setFont(&fonts::efontTW_24);
+            sprite.setFont(&fonts::Font2);
             sprite.setTextColor(TFT_BLACK);
             sprite.setTextSize(1.5);
             sprite.setTextDatum(ML_DATUM);
@@ -1037,7 +1037,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
     itemsRendered, startItem, lastRenderedItem, columnX);
   
   // Page indicator next to right arrow, larger font
-  M5.Display.setFont(&fonts::efontTW_24);
+  M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1.0);
   M5.Display.setCursor(155, 910);
   M5.Display.printf("%d/%d", currentShoppingPage + 1, totalShoppingPages);

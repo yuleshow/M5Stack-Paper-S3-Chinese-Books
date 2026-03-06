@@ -176,8 +176,6 @@ void setup() {
     M5.Display.startWrite();
     M5.Display.fillScreen(TFT_WHITE);
     M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setFont(&fonts::efontTW_24);
-    
     // Status bar: time (top-left) + battery (top-right)
     drawStatusBar();
     
@@ -324,8 +322,8 @@ void setup() {
       Serial.println("No custom fonts loaded - using built-in CJK fonts");
       
       // Fallback to built-in fonts
-      Serial.println("Using fonts::efontCN_24 (built-in)");
-      M5.Display.setFont(&fonts::efontCN_24);
+      Serial.println("No custom fonts loaded - using Font2 (built-in)");
+      M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextSize(1.2);
       
       canvas.deleteSprite();
@@ -2041,8 +2039,8 @@ void loop() {
         // Web server setup submenu
         int btnY = 400;
         
-        // Toggle button
-        if (x >= 20 && x <= 260 && y >= btnY && y <= btnY + 100) {
+        // Toggle button (full width)
+        if (x >= 20 && x <= 520 && y >= btnY && y <= btnY + 90) {
           Serial.println("Web server toggle button touched");
           webServerEnabled = !webServerEnabled;
           
@@ -2146,10 +2144,10 @@ void loop() {
       }
       else if (setupSubmenu == 5) {
         // Icon source setup submenu
-        int btnY = 550;
+        int btnY = 400;
         
-        // Toggle button
-        if (x >= 20 && x <= 260 && y >= btnY && y <= btnY + 100) {
+        // Toggle button (full width)
+        if (x >= 20 && x <= 520 && y >= btnY && y <= btnY + 90) {
           Serial.println("Icon source toggle button touched");
           useSDCardIcons = !useSDCardIcons;
           savePrefBool("m5paper", "sdIcons", useSDCardIcons);
@@ -2168,10 +2166,10 @@ void loop() {
       }
       else if (setupSubmenu == 6) {
         // Calendar calculation setup submenu
-        int btnY = 550;
+        int btnY = 400;
         
-        // Toggle button
-        if (x >= 20 && x <= 300 && y >= btnY && y <= btnY + 100) {
+        // Toggle button (full width)
+        if (x >= 20 && x <= 520 && y >= btnY && y <= btnY + 90) {
           Serial.println("Calendar method toggle button touched");
           useSxwnlCalendar = !useSxwnlCalendar;
           savePrefBool("m5paper", "sxwnl", useSxwnlCalendar);

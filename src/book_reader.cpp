@@ -523,9 +523,9 @@ void drawReading() {
     renderer = FONT_BINFONT;
     Serial.println("Using binary font (MingLiU.bin)");
   } else {
-    Serial.println("Using fonts::lgfxJapanMincho_28 (Built-in)");
-    M5.Display.setFont(&fonts::lgfxJapanMincho_28);
-    M5.Display.setTextSize(1.4);
+    Serial.println("No custom font loaded - built-in fallback");
+    M5.Display.setFont(&fonts::Font2);
+    M5.Display.setTextSize(1);
     M5.Display.setTextColor(TFT_BLACK);
   }
   
@@ -687,11 +687,11 @@ void drawReading() {
         continue;
       }
     } else {
-      // Built-in font
+      // Built-in font fallback (ASCII only, CJK won't render)
       int drawY = currentY + vOffset;
-      M5.Display.setFont(&fonts::lgfxJapanMincho_28);
-      M5.Display.setTextSize(1.4);
-      M5.Display.setCursor(columnX - 15, drawY);
+      M5.Display.setFont(&fonts::Font2);
+      M5.Display.setTextSize(1);
+      M5.Display.setCursor(columnX - 8, drawY);
       M5.Display.print(ch);
       charsDrawn++;
       currentY += charHeight;
@@ -789,8 +789,8 @@ void drawReading() {
   drawSystemText("字-", 160, btnRowY + 6);
   
   // Current font size indicator
-  M5.Display.setFont(&fonts::lgfxJapanMincho_24);
-  M5.Display.setTextSize(0.6);
+  M5.Display.setFont(&fonts::Font2);
+  M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_BLACK);
   M5.Display.setCursor(207, btnRowY + 15);
   M5.Display.printf("%d", readingFontSize);

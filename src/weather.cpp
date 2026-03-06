@@ -176,7 +176,7 @@ void drawWeatherIcon(int cx, int cy, int size, String desc) {
   } else {
     // Default: question mark
     M5.Display.drawCircle(cx, cy, r*0.6, TFT_BLACK);
-    M5.Display.setFont(&fonts::efontTW_24);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(2);
     M5.Display.setTextDatum(MC_DATUM);
     M5.Display.drawString("?", cx, cy);
