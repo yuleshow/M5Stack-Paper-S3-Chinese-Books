@@ -25,6 +25,10 @@ assets/books/*.txt.pos
 assets/books/*.txt.bm
 assets/books/*.epub
 
+# Large EPUB files in sd_card (exceed GitHub 100MB limit)
+sd_card/books/ALaLei.epub
+sd_card/books/WuLongYuanDaChangPianZhi.epub
+
 # Generated/temporary images
 assets/*.png
 

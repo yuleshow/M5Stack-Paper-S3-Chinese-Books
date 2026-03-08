@@ -276,7 +276,9 @@ int drawSystemText(const char* text, int x, int y, int size, uint16_t color, uin
   // Check for pre-rendered label bitmap first (fastest path)
   const LabelBitmap* label = findLabelBitmap(text, size);
   if (label) {
-    drawLabelBitmap(label, x, y, color, bg);
+    // Bottom-align short bitmaps (e.g. dot/period) with full-height glyphs
+    int yOff = (label->h < (uint16_t)size) ? (size - label->h) : 0;
+    drawLabelBitmap(label, x, y + yOff, color, bg);
     return label->w;
   }
   // Ensure system font is active (not reading font)

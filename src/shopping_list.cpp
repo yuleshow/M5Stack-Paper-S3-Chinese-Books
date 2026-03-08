@@ -463,6 +463,7 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
         sprite.setTextSize(2.0);
         sprite.setTextDatum(ML_DATUM);
         sprite.drawString(word, 2, textH / 2);
+        sprite.drawString(word, 3, textH / 2);  // Faux bold
         sprite.pushRotateZoom(&M5.Display, x, y + rotatedH / 2, 90, 1.0, 1.0);
         sprite.deleteSprite();
         y += rotatedH;
@@ -649,7 +650,8 @@ void calculateShoppingPages() {
 }
 
 void drawShoppingList() {
-  M5.Display.setEpdMode(epd_mode_t::epd_fast);
+  // Respect page refresh mode setting (mode 0/1 = quality, mode 2 = fast)
+  M5.Display.setEpdMode(pageRefreshMode == 2 ? epd_mode_t::epd_fast : epd_mode_t::epd_quality);
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
@@ -822,6 +824,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             sprite.setTextSize(2.5);
             sprite.setTextDatum(ML_DATUM);
             sprite.drawString(word, 2, textH / 2);
+            sprite.drawString(word, 3, textH / 2);  // Faux bold
             sprite.pushRotateZoom(&M5.Display, columnX, y + rotatedH / 2, 90, 1.0, 1.0);
             sprite.deleteSprite();
             y += rotatedH;
@@ -983,6 +986,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             sprite.setTextSize(2.0);
             sprite.setTextDatum(ML_DATUM);
             sprite.drawString(word, 2, textH / 2);
+            sprite.drawString(word, 3, textH / 2);  // Faux bold
             sprite.pushRotateZoom(&M5.Display, columnX, y + rotatedH / 2, 90, 1.0, 1.0);
             sprite.deleteSprite();
             y += rotatedH;
