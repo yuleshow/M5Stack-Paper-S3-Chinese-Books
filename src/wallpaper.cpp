@@ -173,7 +173,8 @@ void drawWallpaperList() {
     loadWallpaperFiles();
   }
   
-  if (wallpaperCount == 0) {
+  if (wallpaperCount == 0 && false) {
+    // Only show "no wallpapers" if we truly have nothing (motto is always available)
     drawSystemTextCentered("SD卡中沒有壁紙", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 24);
     drawSystemTextCentered("請在 /wallpapers 資料夾中", M5.Display.width() / 2, M5.Display.height() / 2 + 10, 24);
     drawSystemTextCentered("添加圖片檔案", M5.Display.width() / 2, M5.Display.height() / 2 + 50, 24);
@@ -183,7 +184,13 @@ void drawWallpaperList() {
     // ===== NAME LIST VIEW =====
     int y = 80;
     int itemHeight = 60;
-    int maxVisible = 12;
+    int maxVisible = 11;  // 12 - 1 (motto takes first slot)
+    
+    // Always draw motto entry first (pinned)
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 8, EPD_LIGHT_GRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 8, TFT_BLACK);
+    drawSystemText("醒世格言", 35, y + 15, 28);
+    y += itemHeight + 5;
     
     int startIdx = wallpaperScrollOffset;
     int endIdx = min(startIdx + maxVisible, wallpaperCount);
@@ -230,7 +237,8 @@ void drawWallpaperList() {
     }
   } else {
     // ===== THUMBNAIL VIEW =====
-    // Grid: 3 columns x 3 rows = 9 thumbnails per page
+    // Grid: 3 columns x 3 rows = 9 slots per page
+    // Top-right slot (col2, row0) is always motto thumbnail
     int cols = 3;
     int rows = 3;
     int thumbPad = 8;
@@ -238,15 +246,29 @@ void drawWallpaperList() {
     int contentBot = 875;
     int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
     int thumbH = (contentBot - contentTop - thumbPad * (rows + 1)) / rows;
-    int maxVisible = cols * rows;  // 9
+    int maxVisible = cols * rows - 1;  // 8 wallpaper slots (1 reserved for motto)
+    
+    // Draw motto thumbnail at top-right (col2, row0)
+    {
+      int mottoTx = thumbPad + 2 * (thumbW + thumbPad);
+      int mottoTy = contentTop + thumbPad;
+      // Draw a styled motto placeholder with label
+      M5.Display.fillRect(mottoTx, mottoTy, thumbW, thumbH, EPD_LIGHT_GRAY);
+      M5.Display.drawRect(mottoTx, mottoTy, thumbW, thumbH, TFT_BLACK);
+      M5.Display.drawRect(mottoTx + 1, mottoTy + 1, thumbW - 2, thumbH - 2, TFT_BLACK);
+      drawSystemTextCentered("醒世", mottoTx + thumbW / 2, mottoTy + thumbH / 2 - 30, 32);
+      drawSystemTextCentered("格言", mottoTx + thumbW / 2, mottoTy + thumbH / 2 + 10, 32);
+    }
     
     int startIdx = wallpaperScrollOffset;
     int endIdx = min(startIdx + maxVisible, wallpaperCount);
     
     for (int i = startIdx; i < endIdx; i++) {
-      int idx = i - startIdx;
-      int col = idx % cols;
-      int row = idx / cols;
+      int slot = i - startIdx;
+      // Slots 0..1 = row0 col0..1, slots 2..4 = row1 col0..2, slots 5..7 = row2 col0..2
+      int col, row;
+      if (slot < 2) { row = 0; col = slot; }
+      else { int adj = slot + 1; row = adj / cols; col = adj % cols; }
       int tx = thumbPad + col * (thumbW + thumbPad);
       int ty = contentTop + thumbPad + row * (thumbH + thumbPad);
       drawThumbnail(i, tx, ty, thumbW, thumbH);

@@ -28,11 +28,13 @@ os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 FONT_PATH = os.path.expanduser("~/Library/Fonts/GenYoMinTW-Regular.ttf")
+KAI_FONT_PATH = os.path.expanduser("~/Library/Fonts/TW-Kai-98_1.ttf")
 OUT_DIR = os.path.join("src", "labels")
 
 # All static UI labels extracted from source code.
-# Format: (text, font_size, var_suffix)
+# Format: (text, font_size, var_suffix) or (text, font_size, var_suffix, font_path)
 # var_suffix must be a valid C identifier fragment.
+# font_path is optional; defaults to FONT_PATH if omitted.
 #
 # To add new labels, append to this list and re-run the script.
 
@@ -45,7 +47,26 @@ LABELS = [
     ("天氣",         32, "weather"),
     ("壁紙",         32, "wallpaper"),
     ("設定",         32, "settings"),
-    ("睡眠",         32, "sleep"),
+    ("求籖",         32, "fortune_slips"),
+
+    # ── Fortune Slips menu labels ──
+    ("觀音靈籖",     36, "kuanyin_slips"),
+    ("淺草寺靈籖",   36, "sensoji_slips"),
+    ("醒世格言",     28, "sleep_motto"),
+
+    # ── Fortune Slips shake screen labels (Kai font) ──
+    ("誠心祝禱",     64, "sincere_prayer", KAI_FONT_PATH),
+    ("輕搖求籖",     64, "shake_to_draw", KAI_FONT_PATH),
+
+    # ── Individual characters for vertical rendering (Kai font, 64pt) ──
+    ("誠",           64, "char_cheng", KAI_FONT_PATH),
+    ("心",           64, "char_xin", KAI_FONT_PATH),
+    ("祝",           64, "char_zhu", KAI_FONT_PATH),
+    ("禱",           64, "char_dao", KAI_FONT_PATH),
+    ("輕",           64, "char_qing", KAI_FONT_PATH),
+    ("搖",           64, "char_yao", KAI_FONT_PATH),
+    ("求",           64, "char_qiu", KAI_FONT_PATH),
+    ("籖",           64, "char_qian", KAI_FONT_PATH),
 
     # ── Common buttons (actual sizes from source) ──
     ("清除",         24, "clear"),          # main.cpp: size 24
@@ -67,6 +88,9 @@ LABELS = [
     ("曆法計算",     32, "calendar_calc"),        # setup_ui.cpp L712: size 32
     ("藍牙",         32, "bluetooth"),             # setup_ui.cpp L724: size 32
     ("自動休眠",     32, "auto_sleep"),            # setup_ui.cpp L734: size 32
+    ("漫畫縮放模式", 32, "comic_zoom_mode"),       # setup_ui.cpp L764: size 32
+    ("自由定位 - 點擊處為中心", 22, "comic_zoom_free"),  # setup_ui.cpp L767: size 22
+    ("四分區 - 點擊顯示該象限", 22, "comic_zoom_quad"),  # setup_ui.cpp L769: size 22
 
     # ── Setup status text (drawn at size 32 and 22) ──
     ("未設定",       22, "not_set"),         # setup_ui.cpp L564: size 22
@@ -1447,11 +1471,15 @@ def main():
     labels_info = []
     total_bytes = 0
 
-    for text, font_size, var_suffix in LABELS:
-        if font_size not in font_cache:
-            font_cache[font_size] = ImageFont.truetype(font_path, font_size)
+    for entry in LABELS:
+        text, font_size, var_suffix = entry[0], entry[1], entry[2]
+        label_font_path = entry[3] if len(entry) > 3 else font_path
 
-        font = font_cache[font_size]
+        cache_key = (font_size, label_font_path)
+        if cache_key not in font_cache:
+            font_cache[cache_key] = ImageFont.truetype(label_font_path, font_size)
+
+        font = font_cache[cache_key]
         img = render_label(text, font_size, font)
         w, h = img.size
         data = image_to_4bit(img)

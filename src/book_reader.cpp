@@ -396,6 +396,7 @@ bool loadCurrentPage() {
 
 bool loadBook(int bookIndex) {
   if (!sdCardAvailable || bookIndex >= bookCount) return false;
+  comicZoomQuadrant = -1;  // Reset zoom state
   
   // bookList contains the actual filenames (can be Chinese UTF-8)
   String filename = bookList[bookIndex];
@@ -493,6 +494,32 @@ void drawBookList() {
 
 void drawReading() {
   Serial.println("Drawing reading mode...");
+  
+  // Comic zoom mode: draw zoomed quadrant fullscreen
+  if (currentBookIsEpub && epubIsImageBased && comicZoomQuadrant >= 0) {
+    M5.Display.setEpdMode(epd_mode_t::epd_quality);
+    M5.Display.startWrite();
+    M5.Display.fillScreen(TFT_WHITE);
+    
+    String displayText = currentPageContent;
+    // Find the image marker in the page content
+    int markerPos = displayText.indexOf(EPUB_IMG_MARKER);
+    if (markerPos >= 0) {
+      int pathStart = markerPos + 1;
+      int pathEnd = displayText.indexOf(EPUB_IMG_MARKER, pathStart);
+      if (pathEnd > pathStart) {
+        String imgPath = displayText.substring(pathStart, pathEnd);
+        // Draw the zoomed view using full screen
+        epubExtractAndDrawImage(imgPath, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT,
+                                comicZoomQuadrant, comicZoomCX, comicZoomCY);
+      }
+    }
+    
+    M5.Display.endWrite();
+    M5.Display.display();
+    delay(500);
+    return;
+  }
   
   // Load the user-selected reading font (may differ from system font)
   loadReadingFont();

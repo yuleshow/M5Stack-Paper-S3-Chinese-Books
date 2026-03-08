@@ -753,6 +753,21 @@ void drawSetupMenu() {
     } else {
       drawSystemText("未啟用 - 保持開啟", 40, y + 62, 22, TFT_BLACK, cardTextBg);
     }
+
+    y += itemHeight + 18;
+
+    // Comic Zoom Mode item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("漫畫縮放模式", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (comicZoomMode == 1) {
+      drawSystemText("自由定位 - 點擊處為中心", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("四分區 - 點擊顯示該象限", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
   }
   
   // Universal return button (lower-right)

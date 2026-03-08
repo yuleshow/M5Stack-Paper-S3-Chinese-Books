@@ -928,7 +928,8 @@ bool getPngDimensions(const uint8_t* data, size_t len, int& width, int& height) 
 
 // Extract an image from the EPUB ZIP and draw it on the display
 // Returns true if image was drawn successfully
-bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH) {
+bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH,
+                             int quadrant, float zoomCenterX, float zoomCenterY) {
   if (epubFilePath.isEmpty() || !epubZipEntries || epubZipEntryCount == 0) {
     Serial.println("EPUB IMG: No persistent ZIP data");
     return false;
@@ -1015,40 +1016,90 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
   // Calculate scale to fit image within available area
   float scale_x = 1.0f;
   float scale_y = 0.0f;  // 0 means same as scale_x (maintain aspect ratio)
+  int offX = 0, offY = 0;
   if (gotDims && imgW > 0 && imgH > 0) {
-    float sx = (float)maxW / (float)imgW;
-    float sy = (float)maxH / (float)imgH;
-    float scale = (sx < sy) ? sx : sy;  // Fit within bounds
-    if (scale < 1.0f) {
+    if (quadrant >= 0) {
+      // Zoom: scale so half the image fills the display area
+      float sx = (float)maxW / ((float)imgW / 2.0f);
+      float sy = (float)maxH / ((float)imgH / 2.0f);
+      float scale = (sx < sy) ? sx : sy;
       scale_x = scale;
       scale_y = scale;
+      int scaledW = (int)(imgW * scale);
+      int scaledH = (int)(imgH * scale);
+
+      if (quadrant == 100) {
+        // Free-point zoom: center on the tap point
+        int centerPixX = (int)(zoomCenterX * scaledW);
+        int centerPixY = (int)(zoomCenterY * scaledH);
+        offX = centerPixX - maxW / 2;
+        offY = centerPixY - maxH / 2;
+        // Clamp to image bounds
+        if (offX < 0) offX = 0;
+        if (offY < 0) offY = 0;
+        if (offX + maxW > scaledW) offX = scaledW - maxW;
+        if (offY + maxH > scaledH) offY = scaledH - maxH;
+        if (offX < 0) offX = 0;
+        if (offY < 0) offY = 0;
+        Serial.printf("EPUB IMG: Free zoom center=(%.2f,%.2f), off=(%d,%d), scale=%.3f\n",
+                      zoomCenterX, zoomCenterY, offX, offY, scale);
+      } else {
+        // Quadrant zoom
+        int halfW = scaledW / 2;
+        int halfH = scaledH / 2;
+        int visW = (halfW < maxW) ? halfW : maxW;
+        int visH = (halfH < maxH) ? halfH : maxH;
+        int padX = (maxW - visW) / 2;
+        int padY = (maxH - visH) / 2;
+        x += padX;
+        y += padY;
+        switch (quadrant) {
+          case 0: offX = 0;     offY = 0;     break;  // Top-left
+          case 1: offX = halfW; offY = 0;     break;  // Top-right
+          case 2: offX = 0;     offY = halfH; break;  // Bottom-left
+          case 3: offX = halfW; offY = halfH; break;  // Bottom-right
+        }
+        Serial.printf("EPUB IMG: Zoom Q%d, scale=%.3f, off=(%d,%d), vis=%dx%d\n",
+                      quadrant, scale, offX, offY, visW, visH);
+      }
+    } else {
+      float sx = (float)maxW / (float)imgW;
+      float sy = (float)maxH / (float)imgH;
+      float scale = (sx < sy) ? sx : sy;  // Fit within bounds
+      if (scale < 1.0f) {
+        scale_x = scale;
+        scale_y = scale;
+      }
+      Serial.printf("EPUB IMG: Original %dx%d, scale=%.3f, output ~%dx%d\n",
+                    imgW, imgH, scale_x, (int)(imgW * scale_x), (int)(imgH * scale_x));
     }
-    Serial.printf("EPUB IMG: Original %dx%d, scale=%.3f, output ~%dx%d\n",
-                  imgW, imgH, scale_x, (int)(imgW * scale_x), (int)(imgH * scale_x));
   } else {
     Serial.printf("EPUB IMG: Could not parse dimensions, using default scale\n");
   }
 
-  // Center the scaled image in the available area
+  // Center the scaled image in the available area (full view only)
   int drawX = x;
   int drawY = y;
-  if (gotDims && imgW > 0 && imgH > 0) {
+  if (quadrant < 0 && gotDims && imgW > 0 && imgH > 0) {
     int outW = (int)(imgW * scale_x);
     int outH = (int)(imgH * (scale_y > 0 ? scale_y : scale_x));
     if (outW < maxW) drawX = x + (maxW - outW) / 2;
     if (outH < maxH) drawY = y + (maxH - outH) / 2;
+  } else {
+    drawX = x;
+    drawY = y;
   }
 
   if (isJpeg) {
-    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, 0, 0, scale_x, scale_y);
+    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   } else if (isPng) {
-    drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, 0, 0, scale_x, scale_y);
+    drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   } else if (isBmp) {
-    drawn = M5.Display.drawBmp(imgBuf, imgLen, drawX, drawY, maxW, maxH, 0, 0, scale_x, scale_y);
+    drawn = M5.Display.drawBmp(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   } else {
     // Try JPEG first (most common in EPUBs), then PNG
-    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, 0, 0, scale_x, scale_y);
-    if (!drawn) drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, 0, 0, scale_x, scale_y);
+    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
+    if (!drawn) drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   }
 
   free(imgBuf);

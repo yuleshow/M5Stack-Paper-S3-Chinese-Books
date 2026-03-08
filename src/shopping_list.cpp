@@ -416,7 +416,7 @@ static int measureAsciiRunHeight(const String& run) {
 int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
   int y = startY;
   M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextSize(1.5);
+  M5.Display.setTextSize(2.0);
   
   for (int j = 0; j < text.length(); ) {
     unsigned char c = text.charAt(j);
@@ -434,7 +434,7 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
       
       // Split run into words and render each word as a separate sprite
       M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextSize(1.5);
+      M5.Display.setTextSize(2.0);
       int textH = charSpacing;
       
       int wp = 0;
@@ -460,7 +460,7 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
         sprite.fillSprite(TFT_WHITE);
         sprite.setFont(&fonts::Font2);
         sprite.setTextColor(TFT_BLACK);
-        sprite.setTextSize(1.5);
+        sprite.setTextSize(2.0);
         sprite.setTextDatum(ML_DATUM);
         sprite.drawString(word, 2, textH / 2);
         sprite.pushRotateZoom(&M5.Display, x, y + rotatedH / 2, 90, 1.0, 1.0);
@@ -534,7 +534,7 @@ void calculateShoppingPages() {
         // Calculate group text height: measure ASCII runs (split by words), CJK=56px each
         int groupTextHeight = 0;
         M5.Display.setFont(&fonts::Font2);
-        M5.Display.setTextSize(1.5);
+        M5.Display.setTextSize(2.5);
         for (int j = 0; j < currentGroup.length(); ) {
           unsigned char c = currentGroup.charAt(j);
           if (c < 0x80) {
@@ -563,7 +563,7 @@ void calculateShoppingPages() {
         int itemHeight = 28 + 10;  // checkbox + gap
         // Estimate height: measure ASCII runs (split by words), CJK=56px each
         M5.Display.setFont(&fonts::Font2);
-        M5.Display.setTextSize(1.5);
+        M5.Display.setTextSize(2.0);
         for (int j = 0; j < item.length(); ) {
           unsigned char c = item.charAt(j);
           if (c < 0x80) {
@@ -601,7 +601,7 @@ void calculateShoppingPages() {
             run.trim();
             if (run.length() == 0) continue;
             M5.Display.setFont(&fonts::Font2);
-            M5.Display.setTextSize(1.5);
+            M5.Display.setTextSize(2.0);
             int runHeight = M5.Display.textWidth(run) + 4;
             if (y + runHeight > maxY - 60) {
               columnX -= columnSpacing;
@@ -739,7 +739,7 @@ void drawShoppingList() {
       // Calculate group text height: measure ASCII runs (split by words), CJK=56px each
       int groupTextHeight = 0;
       M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextSize(1.5);
+      M5.Display.setTextSize(2.5);
       for (int j = 0; j < currentGroup.length(); ) {
         unsigned char c = currentGroup.charAt(j);
         if (c < 0x80) {
@@ -793,8 +793,8 @@ bgWidth, groupTextHeight + bgPadding * 2,
           
           // Split run into words and render each as a separate sprite (white on grey)
           M5.Display.setFont(&fonts::Font2);
-          M5.Display.setTextSize(1.5);
-          int textH = 45;
+          M5.Display.setTextSize(2.5);
+          int textH = 64;
           
           int wp = 0;
           int wordIdx = 0;
@@ -819,7 +819,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             sprite.fillSprite(0x5AEB);  // Match grey background
             sprite.setFont(&fonts::Font2);
             sprite.setTextColor(TFT_WHITE);
-            sprite.setTextSize(1.5);
+            sprite.setTextSize(2.5);
             sprite.setTextDatum(ML_DATUM);
             sprite.drawString(word, 2, textH / 2);
             sprite.pushRotateZoom(&M5.Display, columnX, y + rotatedH / 2, 90, 1.0, 1.0);
@@ -861,7 +861,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
       // Calculate item height: measure ASCII runs (split by words), CJK=56px each
       int itemHeight = 28 + 10;  // checkbox + gap
       M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextSize(1.5);
+      M5.Display.setTextSize(2.0);
       for (int j = 0; j < item.length(); ) {
         unsigned char c = item.charAt(j);
         if (c < 0x80) {
@@ -946,8 +946,8 @@ bgWidth, groupTextHeight + bgPadding * 2,
           
           // Split run into words and render each as a separate rotated sprite
           M5.Display.setFont(&fonts::Font2);
-          M5.Display.setTextSize(1.5);
-          int textH = 45;
+          M5.Display.setTextSize(2.0);
+          int textH = 56;
           
           int wp = 0;
           int wordIdx = 0;
@@ -980,7 +980,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             sprite.fillSprite(TFT_WHITE);
             sprite.setFont(&fonts::Font2);
             sprite.setTextColor(TFT_BLACK);
-            sprite.setTextSize(1.5);
+            sprite.setTextSize(2.0);
             sprite.setTextDatum(ML_DATUM);
             sprite.drawString(word, 2, textH / 2);
             sprite.pushRotateZoom(&M5.Display, columnX, y + rotatedH / 2, 90, 1.0, 1.0);

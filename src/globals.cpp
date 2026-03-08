@@ -237,7 +237,7 @@ const char* kIconLabels[kIconCount] = {
   "天氣",
   "壁紙",
   "設定",
-  "睡眠"
+  "求籖"
 };
 Mode fontMenuReturnMode = MODE_DASHBOARD;
 
@@ -279,6 +279,10 @@ size_t epubLoadedBaseOffset = 0;
 String epubBasePath = "";
 size_t epubEstimatedTotalBytes = 0;
 bool epubIsImageBased = false;
+int comicZoomQuadrant = -1;
+int comicZoomMode = 0;
+float comicZoomCX = 0.5f;
+float comicZoomCY = 0.5f;
 
 // Todo
 TodoItem todoList[MAX_TODO];
@@ -320,6 +324,10 @@ int wallpaperScrollOffset = 0;
 bool wallpaperRotateActive = false;
 unsigned long wallpaperRotateLastChange = 0;
 int wallpaperViewMode = 0;  // 0=name list, 1=thumbnails
+
+// Fortune Slips
+int fortuneSlipCategory = -1;  // 0=kuanyin, 1=senso-ji
+int fortuneSlipNumber = -1;
 
 // WiFi / Config
 WiFiConfig wifiConfig;

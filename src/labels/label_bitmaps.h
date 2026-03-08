@@ -13,7 +13,20 @@
 #include "label_weather.h"
 #include "label_wallpaper.h"
 #include "label_settings.h"
-#include "label_sleep.h"
+#include "label_fortune_slips.h"
+#include "label_kuanyin_slips.h"
+#include "label_sensoji_slips.h"
+#include "label_sleep_motto.h"
+#include "label_sincere_prayer.h"
+#include "label_shake_to_draw.h"
+#include "label_char_cheng.h"
+#include "label_char_xin.h"
+#include "label_char_zhu.h"
+#include "label_char_dao.h"
+#include "label_char_qing.h"
+#include "label_char_yao.h"
+#include "label_char_qiu.h"
+#include "label_char_qian.h"
 #include "label_clear.h"
 #include "label_ok.h"
 #include "label_cancel.h"
@@ -1249,7 +1262,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1233;
+const int kLabelBitmapCount = 1246;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -1259,7 +1272,20 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"天氣", 32, label_weather_w, label_weather_h, label_weather_bitmap},
   {"壁紙", 32, label_wallpaper_w, label_wallpaper_h, label_wallpaper_bitmap},
   {"設定", 32, label_settings_w, label_settings_h, label_settings_bitmap},
-  {"睡眠", 32, label_sleep_w, label_sleep_h, label_sleep_bitmap},
+  {"求籖", 32, label_fortune_slips_w, label_fortune_slips_h, label_fortune_slips_bitmap},
+  {"觀音靈籖", 36, label_kuanyin_slips_w, label_kuanyin_slips_h, label_kuanyin_slips_bitmap},
+  {"淺草寺靈籖", 36, label_sensoji_slips_w, label_sensoji_slips_h, label_sensoji_slips_bitmap},
+  {"醒世格言", 28, label_sleep_motto_w, label_sleep_motto_h, label_sleep_motto_bitmap},
+  {"誠心祝禱", 64, label_sincere_prayer_w, label_sincere_prayer_h, label_sincere_prayer_bitmap},
+  {"輕搖求籖", 64, label_shake_to_draw_w, label_shake_to_draw_h, label_shake_to_draw_bitmap},
+  {"誠", 64, label_char_cheng_w, label_char_cheng_h, label_char_cheng_bitmap},
+  {"心", 64, label_char_xin_w, label_char_xin_h, label_char_xin_bitmap},
+  {"祝", 64, label_char_zhu_w, label_char_zhu_h, label_char_zhu_bitmap},
+  {"禱", 64, label_char_dao_w, label_char_dao_h, label_char_dao_bitmap},
+  {"輕", 64, label_char_qing_w, label_char_qing_h, label_char_qing_bitmap},
+  {"搖", 64, label_char_yao_w, label_char_yao_h, label_char_yao_bitmap},
+  {"求", 64, label_char_qiu_w, label_char_qiu_h, label_char_qiu_bitmap},
+  {"籖", 64, label_char_qian_w, label_char_qian_h, label_char_qian_bitmap},
   {"清除", 24, label_clear_w, label_clear_h, label_clear_bitmap},
   {"確定", 24, label_ok_w, label_ok_h, label_ok_bitmap},
   {"取消", 24, label_cancel_w, label_cancel_h, label_cancel_bitmap},

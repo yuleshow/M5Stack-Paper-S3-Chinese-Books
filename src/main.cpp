@@ -5,6 +5,7 @@
 #include "s3cover_jpg.h"
 #include "sleeping_jpg.h"
 #include <esp_sleep.h>
+#include <esp_random.h>
 #include <driver/gpio.h>
 
 SET_LOOP_TASK_STACK_SIZE(32 * 1024);
@@ -365,8 +366,10 @@ void setup() {
   // Load auto-sleep setting
   prefs.begin("ereader", true);
   autoSleepEnabled = prefs.getBool("autoSleep", false);  // Default: disabled
+  comicZoomMode = prefs.getInt("comicZoom", 0);  // Default: quadrant mode
   prefs.end();
   Serial.printf("Auto-sleep setting loaded: %s\n", autoSleepEnabled ? "ENABLED" : "DISABLED");
+  Serial.printf("Comic zoom mode loaded: %d\n", comicZoomMode);
   
   // BLE Proximity Unlock — deferred start (not at boot to avoid memory issues)
   // Config is loaded but init is deferred to after display setup
@@ -465,6 +468,11 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
 
 void loop() {
   M5.update();
+  
+  // Poll IMU for fortune slip shake detection
+  if (currentMode == MODE_FORTUNE_SHAKE) {
+    pollFortuneShake();
+  }
   
   // Handle web server if enabled
   if (webServerEnabled && webServer != nullptr) {
@@ -636,11 +644,11 @@ void loop() {
             setupMenuPage = 0;
             drawSetupMenu();
           }
-          // Icon 7 is Sleep — show sleeping page for testing (tap to cycle mottos)
+          // Icon 7 is Fortune Slips (求籖)
           else if (i == 7) {
-            Serial.println("Sleep icon touched - entering motto test mode...");
-            currentMode = MODE_MOTTO_TEST;
-            drawMottoScreen();
+            Serial.println("Fortune slips icon touched...");
+            currentMode = MODE_FORTUNE_SLIPS;
+            drawFortuneSlipsMenu();
           }
           else {
             Serial.printf("App %d not implemented yet\n", i);
@@ -963,6 +971,58 @@ void loop() {
       }
     } 
     else if (currentMode == MODE_READING) {
+      // Image-based EPUB (comic/manga) zoom handling
+      if (currentBookIsEpub && epubIsImageBased) {
+        if (comicZoomQuadrant >= 0) {
+          // Zoomed view: tap anywhere to return to full view
+          Serial.println("Comic zoom: tap to return to full view");
+          comicZoomQuadrant = -1;
+          drawReading();
+        }
+        // Arrow navigation (works in full view only)
+        else if (touchedPrevPage(x, y) && currentPage < totalPages - 1) {
+          currentPage++;
+          comicZoomQuadrant = -1;
+          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+        }
+        else if (touchedNextPage(x, y) && currentPage > 0) {
+          currentPage--;
+          comicZoomQuadrant = -1;
+          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+        }
+        // Return button
+        else if (touchedReturnButton(x, y)) {
+          saveReadingPosition();
+          savePrefInt("ereader", "page", currentPage);
+          comicZoomQuadrant = -1;
+          currentMode = MODE_BOOK_LIST;
+          loadSystemFont();
+          drawBookList();
+        }
+        // Full view: tap on image area to zoom
+        else if (x >= READING_AREA_LEFT && x <= READING_AREA_RIGHT &&
+                 y >= READING_AREA_TOP && y <= READING_AREA_BOTTOM) {
+          if (comicZoomMode == 1) {
+            // Free-point zoom: use tap position as center
+            comicZoomCX = (float)(x - READING_AREA_LEFT) / (float)(READING_AREA_RIGHT - READING_AREA_LEFT);
+            comicZoomCY = (float)(y - READING_AREA_TOP) / (float)(READING_AREA_BOTTOM - READING_AREA_TOP);
+            comicZoomQuadrant = 100;
+            Serial.printf("Comic zoom: free-point (%.2f, %.2f)\n", comicZoomCX, comicZoomCY);
+          } else {
+            // Quadrant zoom
+            int midX = (READING_AREA_LEFT + READING_AREA_RIGHT) / 2;
+            int midY = (READING_AREA_TOP + READING_AREA_BOTTOM) / 2;
+            if (x < midX && y < midY)      comicZoomQuadrant = 0;  // TL
+            else if (x >= midX && y < midY) comicZoomQuadrant = 1;  // TR
+            else if (x < midX && y >= midY) comicZoomQuadrant = 2;  // BL
+            else                             comicZoomQuadrant = 3;  // BR
+            Serial.printf("Comic zoom: quadrant %d\n", comicZoomQuadrant);
+          }
+          drawReading();
+        }
+      }
+      // Non-image EPUB / plain text reading
+      else {
       // Return button (lower-right)
       if (touchedReturnButton(x, y)) {
         Serial.println("Back button touched - returning to book list");
@@ -1066,6 +1126,7 @@ void loop() {
           }
         }
       }
+      } // end non-image else block
     }
     else if (currentMode == MODE_SHOPPING_LIST) {
       // Vertical CJK: left button = NEXT page (forward)
@@ -1788,6 +1849,19 @@ void loop() {
             drawSetupMenu();
             return;
           }
+
+          // Comic Zoom Mode item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Comic zoom mode selected - toggling");
+            comicZoomMode = (comicZoomMode == 0) ? 1 : 0;
+            prefs.begin("ereader", false);
+            prefs.putInt("comicZoom", comicZoomMode);
+            prefs.end();
+            Serial.printf("Comic zoom mode toggled to: %d\n", comicZoomMode);
+            drawSetupMenu();
+            return;
+          }
         }
         
         // Return button (lower-right)
@@ -2321,12 +2395,9 @@ void loop() {
       else if (touchedPrevPage(x, y)) {
         int maxVisible;
         if (wallpaperViewMode == 0) {
-          maxVisible = 12;
+          maxVisible = 11;  // 12 - 1 (motto takes first slot)
         } else {
-          int cols = 3, rows = 3, thumbPad = 8;
-          int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
-          int thumbH = (875 - 80 - thumbPad * (rows + 1)) / rows;
-          maxVisible = cols * rows;
+          maxVisible = 8;  // 9 - 1 (motto takes top-right)
         }
         int endIdx = min(wallpaperScrollOffset + maxVisible, wallpaperCount);
         if (endIdx < wallpaperCount) {
@@ -2341,12 +2412,9 @@ void loop() {
         if (wallpaperScrollOffset > 0) {
           int maxVisible;
           if (wallpaperViewMode == 0) {
-            maxVisible = 12;
+            maxVisible = 11;
           } else {
-            int cols = 3, rows = 3, thumbPad = 8;
-            int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
-            int thumbH = (875 - 80 - thumbPad * (rows + 1)) / rows;
-            maxVisible = cols * rows;
+            maxVisible = 8;
           }
           Serial.println("Wallpaper list: prev page (scroll up)");
           wallpaperScrollOffset -= maxVisible;
@@ -2386,44 +2454,64 @@ void loop() {
         }
       }
       // Check if wallpaper item was touched (list or thumbnail)
-      else if (wallpaperCount > 0 && y >= 80 && y <= 875) {
+      else if (y >= 80 && y <= 875) {
         if (wallpaperViewMode == 0) {
-          // Name list: item touch
+          // Name list: first item is always "醒世格言" (motto)
           int itemHeight = 65;
-          int startIdx = wallpaperScrollOffset;
-          int maxVisible = 12;
-          int endIdx = min(startIdx + maxVisible, wallpaperCount);
-          for (int i = startIdx; i < endIdx; i++) {
-            int itemY = 80 + (i - startIdx) * itemHeight;
-            if (y >= itemY && y <= itemY + 60 && x >= 20 && x <= 520) {
-              Serial.printf("Wallpaper %d selected: %s\n", i, wallpaperFiles[i].c_str());
-              selectedWallpaper = i;
-              currentMode = MODE_WALLPAPER;
-              drawWallpaper();
-              break;
+          int mottoY = 80;
+          if (y >= mottoY && y <= mottoY + 60 && x >= 20 && x <= 520) {
+            Serial.println("Motto entry selected from wallpaper list");
+            currentMode = MODE_MOTTO_TEST;
+            drawMottoScreen();
+          } else if (wallpaperCount > 0) {
+            // Wallpaper items start after motto entry
+            int startIdx = wallpaperScrollOffset;
+            int maxVisible = 11;  // 12 - 1 (motto takes first slot)
+            int endIdx = min(startIdx + maxVisible, wallpaperCount);
+            for (int i = startIdx; i < endIdx; i++) {
+              int itemY = 80 + (1 + i - startIdx) * itemHeight;  // +1 to skip motto row
+              if (y >= itemY && y <= itemY + 60 && x >= 20 && x <= 520) {
+                Serial.printf("Wallpaper %d selected: %s\n", i, wallpaperFiles[i].c_str());
+                selectedWallpaper = i;
+                currentMode = MODE_WALLPAPER;
+                drawWallpaper();
+                break;
+              }
             }
           }
         } else {
-          // Thumbnail: grid touch
+          // Thumbnail: top-right (col2 row0) is always motto
           int cols = 3, rows = 3, thumbPad = 8;
           int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
           int thumbH = (875 - 80 - thumbPad * (rows + 1)) / rows;
-          int maxVisible = cols * rows;
-          int startIdx = wallpaperScrollOffset;
-          int endIdx = min(startIdx + maxVisible, wallpaperCount);
-          
-          for (int i = startIdx; i < endIdx; i++) {
-            int idx = i - startIdx;
-            int col = idx % cols;
-            int row = idx / cols;
-            int tx = thumbPad + col * (thumbW + thumbPad);
-            int ty = 80 + thumbPad + row * (thumbH + thumbPad);
-            if (x >= tx && x <= tx + thumbW && y >= ty && y <= ty + thumbH) {
-              Serial.printf("Thumbnail %d selected: %s\n", i, wallpaperFiles[i].c_str());
-              selectedWallpaper = i;
-              currentMode = MODE_WALLPAPER;
-              drawWallpaper();
-              break;
+          // Motto thumbnail is at col=2, row=0
+          int mottoTx = thumbPad + 2 * (thumbW + thumbPad);
+          int mottoTy = 80 + thumbPad;
+          if (x >= mottoTx && x <= mottoTx + thumbW && y >= mottoTy && y <= mottoTy + thumbH) {
+            Serial.println("Motto thumbnail selected");
+            currentMode = MODE_MOTTO_TEST;
+            drawMottoScreen();
+          } else {
+            // Other thumbnails: 8 wallpaper slots per page (9 - 1 motto)
+            int maxVisible = cols * rows - 1;  // 8
+            int startIdx = wallpaperScrollOffset;
+            int endIdx = min(startIdx + maxVisible, wallpaperCount);
+            
+            for (int i = startIdx; i < endIdx; i++) {
+              int slot = i - startIdx;
+              // Slots 0..1 = row0 col0..1, slots 2..4 = row1 col0..2, slots 5..7 = row2 col0..2
+              int col, row;
+              if (slot < 2) { row = 0; col = slot; }
+              else { int adj = slot + 1; row = adj / cols; col = adj % cols; }
+              int tx = thumbPad + col * (thumbW + thumbPad);
+              int ty = 80 + thumbPad + row * (thumbH + thumbPad);
+              if (x >= tx && x <= tx + thumbW && y >= ty && y <= ty + thumbH) {
+                Serial.printf("Thumbnail %d selected: %s\n", i, wallpaperFiles[i].c_str());
+                selectedWallpaper = i;
+                currentMode = MODE_WALLPAPER;
+                drawWallpaper();
+                break;
+              }
             }
           }
         }
@@ -2438,14 +2526,47 @@ void loop() {
     }
     else if (currentMode == MODE_MOTTO_TEST) {
       if (touchedReturnButton(x, y)) {
-        Serial.println("Motto test: return to dashboard");
-        currentMode = MODE_DASHBOARD;
-        drawDashboard();
+        Serial.println("Motto test: return to wallpaper list");
+        currentMode = MODE_WALLPAPER_LIST;
+        drawWallpaperList();
       } else {
         // Any other touch = show next random motto
         Serial.println("Motto test: showing next motto...");
         drawMottoScreen();
       }
+    }
+    else if (currentMode == MODE_FORTUNE_SLIPS) {
+      if (touchedReturnButton(x, y)) {
+        Serial.println("Fortune slips: return to dashboard");
+        currentMode = MODE_DASHBOARD;
+        drawDashboard();
+      }
+      // Option 1: 觀音靈籖 (y=200..310)
+      else if (x >= 40 && x <= 500 && y >= 200 && y <= 310) {
+        Serial.println("Fortune slips: kuanyin selected");
+        fortuneSlipCategory = 0;
+        currentMode = MODE_FORTUNE_SHAKE;
+        drawFortuneShakeScreen();
+      }
+      // Option 2: 淺草寺靈籖 (y=340..450)
+      else if (x >= 40 && x <= 500 && y >= 340 && y <= 450) {
+        Serial.println("Fortune slips: senso-ji selected");
+        fortuneSlipCategory = 1;
+        currentMode = MODE_FORTUNE_SHAKE;
+        drawFortuneShakeScreen();
+      }
+    }
+    else if (currentMode == MODE_FORTUNE_SHAKE) {
+      // Tap anywhere to return to menu
+      Serial.println("Fortune shake: return to menu");
+      currentMode = MODE_FORTUNE_SLIPS;
+      drawFortuneSlipsMenu();
+    }
+    else if (currentMode == MODE_FORTUNE_SLIP_VIEW) {
+      // Tap anywhere to return to shake screen
+      Serial.println("Fortune slip: returning to shake screen");
+      currentMode = MODE_FORTUNE_SHAKE;
+      drawFortuneShakeScreen();
     }
     else if (currentMode == MODE_FONT_TEST) {
       // Return button (lower-right)

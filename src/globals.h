@@ -133,7 +133,10 @@ enum Mode {
   MODE_CALENDAR_YEAR_MONTH,
   MODE_TODO_DATE_PICKER,
   MODE_CANGJIE_INPUT,
-  MODE_MOTTO_TEST
+  MODE_MOTTO_TEST,
+  MODE_FORTUNE_SLIPS,
+  MODE_FORTUNE_SHAKE,
+  MODE_FORTUNE_SLIP_VIEW
 };
 
 // ==================== Struct Definitions ====================
@@ -456,6 +459,10 @@ extern bool wallpaperRotateActive;
 extern unsigned long wallpaperRotateLastChange;
 extern int wallpaperViewMode;  // 0=name list, 1=thumbnails
 
+// Fortune Slips
+extern int fortuneSlipCategory;   // 0=kuanyin, 1=senso-ji
+extern int fortuneSlipNumber;     // slip number to display (0-99)
+
 // WiFi / Config / Time
 extern WiFiConfig wifiConfig;
 extern WeatherData weatherData;
@@ -549,9 +556,14 @@ bool epubLoadChapterRange(int startChapter);
 bool epubLoadSingleChapter(int chapterIndex);
 int epubChapterForOffset(size_t offset);
 void epubCleanup();
-bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH);
+bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH,
+                             int quadrant = -1, float zoomCenterX = 0.5f, float zoomCenterY = 0.5f);
 
 // book_reader
+extern int comicZoomQuadrant;  // -1 = full view, 0=TL, 1=TR, 2=BL, 3=BR, or 100 = free-point
+extern int comicZoomMode;      // 0 = quadrant zoom, 1 = free-point zoom
+extern float comicZoomCX;      // free-point center X (0.0-1.0)
+extern float comicZoomCY;      // free-point center Y (0.0-1.0)
 void scanBooks();
 void saveReadingPosition();
 int loadReadingPosition();
@@ -617,6 +629,12 @@ void loadWallpaperFiles();
 void drawWallpaperList();
 void drawWallpaper();
 void drawWallpaperWithIndex(int index);
+
+// fortune slips
+void drawFortuneSlipsMenu();
+void drawFortuneShakeScreen();
+void drawFortuneSlip();
+void pollFortuneShake();
 
 // image dimension helpers
 bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& height);
