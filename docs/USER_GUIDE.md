@@ -116,7 +116,8 @@ units=metric
 
 Place TTF, TTC, or pre-rendered BIN fonts in `/fonts/`. The device scans this folder on boot.
 
-- **Recommended:** `GenYoMinTW-Regular.ttf` (a Traditional Chinese serif font)
+- **System font:** [源樣明體 GenYoMinTW-Regular.ttf](https://github.com/ButTaiwan/genyo-font/releases) — a Traditional Chinese Ming/serif font
+- **Motto font:** [全字庫正楷體 TW-Kai-98_1.ttf](https://data.gov.tw/dataset/5961) — a Traditional Chinese Kai/regular script font from CNS11643 (OFL-1.1 licensed). Direct download: [Fonts_Kai.zip](https://www.cns11643.gov.tw/opendata/Fonts_Kai.zip)
 - You can switch fonts from the reading screen's 字型 button.
 - Supports up to 100 font files.
 
