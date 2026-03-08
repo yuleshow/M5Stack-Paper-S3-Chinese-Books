@@ -1,3 +1,4 @@
+// Fortune slip images sourced from www.chance.org.tw
 #include "globals.h"
 #include "labels/label_bitmaps.h"
 #include <esp_random.h>
@@ -344,11 +345,6 @@ void drawFortuneSlip() {
   // Images are pre-sized to DISPLAY_WIDTH x DISPLAY_HEIGHT by the converter
   M5.Display.drawJpg(buf, size, 0, 0);
   free(buf);
-
-  // Slip number overlay (bottom-left)
-  char slipLabel[32];
-  snprintf(slipLabel, sizeof(slipLabel), "第%d籖", slipIdx + 1);
-  drawSystemText(slipLabel, 10, DISPLAY_HEIGHT - 40, 20, EPD_MID_GRAY);
 
   M5.Display.endWrite();
   M5.Display.display();

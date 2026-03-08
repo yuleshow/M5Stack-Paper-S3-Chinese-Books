@@ -201,7 +201,7 @@ void recalculatePages() {
 bool loadCurrentPage() {
   if (currentBookPath.isEmpty()) return false;
   
-  // Image-based EPUB (manga): load one chapter per page
+  // Image-based EPUB (manga): one chapter per page, show first image
   if (currentBookIsEpub && epubIsImageBased && epubChapters) {
     if (currentPage < 0) currentPage = 0;
     if (currentPage >= epubChapterCount) currentPage = epubChapterCount - 1;
@@ -213,8 +213,11 @@ bool loadCurrentPage() {
     }
     
     currentPageContent = String(epubFullText);
-    Serial.printf("EPUB IMG page %d/%d: %d bytes\n",
-                  currentPage + 1, totalPages, currentPageContent.length());
+    // Verify image marker presence for diagnostics
+    int markerIdx = currentPageContent.indexOf(EPUB_IMG_MARKER);
+    Serial.printf("EPUB IMG page %d/%d: %d bytes, marker at %d, freePSRAM=%u\n",
+                  currentPage + 1, totalPages, currentPageContent.length(),
+                  markerIdx, ESP.getFreePsram());
     return true;
   }
   
@@ -282,6 +285,23 @@ bool loadCurrentPage() {
       localOffset = pageOffset - epubLoadedBaseOffset;
     } else {
       localOffset = 0;  // Shouldn't happen after reload, but safety
+    }
+
+    // Safety: check if localOffset lands inside a \x01...\x01 image marker pair
+    // Count marker bytes from buffer start to detect odd/even parity
+    if (localOffset > 0 && localOffset < epubFullTextLen) {
+      int markerCount = 0;
+      for (size_t k = 0; k < localOffset; k++) {
+        if (epubFullText[k] == EPUB_IMG_MARKER) markerCount++;
+      }
+      if (markerCount & 1) {
+        // Odd markers = we're inside a marker pair, skip past closing marker
+        while (localOffset < epubFullTextLen && epubFullText[localOffset] != EPUB_IMG_MARKER)
+          localOffset++;
+        if (localOffset < epubFullTextLen) localOffset++;  // skip the marker
+        if (localOffset < epubFullTextLen && epubFullText[localOffset] == '\n') localOffset++;
+        Serial.printf("EPUB: Adjusted offset past image marker boundary (was mid-path)\n");
+      }
     }
 
     if (localOffset >= epubFullTextLen) {
@@ -419,11 +439,32 @@ bool loadBook(int bookIndex) {
       totalPages = epubChapterCount;
       totalBookBytes = epubChapterCount;  // Not used for page calc but keep consistent
       Serial.printf("EPUB: Image-based mode — %d pages (1 chapter per page)\n", totalPages);
+      
+      // Show warning for multi-image chapters — wait for tap to dismiss
+      if (epubHasMultiImageChapters) {
+        M5.Display.setEpdMode(epd_mode_t::epd_fast);
+        M5.Display.startWrite();
+        M5.Display.fillScreen(TFT_WHITE);
+        drawSystemText("此EPUB每頁含多張圖片", 60, 380, 32);
+        drawSystemText("僅顯示每頁第一張圖片", 60, 430, 32);
+        drawSystemText("點擊螢幕繼續", 160, 520, 24);
+        M5.Display.endWrite();
+        M5.Display.display();
+        // Wait for touch
+        while (true) {
+          M5.update();
+          auto t = M5.Touch.getDetail();
+          if (t.wasPressed()) break;
+          delay(50);
+        }
+      }
     } else {
       totalBookBytes = epubEstimatedTotalBytes;
       recalculatePages();
     }
     currentPage = loadReadingPosition();
+    Serial.printf("EPUB: Restored page=%d, totalPages=%d, isImageBased=%d, chapterCount=%d\n",
+                  currentPage, totalPages, epubIsImageBased, epubChapterCount);
     if (currentPage >= totalPages) currentPage = 0;
     loadBookmarks();
     return loadCurrentPage();
@@ -472,11 +513,30 @@ void drawBookList() {
   M5.Display.drawLine(20, 80, 520, 80, TFT_BLACK);
   
   if (sdCardAvailable && bookCount > 0) {
-    // Show books from SD card
-    for (int i = 0; i < min(bookCount, 10); i++) {
-      drawSystemText(bookDisplayName[i].c_str(), 40, 120 + (i * 50), 24);
+    int totalBookPages = (bookCount + BOOKS_PER_PAGE - 1) / BOOKS_PER_PAGE;
+    if (bookListPage >= totalBookPages) bookListPage = totalBookPages - 1;
+    if (bookListPage < 0) bookListPage = 0;
+    int startIdx = bookListPage * BOOKS_PER_PAGE;
+    int endIdx = min(startIdx + BOOKS_PER_PAGE, bookCount);
+    
+    // Show books for current page
+    for (int i = startIdx; i < endIdx; i++) {
+      int row = i - startIdx;
+      drawSystemText(bookDisplayName[i].c_str(), 40, 120 + (row * 50), 24);
     }
-    String bookInfo = "共 " + String(bookCount) + " 本書 | 觸控選擇";
+    
+    // Draw pagination nav arrows if needed
+    bool hasPrev = (bookListPage > 0);
+    bool hasNext = (bookListPage < totalBookPages - 1);
+    if (totalBookPages > 1) {
+      drawVerticalNavBar(hasPrev, hasNext);
+    }
+    
+    // Status info
+    String bookInfo = "共 " + String(bookCount) + " 本書";
+    if (totalBookPages > 1) {
+      bookInfo += " | 第 " + String(bookListPage + 1) + "/" + String(totalBookPages) + " 頁";
+    }
     drawSystemText(bookInfo.c_str(), 20, 900, 18);
   } else {
     // Show sample books
@@ -492,12 +552,30 @@ void drawBookList() {
   Serial.println("Book list displayed");
 }
 
+// Determine e-ink refresh mode based on pageRefreshMode setting
+static epd_mode_t getReadingEpdMode() {
+  if (pageRefreshMode == 2) {
+    // Every 10 pages: full refresh when counter hits 0
+    if (pagesSinceFullRefresh >= 10) {
+      pagesSinceFullRefresh = 0;
+    }
+    if (pagesSinceFullRefresh == 0) {
+      pagesSinceFullRefresh++;
+      return epd_mode_t::epd_quality;
+    }
+    pagesSinceFullRefresh++;
+    return epd_mode_t::epd_fast;
+  }
+  // Mode 0 (system default) and mode 1 (every page): always quality
+  return epd_mode_t::epd_quality;
+}
+
 void drawReading() {
   Serial.println("Drawing reading mode...");
   
   // Comic zoom mode: draw zoomed quadrant fullscreen
   if (currentBookIsEpub && epubIsImageBased && comicZoomQuadrant >= 0) {
-    M5.Display.setEpdMode(epd_mode_t::epd_quality);
+    M5.Display.setEpdMode(getReadingEpdMode());
     M5.Display.startWrite();
     M5.Display.fillScreen(TFT_WHITE);
     
@@ -521,10 +599,73 @@ void drawReading() {
     return;
   }
   
+  // Image-based EPUB full view: render image directly, skip text loop
+  // This avoids showing stray text (e.g. filenames) that may precede image markers
+  if (currentBookIsEpub && epubIsImageBased) {
+    M5.Display.setEpdMode(getReadingEpdMode());
+    M5.Display.startWrite();
+    M5.Display.fillScreen(TFT_WHITE);
+    
+    drawStatusBar();
+    // Only draw arrows and return button (no progress bar / font buttons for comic)
+    drawReturnButton();
+    {
+      bool hasPrev = (currentPage > 0);
+      bool hasNext = (currentPage < totalPages - 1);
+      // Draw arrows only, nav bar already includes return
+      if (hasNext) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
+      if (hasPrev) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
+    }
+    // Page number centered
+    {
+      char pageStr[16];
+      snprintf(pageStr, sizeof(pageStr), "%d / %d", currentPage + 1, totalPages);
+      drawSystemText(pageStr, 180, NAV_Y + 10, 24);
+    }
+    // Comic zoom mode toggle button
+    {
+      int btnX = 350;
+      int btnY = NAV_Y;
+      int btnW = 80, btnH = 64;
+      M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 8, TFT_BLACK);
+      const char* zoomLabel = (comicZoomMode == 1) ? "自由" : "四分";
+      drawSystemText(zoomLabel, btnX + 10, btnY + 18, 24);
+    }
+    
+    String displayText = currentPageContent;
+    int markerPos = displayText.indexOf(EPUB_IMG_MARKER);
+    if (markerPos >= 0) {
+      int pathStart = markerPos + 1;
+      int pathEnd = displayText.indexOf(EPUB_IMG_MARKER, pathStart);
+      if (pathEnd > pathStart) {
+        String imgPath = displayText.substring(pathStart, pathEnd);
+        Serial.printf("EPUB IMG full view: page %d/%d, image='%s'\n",
+                      currentPage + 1, totalPages, imgPath.c_str());
+        int imgX = READING_AREA_LEFT;
+        int imgY = READING_AREA_TOP;
+        int imgW = READING_AREA_RIGHT - READING_AREA_LEFT;
+        int imgH = READING_AREA_BOTTOM - READING_AREA_TOP;
+        if (!epubExtractAndDrawImage(imgPath, imgX, imgY, imgW, imgH)) {
+          Serial.printf("EPUB IMG: Failed to draw image for page %d\n", currentPage + 1);
+          drawSystemText("圖片載入失敗", 60, 400, 24);
+        }
+      }
+    } else {
+      Serial.printf("EPUB IMG: No image marker found in page %d content (%d bytes)\n",
+                    currentPage + 1, displayText.length());
+      drawSystemText("此頁無圖片內容", 60, 400, 24);
+    }
+    
+    M5.Display.endWrite();
+    M5.Display.display();
+    delay(500);
+    return;
+  }
+  
   // Load the user-selected reading font (may differ from system font)
   loadReadingFont();
   
-  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.setEpdMode(getReadingEpdMode());
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
   

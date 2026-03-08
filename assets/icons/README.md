@@ -1,8 +1,11 @@
 # Icons
 
+![Assets](https://img.shields.io/badge/Type-Assets-orange)
+![PNG](https://img.shields.io/badge/Format-PNG-blue)
+
 PNG icons for the dashboard and navigation buttons.
 
-## Dashboard Icons
+## Dashboard Icons ![UI](https://img.shields.io/badge/Category-Dashboard-blue)
 
 The main screen displays a 2×4 grid of icons. Each icon is a 120×120 PNG:
 
@@ -17,7 +20,7 @@ The main screen displays a 2×4 grid of icons. Each icon is a 120×120 PNG:
 | `icon7.png` | 設定 (Settings) |
 | `icon8.png` | 睡眠 (Sleep / Motto) |
 
-## Navigation Icons
+## Navigation Icons ![UI](https://img.shields.io/badge/Category-Navigation-green)
 
 | File | Function |
 |------|----------|

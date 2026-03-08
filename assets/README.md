@@ -1,5 +1,8 @@
 # Assets
 
+![Assets](https://img.shields.io/badge/Type-Assets-orange)
+![SD Card](https://img.shields.io/badge/Storage-SD_Card-blue)
+
 SD card content and build-time assets for the M5Stack Paper S3 firmware.
 
 ## Files

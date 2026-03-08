@@ -1,8 +1,11 @@
 # Scripts
 
+![Python](https://img.shields.io/badge/Language-Python_3-green)
+![Build Tools](https://img.shields.io/badge/Type-Build_Tools-orange)
+
 Python build tools and utilities for asset conversion and analysis.
 
-## Conversion Scripts
+## Conversion Scripts ![Conversion](https://img.shields.io/badge/Category-Conversion-orange)
 
 These scripts convert assets into C headers or binary formats for embedding in the firmware:
 
@@ -15,7 +18,7 @@ These scripts convert assets into C headers or binary formats for embedding in t
 | `convert_cangjie.py` | Converts `data/cangjie5.dict.yaml` to binary lookup format (`assets/cangjie5.bin`) |
 | `convert_ttf_to_bin.py` | Converts TTF fonts to pre-rendered BIN format for faster loading |
 
-## Analysis & Testing Scripts
+## Analysis & Testing Scripts ![Testing](https://img.shields.io/badge/Category-Analysis-purple)
 
 | Script | Description |
 |--------|-------------|

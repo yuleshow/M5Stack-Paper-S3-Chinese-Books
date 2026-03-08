@@ -1,5 +1,8 @@
 # Fonts
 
+![Assets](https://img.shields.io/badge/Type-Assets-orange)
+![Fonts](https://img.shields.io/badge/Format-TTF_/_TTC_/_BIN-blue)
+
 Font files for text rendering on the e-ink display. Place TTF, TTC, or pre-rendered BIN font files here.
 
 ## Supported Formats

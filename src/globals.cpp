@@ -247,6 +247,7 @@ bool sdCardChecked = false;
 String bookList[MAX_BOOKS];
 String bookDisplayName[MAX_BOOKS];
 int bookCount = 0;
+int bookListPage = 0;
 String currentBookPath = "";
 String currentPageContent = "";
 int currentPage = 0;
@@ -279,10 +280,13 @@ size_t epubLoadedBaseOffset = 0;
 String epubBasePath = "";
 size_t epubEstimatedTotalBytes = 0;
 bool epubIsImageBased = false;
+bool epubHasMultiImageChapters = false;
 int comicZoomQuadrant = -1;
 int comicZoomMode = 0;
 float comicZoomCX = 0.5f;
 float comicZoomCY = 0.5f;
+int pageRefreshMode = 0;       // 0=system default, 1=every page, 2=every 10 pages
+int pagesSinceFullRefresh = 0; // Counter for mode 2
 
 // Todo
 TodoItem todoList[MAX_TODO];

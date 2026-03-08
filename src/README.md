@@ -1,15 +1,19 @@
 # Source Code
 
+![C++](https://img.shields.io/badge/Language-C++-blue)
+![Arduino](https://img.shields.io/badge/Framework-Arduino-green)
+![ESP32-S3](https://img.shields.io/badge/Target-ESP32--S3-blue)
+
 C++ firmware source for the M5Stack Paper S3 Chinese Book Reader & Almanac Calendar.
 
-## Main Entry Point
+## Main Entry Point ![Core](https://img.shields.io/badge/Module-Core-red)
 
 | File | Description |
 |------|-------------|
 | `main.cpp` | Entry point: `setup()`, `loop()`, deep sleep management, touch event routing, mode switching |
 | `globals.h` / `globals.cpp` | Shared types, enums (`Mode`), constants, extern declarations, function prototypes |
 
-## Feature Modules
+## Feature Modules ![Features](https://img.shields.io/badge/Module-Features-blue)
 
 | File | Description |
 |------|-------------|
@@ -26,7 +30,7 @@ C++ firmware source for the M5Stack Paper S3 Chinese Book Reader & Almanac Calen
 | `wallpaper.cpp` | JPG wallpaper browser from SD card |
 | `setup_ui.cpp` | Settings screens (WiFi, timezone, web server, USB MSC, icons, calendar method) and analog clock |
 
-## System / Infrastructure
+## System / Infrastructure ![System](https://img.shields.io/badge/Module-System-green)
 
 | File | Description |
 |------|-------------|
@@ -37,7 +41,7 @@ C++ firmware source for the M5Stack Paper S3 Chinese Book Reader & Almanac Calen
 | `usb_msc_handler.cpp` | USB Mass Storage: exposes SD card as USB drive, NVS preferences helpers |
 | `cleanup.cpp` | macOS dot-file cleanup on SD card (removes `._*` and `.DS_Store` files) |
 
-## Header-Only / Utility
+## Header-Only / Utility ![Utility](https://img.shields.io/badge/Module-Utility-orange)
 
 | File | Description |
 |------|-------------|
@@ -46,7 +50,7 @@ C++ firmware source for the M5Stack Paper S3 Chinese Book Reader & Almanac Calen
 | `s3cover_jpg.h` | Auto-generated: boot splash image as PROGMEM byte array |
 | `sleeping_jpg.h` | Auto-generated: sleep screen image as PROGMEM byte array |
 
-## Subdirectories
+## Subdirectories ![Generated](https://img.shields.io/badge/Type-Auto--Generated-yellow)
 
 | Directory | Description |
 |-----------|-------------|

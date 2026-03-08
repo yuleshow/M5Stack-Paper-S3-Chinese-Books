@@ -367,9 +367,11 @@ void setup() {
   prefs.begin("ereader", true);
   autoSleepEnabled = prefs.getBool("autoSleep", false);  // Default: disabled
   comicZoomMode = prefs.getInt("comicZoom", 0);  // Default: quadrant mode
+  pageRefreshMode = prefs.getInt("pgRefresh", 0);  // Default: system
   prefs.end();
   Serial.printf("Auto-sleep setting loaded: %s\n", autoSleepEnabled ? "ENABLED" : "DISABLED");
   Serial.printf("Comic zoom mode loaded: %d\n", comicZoomMode);
+  Serial.printf("Page refresh mode loaded: %d\n", pageRefreshMode);
   
   // BLE Proximity Unlock — deferred start (not at boot to avoid memory issues)
   // Config is loaded but init is deferred to after display setup
@@ -990,6 +992,15 @@ void loop() {
           comicZoomQuadrant = -1;
           if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
         }
+        // Comic zoom mode toggle button (x: 350-430)
+        else if (x >= 340 && x <= 440 && y >= NAV_Y - 5 && y <= NAV_Y + 69) {
+          comicZoomMode = (comicZoomMode == 0) ? 1 : 0;
+          prefs.begin("ereader", false);
+          prefs.putInt("comicZoom", comicZoomMode);
+          prefs.end();
+          Serial.printf("Comic zoom mode toggled to: %d\n", comicZoomMode);
+          drawReading();
+        }
         // Return button
         else if (touchedReturnButton(x, y)) {
           saveReadingPosition();
@@ -1347,7 +1358,7 @@ void loop() {
         }
         // Save preference so next fetch uses the new unit
         saveWiFiConfig();
-        redrawWeatherUnits();  // partial update — only temp/wind values
+        drawWeather(false);  // Full quality redraw to avoid e-ink ghosting
       }
     }
     else if (currentMode == MODE_TODO_LIST) {
@@ -1859,6 +1870,20 @@ void loop() {
             prefs.putInt("comicZoom", comicZoomMode);
             prefs.end();
             Serial.printf("Comic zoom mode toggled to: %d\n", comicZoomMode);
+            drawSetupMenu();
+            return;
+          }
+
+          // Page Refresh Mode item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Page refresh mode selected - cycling");
+            pageRefreshMode = (pageRefreshMode + 1) % 3;
+            pagesSinceFullRefresh = 0;
+            prefs.begin("ereader", false);
+            prefs.putInt("pgRefresh", pageRefreshMode);
+            prefs.end();
+            Serial.printf("Page refresh mode set to: %d\n", pageRefreshMode);
             drawSetupMenu();
             return;
           }
@@ -2583,12 +2608,22 @@ void loop() {
         currentMode = MODE_DASHBOARD;
         drawDashboard();
       }
+      // Pagination: prev page (right arrow)
+      else if (touchedNextPage(x, y) && bookListPage > 0) {
+        bookListPage--;
+        drawBookList();
+      }
+      // Pagination: next page (left arrow)
+      else if (touchedPrevPage(x, y) && bookListPage < (bookCount + BOOKS_PER_PAGE - 1) / BOOKS_PER_PAGE - 1) {
+        bookListPage++;
+        drawBookList();
+      }
       // Touch book to open
-      else if (y >= 120 && y <= 620) {
+      else if (y >= 120 && y <= 120 + BOOKS_PER_PAGE * 50) {
         Serial.printf("Touch on book list: y=%d\n", y);
         if (sdCardAvailable && bookCount > 0) {
           // Load book from SD card
-          int bookIndex = (y - 120) / 50;
+          int bookIndex = bookListPage * BOOKS_PER_PAGE + (y - 120) / 50;
           if (bookIndex >= 0 && bookIndex < bookCount) {
             currentBook = bookDisplayName[bookIndex];
             Serial.printf("Selected: %s (%s)\n", currentBook.c_str(), bookList[bookIndex].c_str());

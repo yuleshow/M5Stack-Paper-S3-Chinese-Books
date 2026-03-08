@@ -1,5 +1,8 @@
 # Data
 
+![Data](https://img.shields.io/badge/Type-Data-purple)
+![Build Input](https://img.shields.io/badge/Usage-Build_Input-green)
+
 Data files used by build scripts and the firmware.
 
 ## Files

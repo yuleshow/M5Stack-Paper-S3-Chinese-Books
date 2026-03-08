@@ -1,5 +1,12 @@
 # 梅花小民
 # M5Stack Paper S3 — Chinese Book Reader & Almanac Calendar
+
+![ESP32-S3](https://img.shields.io/badge/ESP32--S3-Firmware-blue)
+![E-Ink](https://img.shields.io/badge/540×960-E--Ink-gray)
+![PlatformIO](https://img.shields.io/badge/PlatformIO-Build-green)
+![License](https://img.shields.io/badge/License-GPLv2-red)
+![CJK](https://img.shields.io/badge/CJK-繁體中文-orange)
+
 ![alt text](assets/s3cover.jpg)
 
 ## Overview
@@ -7,7 +14,7 @@ A feature-rich Chinese e-ink application for the **M5Stack Paper S3** (ESP32-S3,
 
 ## Features
 
-### 📖 Book Reader
+### 📖 Book Reader ![Feature](https://img.shields.io/badge/Feature-Book_Reader-blue)
 - **TXT and EPUB** support with vertical CJK text layout (right-to-left columns)
 - EPUB parsing with built-in ZIP/deflate decompression and HTML-to-text extraction
 - Configurable font size (20–52px)
@@ -15,7 +22,7 @@ A feature-rich Chinese e-ink application for the **M5Stack Paper S3** (ESP32-S3,
 - Bookmarks support (up to 5 per book, saved as `.bm` files)
 - Multiple font support: TTF, TTC, and pre-rendered BIN fonts
 
-### 📅 Chinese Almanac Calendar (農民曆)
+### 📅 Chinese Almanac Calendar (農民曆) ![Feature](https://img.shields.io/badge/Feature-Calendar-blue)
 A complete traditional Chinese almanac with:
 - **Solar-to-Lunar conversion** — Lookup table covering 1900–2100
 - **天干地支 (Heavenly Stems & Earthly Branches)** — Year, month, and day pillars (八字)
@@ -35,7 +42,7 @@ A complete traditional Chinese almanac with:
 - **朔/望 markers** — New moon and full moon indicators
 - Date picker with month calendar grid and year/month selector
 
-### 🌤️ Weather Dashboard
+### 🌤️ Weather Dashboard ![Feature](https://img.shields.io/badge/Feature-Weather-blue) ![API](https://img.shields.io/badge/API-OpenWeatherMap-green)
 - **OpenWeatherMap API** integration
 - Current conditions: temperature, humidity, wind, pressure, visibility
 - 3-day forecast with min/max temperatures
@@ -45,24 +52,31 @@ A complete traditional Chinese almanac with:
 - Weather icons drawn programmatically
 - Auto-refresh every 15 minutes
 
-### ⌨️ Cangjie Input Method (倉頡輸入法)
+### ⌨️ Cangjie Input Method (倉頡輸入法) ![Feature](https://img.shields.io/badge/Feature-Input_Method-blue)
 - On-screen touch keyboard for Cangjie radical codes
 - Candidate character list with pagination
 - Used for adding items to Todo and Shopping lists
 - Binary dictionary lookup from `cangjie5.dict.yaml`
 
-### 📝 Todo & Shopping Lists
+### 📝 Todo & Shopping Lists ![Feature](https://img.shields.io/badge/Feature-Lists-blue)
 - CSV-based storage on SD card
 - Checkbox persistence
 - Shopping list with group headers
 - Todo list with date fields
 - Cangjie input for adding new items
 
-### 🖼️ Wallpaper Browser
+### 🎋 Fortune Slips (求籤) ![Feature](https://img.shields.io/badge/Feature-Fortune_Slips-blue)
+- **觀音靈籖** — 100 Guanyin fortune slips with IMU shake-to-draw
+- **淺草寺靈籖** — 100 Sensoji temple fortune slips
+- Shake the device to draw a slip (accelerometer-based detection)
+- Pre-packed binary format (FSLP) for fast SD card loading
+- Fortune slip images sourced from [www.chance.org.tw](https://www.chance.org.tw)
+
+### 🖼️ Wallpaper Browser ![Feature](https://img.shields.io/badge/Feature-Wallpaper-blue)
 - Browse and display JPG wallpapers from SD card
 - Full-screen e-ink display
 
-### 🔐 BLE Proximity Unlock
+### 🔐 BLE Proximity Unlock ![Feature](https://img.shields.io/badge/Feature-BLE_Unlock-blue) ![macOS](https://img.shields.io/badge/Platform-macOS-purple)
 - Auto-lock/unlock your Mac based on BLE proximity
 - Paper S3 acts as a passive BLE beacon (no pairing required)
 - macOS companion script monitors RSSI signal strength
@@ -70,12 +84,12 @@ A complete traditional Chinese almanac with:
 - Configurable lock/unlock RSSI thresholds and timing
 - Installable as a macOS LaunchAgent for auto-start
 
-### �💤 Sleep Mode with Daily Mottos
+### 💤 Sleep Mode with Daily Mottos ![Feature](https://img.shields.io/badge/Feature-Sleep_Mode-blue)
 - Deep sleep with touch wake-up (GPIO 21)
 - Displays a random motto from `/mottos.txt` (10 built-in defaults if file missing)
 - Preserves state across deep sleep via RTC-persistent variables
 
-### ⚙️ Settings
+### ⚙️ Settings ![Feature](https://img.shields.io/badge/Feature-Settings-blue)
 - **WiFi** — Network scanning, on-screen keyboard for password
 - **Timezone** — 20+ presets (Asia, Americas, Europe, etc.)
 - **Web Server** — HTTP file manager for browsing/uploading/downloading/deleting files on SD card
@@ -226,7 +240,7 @@ Get a free API key at [OpenWeatherMap](https://openweathermap.org/api).
 
 ## Architecture
 
-### Pre-Rendered Bitmap Font System
+### Pre-Rendered Bitmap Font System ![Architecture](https://img.shields.io/badge/Arch-Bitmap_Fonts-orange)
 
 All static Chinese UI text is **pre-rendered at build time** into 4-bit grayscale bitmap C headers using `scripts/convert_labels.py`. This eliminates runtime font rendering for UI elements, providing instant text display on the e-ink screen.
 

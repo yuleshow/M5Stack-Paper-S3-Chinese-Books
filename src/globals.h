@@ -367,10 +367,12 @@ extern Mode fontMenuReturnMode;
 // Book / Reader
 extern bool sdCardAvailable;
 extern bool sdCardChecked;
-static const int MAX_BOOKS = 20;
+static const int MAX_BOOKS = 100;
 extern String bookList[MAX_BOOKS];
 extern String bookDisplayName[MAX_BOOKS];
 extern int bookCount;
+extern int bookListPage;
+static const int BOOKS_PER_PAGE = 15;
 extern String currentBookPath;
 extern String currentPageContent;
 extern int currentPage;
@@ -411,6 +413,7 @@ extern size_t epubLoadedBaseOffset;  // Virtual text offset where buffer starts
 extern String epubBasePath;          // OPF base path for resolving references
 extern size_t epubEstimatedTotalBytes; // Estimated total text across all chapters
 extern bool epubIsImageBased;         // True for manga/image-only EPUBs (1 chapter = 1 page)
+extern bool epubHasMultiImageChapters;  // Warning flag: some chapters have multiple images
 
 // Todo
 static const int MAX_TODO = 50;
@@ -564,6 +567,8 @@ extern int comicZoomQuadrant;  // -1 = full view, 0=TL, 1=TR, 2=BL, 3=BR, or 100
 extern int comicZoomMode;      // 0 = quadrant zoom, 1 = free-point zoom
 extern float comicZoomCX;      // free-point center X (0.0-1.0)
 extern float comicZoomCY;      // free-point center Y (0.0-1.0)
+extern int pageRefreshMode;    // 0=system default, 1=every page, 2=every 10 pages
+extern int pagesSinceFullRefresh;
 void scanBooks();
 void saveReadingPosition();
 int loadReadingPosition();

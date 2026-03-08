@@ -80,25 +80,31 @@ void handleFileList() {
   if (dir && dir.isDirectory()) {
     File entry = dir.openNextFile();
     while (entry) {
-      String entryName = String(entry.name());
+      String rawName = String(entry.name());
+      // ESP32 name() returns full path — extract just the filename
+      int lastSlash = rawName.lastIndexOf('/');
+      String entryName = (lastSlash >= 0) ? rawName.substring(lastSlash + 1) : rawName;
       String fullPath = path + entryName;
       
-      html += "<div class='file-item'>";
-      
-      if (entry.isDirectory()) {
-        html += "<span class='file-icon'>📁</span>";
-        html += "<a class='file-name' href='/?dir=" + fullPath + "/'>" + entryName + "/</a>";
-        html += "<span class='file-size'>DIR</span>";
-      } else {
-        html += "<span class='file-icon'>📄</span>";
-        html += "<span class='file-name'>" + entryName + "</span>";
-        html += "<span class='file-size'>" + formatBytes(entry.size()) + "</span>";
-        html += "<a class='btn btn-primary' href='/download?file=" + fullPath + "' download>⬇️</a>";
+      if (entryName.length() > 0) {
+        html += "<div class='file-item'>";
+        
+        if (entry.isDirectory()) {
+          html += "<span class='file-icon'>📁</span>";
+          html += "<a class='file-name' href='/?dir=" + fullPath + "/'>" + entryName + "/</a>";
+          html += "<span class='file-size'>DIR</span>";
+        } else {
+          html += "<span class='file-icon'>📄</span>";
+          html += "<span class='file-name'>" + entryName + "</span>";
+          html += "<span class='file-size'>" + formatBytes(entry.size()) + "</span>";
+          html += "<a class='btn btn-primary' href='/download?file=" + fullPath + "' download>⬇️</a>";
+        }
+        
+        html += "<a class='btn btn-danger' href='/delete?file=" + fullPath + "&dir=" + path + "' onclick='return confirm(\"Delete " + entryName + "?\")'>🗑️</a>";
+        html += "</div>";
       }
       
-      html += "<a class='btn btn-danger' href='/delete?file=" + fullPath + "&dir=" + path + "' onclick='return confirm(\"Delete " + entryName + "?\")'>🗑️</a>";
-      html += "</div>";
-      
+      entry.close();
       entry = dir.openNextFile();
     }
     dir.close();

@@ -1,5 +1,8 @@
 # Books
 
+![Content](https://img.shields.io/badge/Type-Content-purple)
+![Formats](https://img.shields.io/badge/Format-TXT_/_EPUB-blue)
+
 E-book files for the Chinese book reader. Place UTF-8 encoded text files (`.txt`) and EPUB files (`.epub`) here.
 
 ## Supported Formats

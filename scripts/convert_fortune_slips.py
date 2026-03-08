@@ -22,6 +22,8 @@ Usage:
   python3 convert_fortune_slips.py
 
 Place the .bin files on SD card at /fortune_slips/kuanyin.bin and /fortune_slips/sensoji.bin
+
+Fortune slip images sourced from www.chance.org.tw
 """
 
 import io

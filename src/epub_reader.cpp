@@ -604,25 +604,64 @@ bool epubLoad(const String& epubPath) {
   }
 
   // Step 5: Detect image-based EPUB (manga/comics)
-  // If most chapters have very little text (just image markers), treat as image-based
-  if (epubChapterCount >= 5) {
+  // If most chapters contain mainly image markers (little real text), treat as image-based
+  if (epubChapterCount >= 2) {
     int loadedChapters = 0;
     int imageOnlyChapters = 0;
+    int chaptersWithImages = 0;
     for (int c = 0; c < epubChapterCount; c++) {
-      // Only count chapters that were actually loaded (actualTextSize > 0)
       if (epubChapters[c].actualTextSize > 0) {
         loadedChapters++;
-        // Image-only chapters typically have < 100 bytes (just image marker + minimal text)
-        if (epubChapters[c].actualTextSize < 100) {
-          imageOnlyChapters++;
+        // Scan the chapter content: count real text chars vs image markers
+        // Chapter content is in epubFullText at its cumulative offset
+        size_t chStart = epubChapters[c].cumulativeOffset - epubLoadedBaseOffset;
+        size_t chEnd = chStart + epubChapters[c].actualTextSize;
+        if (chEnd > epubFullTextLen) chEnd = epubFullTextLen;
+        int realTextChars = 0;
+        bool hasImage = false;
+        bool inMarker = false;
+        for (size_t j = chStart; j < chEnd; j++) {
+          char ch = epubFullText[j];
+          if (ch == EPUB_IMG_MARKER) { hasImage = true; inMarker = !inMarker; continue; }
+          if (inMarker) continue;  // skip image path chars
+          if (ch != '\n' && ch != '\r' && ch != ' ' && ch != '\t') realTextChars++;
         }
+        if (hasImage) chaptersWithImages++;
+        if (hasImage && realTextChars < 50) imageOnlyChapters++;
+        if (c < 5 || realTextChars > 0)
+          Serial.printf("  Ch %d: %d real chars, hasImage=%d\n", c+1, realTextChars, hasImage);
       }
     }
     float ratio = (loadedChapters > 0) ? (float)imageOnlyChapters / loadedChapters : 0.0f;
+    float imgRatio = (loadedChapters > 0) ? (float)chaptersWithImages / loadedChapters : 0.0f;
+    Serial.printf("EPUB detect: %d loaded, %d imgOnly, %d withImg, ratio=%.2f, imgRatio=%.2f\n",
+                  loadedChapters, imageOnlyChapters, chaptersWithImages, ratio, imgRatio);
     if (ratio > 0.7f) {
       epubIsImageBased = true;
       Serial.printf("EPUB: Detected as IMAGE-BASED (manga) — %d/%d loaded chapters are image-only (total: %d)\n",
                     imageOnlyChapters, loadedChapters, epubChapterCount);
+      
+      // Check if any chapters have multiple images (non-standard layout)
+      epubHasMultiImageChapters = false;
+      for (int c = 0; c < epubChapterCount && !epubHasMultiImageChapters; c++) {
+        if (epubChapters[c].actualTextSize > 0 && epubFullText) {
+          size_t chStart = epubChapters[c].cumulativeOffset - epubLoadedBaseOffset;
+          size_t chEnd = chStart + epubChapters[c].actualTextSize;
+          if (chEnd > epubFullTextLen) chEnd = epubFullTextLen;
+          int imgCount = 0;
+          bool inM = false;
+          for (size_t j = chStart; j < chEnd; j++) {
+            if (epubFullText[j] == EPUB_IMG_MARKER) {
+              if (!inM) imgCount++;
+              inM = !inM;
+            }
+          }
+          if (imgCount > 1) epubHasMultiImageChapters = true;
+        }
+      }
+      if (epubHasMultiImageChapters)
+        Serial.println("EPUB: WARNING — multi-image chapters detected, only first image per chapter shown");
+      
       // Free the large text buffer — we'll load chapters one-at-a-time
       if (epubFullText) {
         free(epubFullText);
@@ -889,6 +928,7 @@ void epubCleanup() {
   epubLoadedBaseOffset = 0;
   epubEstimatedTotalBytes = 0;
   epubIsImageBased = false;
+  epubHasMultiImageChapters = false;
 }
 
 // Parse JPEG dimensions from raw data (returns true if found)

@@ -1,5 +1,8 @@
 # User Guide — 梅花小民 M5Stack Paper S3
 
+![Documentation](https://img.shields.io/badge/Type-User_Guide-red)
+![ESP32-S3](https://img.shields.io/badge/Device-M5Stack_Paper_S3-blue)
+
 A complete setup and usage guide for the Chinese Book Reader & Almanac Calendar on M5Stack Paper S3.
 
 ## Table of Contents

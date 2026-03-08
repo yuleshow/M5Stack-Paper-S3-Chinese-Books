@@ -468,6 +468,7 @@ void drawWeather(bool fast) {
     }
 
     // Clear screen for fresh draw
+    M5.Display.setEpdMode(epd_mode_t::epd_quality);  // Full refresh for clean weather display
     M5.Display.startWrite();
     M5.Display.fillScreen(TFT_WHITE);
     M5.Display.setTextColor(TFT_BLACK);
@@ -476,6 +477,9 @@ void drawWeather(bool fast) {
     drawStatusBar();
     drawReturnButton();
     drawRefreshIcon();
+  } else {
+    // Data is valid and fresh — still ensure full quality refresh for clean display
+    M5.Display.setEpdMode(epd_mode_t::epd_quality);
   }
 
   String unitSymbol = (weatherConfig.units == "imperial") ? "°F" : "°C";
@@ -692,13 +696,13 @@ void drawWeather(bool fast) {
     }
   }
 
-  // °C/°F toggle button (bitmap)
+  // °C/°F toggle button (bitmap) — shows target unit (what it will switch TO)
   {
     int btnX = NAV_NEXT_X;
     int btnY = NAV_Y;
     int btnW = 64, btnH = 64;
     M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 8, TFT_BLACK);
-    const char* unitLabel = (weatherConfig.units == "imperial") ? "°F" : "°C";
+    const char* unitLabel = (weatherConfig.units == "imperial") ? "°C" : "°F";
     drawSystemTextCentered(unitLabel, btnX + btnW / 2, btnY + 18, 28);
   }
 
@@ -862,10 +866,10 @@ void redrawWeatherUnits() {
     }
   }
 
-  // -- °C/°F button (bitmap) --
+  // -- °C/°F button (bitmap) — shows target unit (what it will switch TO) --
   {
     M5.Display.drawRoundRect(NAV_NEXT_X, NAV_Y, 64, 64, 8, TFT_BLACK);
-    const char* unitLabel = (weatherConfig.units == "imperial") ? "°F" : "°C";
+    const char* unitLabel = (weatherConfig.units == "imperial") ? "°C" : "°F";
     drawSystemTextCentered(unitLabel, NAV_NEXT_X + 32, NAV_Y + 18, 28);
   }
 
