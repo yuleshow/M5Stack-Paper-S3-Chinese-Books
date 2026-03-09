@@ -136,7 +136,9 @@ enum Mode {
   MODE_MOTTO_TEST,
   MODE_FORTUNE_SLIPS,
   MODE_FORTUNE_SHAKE,
-  MODE_FORTUNE_SLIP_VIEW
+  MODE_FORTUNE_SLIP_VIEW,
+  MODE_FORTUNE_SLIP_WORDING,
+  MODE_FORTUNE_SLIP_STORY
 };
 
 // ==================== Struct Definitions ====================
@@ -640,6 +642,8 @@ void drawFortuneSlipsMenu();
 void drawFortuneShakeScreen();
 void drawFortuneSlip();
 void pollFortuneShake();
+void drawFortuneSlipWording();
+void drawFortuneSlipStory();
 
 // image dimension helpers
 bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& height);

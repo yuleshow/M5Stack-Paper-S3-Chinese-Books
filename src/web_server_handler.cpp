@@ -76,7 +76,12 @@ void handleFileList() {
   }
   
   // List directories and files
-  File dir = SD.open(path);
+  // ESP32 SD library may fail with trailing slash on non-root paths
+  String openPath = path;
+  if (openPath.length() > 1 && openPath.endsWith("/")) {
+    openPath = openPath.substring(0, openPath.length() - 1);
+  }
+  File dir = SD.open(openPath);
   if (dir && dir.isDirectory()) {
     File entry = dir.openNextFile();
     while (entry) {

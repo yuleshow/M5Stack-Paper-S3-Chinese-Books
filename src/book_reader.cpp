@@ -629,7 +629,13 @@ void drawReading() {
       int btnW = 80, btnH = 64;
       M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 8, TFT_BLACK);
       const char* zoomLabel = (comicZoomMode == 1) ? "自由" : "四分";
-      drawSystemText(zoomLabel, btnX + 10, btnY + 18, 24);
+      // Manually center: measure text width then draw at calculated x
+      loadSystemFont();
+      ofr.setFontSize(24);
+      uint32_t tw = ofr.getTextWidth(zoomLabel);
+      int tx = btnX + (btnW - (int)tw) / 2;
+      int ty = btnY + btnH / 2 - 12;
+      drawSystemText(zoomLabel, tx, ty, 24);
     }
     
     String displayText = currentPageContent;

@@ -2588,10 +2588,48 @@ void loop() {
       drawFortuneSlipsMenu();
     }
     else if (currentMode == MODE_FORTUNE_SLIP_VIEW) {
-      // Tap anywhere to return to shake screen
-      Serial.println("Fortune slip: returning to shake screen");
-      currentMode = MODE_FORTUNE_SHAKE;
-      drawFortuneShakeScreen();
+      if (touchedReturnButton(x, y)) {
+        // Lower-right corner: return to fortune slips menu
+        Serial.println("Fortune slip: return to menu");
+        currentMode = MODE_FORTUNE_SLIPS;
+        drawFortuneSlipsMenu();
+      } else {
+        // Tap anywhere else → show wording page
+        Serial.println("Fortune slip: showing wording page");
+        currentMode = MODE_FORTUNE_SLIP_WORDING;
+        drawFortuneSlipWording();
+      }
+    }
+    else if (currentMode == MODE_FORTUNE_SLIP_WORDING) {
+      if (touchedReturnButton(x, y)) {
+        // Return to slip image
+        Serial.println("Fortune wording: return to slip image");
+        currentMode = MODE_FORTUNE_SLIP_VIEW;
+        drawFortuneSlip();
+      } else if (fortuneSlipCategory == 0) {
+        // Kuanyin: tap anywhere else → show story
+        Serial.println("Fortune wording: showing story page");
+        currentMode = MODE_FORTUNE_SLIP_STORY;
+        drawFortuneSlipStory();
+      } else {
+        // Sensoji: no story page, tap anywhere else → return to slip image
+        Serial.println("Fortune wording: return to slip image (no story)");
+        currentMode = MODE_FORTUNE_SLIP_VIEW;
+        drawFortuneSlip();
+      }
+    }
+    else if (currentMode == MODE_FORTUNE_SLIP_STORY) {
+      if (touchedReturnButton(x, y)) {
+        // Return to wording page
+        Serial.println("Fortune story: return to wording page");
+        currentMode = MODE_FORTUNE_SLIP_WORDING;
+        drawFortuneSlipWording();
+      } else {
+        // Tap anywhere else → also return to wording
+        Serial.println("Fortune story: return to wording page");
+        currentMode = MODE_FORTUNE_SLIP_WORDING;
+        drawFortuneSlipWording();
+      }
     }
     else if (currentMode == MODE_FONT_TEST) {
       // Return button (lower-right)
