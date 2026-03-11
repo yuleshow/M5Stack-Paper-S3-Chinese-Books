@@ -94,7 +94,7 @@ static const int UTF8_READ_PADDING = 100;
 
 // WiFi limits
 static const int MAX_WIFI_NETWORKS        = 20;
-static const int MAX_WIFI_CONNECT_ATTEMPTS = 20;
+static const int MAX_WIFI_CONNECT_ATTEMPTS = 10;
 
 // Navigation bar layout
 extern const int NAV_ICON_SIZE;
@@ -138,7 +138,8 @@ enum Mode {
   MODE_FORTUNE_SHAKE,
   MODE_FORTUNE_SLIP_VIEW,
   MODE_FORTUNE_SLIP_WORDING,
-  MODE_FORTUNE_SLIP_STORY
+  MODE_FORTUNE_SLIP_STORY,
+  MODE_PAGE_JUMP
 };
 
 // ==================== Struct Definitions ====================
@@ -374,7 +375,8 @@ extern String bookList[MAX_BOOKS];
 extern String bookDisplayName[MAX_BOOKS];
 extern int bookCount;
 extern int bookListPage;
-static const int BOOKS_PER_PAGE = 15;
+static const int BOOKS_PER_PAGE = 13;
+static const int BOOK_ROW_HEIGHT = 55;
 extern String currentBookPath;
 extern String currentPageContent;
 extern int currentPage;
@@ -388,6 +390,7 @@ extern int pageOffsetsCount;
 extern size_t currentPageByteOffset;
 extern Bookmark bookmarks[5];
 extern int bookmarkCount;
+extern String pageJumpInput;
 
 // EPUB
 extern bool currentBookIsEpub;
@@ -507,6 +510,7 @@ extern BinFont g_binFont;
 extern OpenFontRender ofr;
 extern bool ofrFontLoaded;
 extern std::list<File> ofr_file_list;
+extern String lastLoadError;
 
 // ==================== Function Declarations ====================
 
@@ -583,6 +587,8 @@ bool loadCurrentPage();
 bool loadBook(int bookIndex);
 void drawBookList();
 void drawReading();
+void drawPageJumpPopup();
+bool handlePageJumpTouch(int x, int y);
 
 // ui_drawing
 bool drawNavIcon(const char* iconName, int x, int y);
@@ -681,5 +687,5 @@ void drawBluetoothSetup();
 void drawFontMenu();
 
 // cleanup
-void deleteDotFiles(const String& path = "/");
+void deleteDotFiles(const String& path, int depth = 0);
 void cleanupMacOSFiles();

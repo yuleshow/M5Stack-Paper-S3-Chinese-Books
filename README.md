@@ -93,7 +93,7 @@ A complete traditional Chinese almanac with:
 - **WiFi** — Network scanning, on-screen keyboard for password
 - **Timezone** — 20+ presets (Asia, Americas, Europe, etc.)
 - **Web Server** — HTTP file manager for browsing/uploading/downloading/deleting files on SD card
-- **USB Mass Storage** — Expose SD card as USB drive for direct file access
+- **USB Mass Storage** — Expose SD card as USB drive for direct file access (WiFi auto-disabled during MSC)
 - **Icon Source** — SD card (customizable) or embedded (faster boot)
 - **Calendar Method** — Meeus vs 壽星天文曆 algorithm
 

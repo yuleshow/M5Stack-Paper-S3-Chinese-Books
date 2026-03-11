@@ -260,6 +260,7 @@ int pageOffsetsCount = 0;
 size_t currentPageByteOffset = 0;  // Actual byte offset used for current page
 Bookmark bookmarks[5];
 int bookmarkCount = 0;
+String pageJumpInput = "";
 
 // EPUB
 bool currentBookIsEpub = false;

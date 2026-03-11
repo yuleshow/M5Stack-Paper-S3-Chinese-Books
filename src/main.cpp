@@ -12,6 +12,8 @@ SET_LOOP_TASK_STACK_SIZE(32 * 1024);
 
 // RTC_DATA_ATTR survives deep sleep
 RTC_DATA_ATTR int bootCount = 0;
+RTC_DATA_ATTR int setupCrashCount = 0;  // counts consecutive incomplete boots
+bool safeMode = false;  // skip dangerous SD ops if boot keeps crashing
 
 // Check if external power (USB) is connected
 bool isExternalPowerConnected() {
@@ -125,6 +127,16 @@ void setup() {
   Serial.println("\n\n=== M5Paper S3 E-Book Reader ===");
   Serial.printf("Boot #%d, Wakeup cause: %d\n", bootCount, wakeup_reason);
   
+  // Detect and break boot crash loops
+  setupCrashCount++;
+  if (setupCrashCount > 3) {
+    safeMode = true;
+    Serial.println("\n!!! SAFE MODE: Too many incomplete boots - skipping SD cleanup/WiFi !!!");
+  }
+  Serial.printf("Setup crash counter: %d%s\n", setupCrashCount, safeMode ? " (SAFE MODE)" : "");
+  
+  bool timerWakeHandled = false;  // track if M5.begin was already called
+  
   if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
     Serial.println("Touch wake-up - resuming");
   } else if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
@@ -137,23 +149,23 @@ void setup() {
     auto cfgTimer = M5.config();
     cfgTimer.clear_display = false;
     M5.begin(cfgTimer);
+    timerWakeHandled = true;  // M5.begin already called
     delay(200);
     M5.update();
     
     auto touch = M5.Touch.getDetail();
     if (touch.isPressed()) {
       Serial.println("Touch detected during timer wake - resuming fully");
-      // Fall through to normal boot
+      // Fall through to normal boot (M5.begin already done)
     } else {
       // No touch — check if external power was just connected
       bool usbConnected = isExternalPowerConnected();
       if (usbConnected) {
         Serial.println("USB power detected during timer wake - resuming fully");
-        // Fall through to normal boot
+        // Fall through to normal boot (M5.begin already done)
       } else {
         Serial.println("No interaction - refreshing sleep screen and going back to sleep");
-        // Optionally refresh the motto on the sleep screen
-        // (keeps the display fresh and shows a new motto)
+        setupCrashCount = 0;  // not a crash, normal sleep cycle
         enterDeepSleep();
         // enterDeepSleep won't return (unless USB is connected)
         // If it returned, USB was just plugged in — fall through
@@ -161,11 +173,12 @@ void setup() {
     }
   }
   
-  auto cfg = M5.config();
-  // E-ink retains its image during deep sleep, so no need to clear on wake.
-  // clear_display = true causes a hardware reset that flashes partial buffer content.
-  cfg.clear_display = false;
-  M5.begin(cfg);
+  // Only call M5.begin if not already done in timer wake path
+  if (!timerWakeHandled) {
+    auto cfg = M5.config();
+    cfg.clear_display = false;
+    M5.begin(cfg);
+  }
   
   Serial.println("M5 initialized");
   
@@ -181,10 +194,17 @@ void setup() {
     drawStatusBar();
     
     // Loading text centered
-    drawSystemTextCentered("載入中...", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 36);
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.drawString("Loading...", M5.Display.width() / 2, M5.Display.height() / 2 + 30);
+    if (safeMode) {
+      drawSystemTextCentered("安全模式", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 36);
+      M5.Display.setFont(&fonts::Font2);
+      M5.Display.setTextDatum(MC_DATUM);
+      M5.Display.drawString("Safe Mode", M5.Display.width() / 2, M5.Display.height() / 2 + 30);
+    } else {
+      drawSystemTextCentered("載入中...", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 36);
+      M5.Display.setFont(&fonts::Font2);
+      M5.Display.setTextDatum(MC_DATUM);
+      M5.Display.drawString("Loading...", M5.Display.width() / 2, M5.Display.height() / 2 + 30);
+    }
     M5.Display.setTextDatum(TL_DATUM);
     M5.Display.endWrite();
     
@@ -211,8 +231,12 @@ void setup() {
     delay(500);
     yield();
     
-    // Clean up macOS dot files
-    cleanupMacOSFiles();
+    // Clean up macOS dot files (skip in safe mode - this can cause WDT resets)
+    if (!safeMode) {
+      cleanupMacOSFiles();
+    } else {
+      Serial.println("SAFE MODE: Skipping macOS cleanup");
+    }
     
     // Scan books immediately while SD is fresh
     Serial.println("Pre-scanning books...");
@@ -415,9 +439,11 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   }
   Serial.println("=====================\n");
   
-  // Auto-connect WiFi
+  // Auto-connect WiFi (skip in safe mode to avoid long timeout)
   Serial.println("\n=== WiFi Auto-Connect ===");
-  if (wifiConfig.configured) {
+  if (safeMode) {
+    Serial.println("SAFE MODE: Skipping WiFi auto-connect");
+  } else if (wifiConfig.configured) {
     Serial.printf("SSID: %s\n", wifiConfig.ssid.c_str());
     Serial.println("Attempting auto-connect...");
     if (connectToWiFi()) {
@@ -465,6 +491,7 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   }
   
   lastActivityTime = millis();
+  setupCrashCount = 0;  // setup completed successfully - reset crash counter
   Serial.println("Setup complete!");
 }
 
@@ -476,8 +503,8 @@ void loop() {
     pollFortuneShake();
   }
   
-  // Handle web server if enabled
-  if (webServerEnabled && webServer != nullptr) {
+  // Handle web server if enabled (skip while USB MSC active — SD card not accessible)
+  if (webServerEnabled && webServer != nullptr && !usbMSCActive) {
     // Start server if WiFi connected but server not running
     if (WiFi.status() == WL_CONNECTED && !webServerRunning) {
       startWebServer();
@@ -1001,13 +1028,24 @@ void loop() {
           Serial.printf("Comic zoom mode toggled to: %d\n", comicZoomMode);
           drawReading();
         }
+        // Tap progress bar / page number area to open page jump popup
+        else if (y >= 840 && y <= 890) {
+          pageJumpInput = "";
+          currentMode = MODE_PAGE_JUMP;
+          drawPageJumpPopup();
+        }
         // Return button
         else if (touchedReturnButton(x, y)) {
+          Serial.printf("Return from image reading - Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
           saveReadingPosition();
           savePrefInt("ereader", "page", currentPage);
           comicZoomQuadrant = -1;
+          epubCleanup();
+          currentBookIsEpub = false;
+          currentPageContent = "";
           currentMode = MODE_BOOK_LIST;
           loadSystemFont();
+          Serial.printf("After return cleanup - Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
           drawBookList();
         }
         // Full view: tap on image area to zoom
@@ -1036,11 +1074,15 @@ void loop() {
       else {
       // Return button (lower-right)
       if (touchedReturnButton(x, y)) {
-        Serial.println("Back button touched - returning to book list");
+        Serial.printf("Back button touched - returning to book list. Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
         saveReadingPosition();
         savePrefInt("ereader", "page", currentPage);
+        epubCleanup();
+        currentBookIsEpub = false;
+        currentPageContent = "";
         currentMode = MODE_BOOK_LIST;
         loadSystemFont();  // Restore system font for UI
+        Serial.printf("After return cleanup - Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
         drawBookList();
       }
       // Vertical CJK: left button = NEXT page (forward in book)
@@ -1049,7 +1091,7 @@ void loop() {
         DEBUG_LOG_THROTTLE(1000, "LEFT arrow - page %d -> %d", currentPage, currentPage + 1);
         currentPage++;
         if (loadCurrentPage()) {
-          saveReadingPosition();
+          if (currentPage % 5 == 0) saveReadingPosition();
           drawReading();
         }
       }
@@ -1059,7 +1101,7 @@ void loop() {
         DEBUG_LOG_THROTTLE(1000, "RIGHT arrow - page %d -> %d", currentPage, currentPage - 1);
         currentPage--;
         if (loadCurrentPage()) {
-          saveReadingPosition();
+          if (currentPage % 5 == 0) saveReadingPosition();
           drawReading();
         }
       }
@@ -1116,13 +1158,19 @@ void loop() {
         loadSystemFont();  // Switch to system font for menu UI
         drawFontMenu();
       }
+      // Tap progress bar / page number area to open page jump popup
+      else if (y >= 840 && y <= 890) {
+        pageJumpInput = "";
+        currentMode = MODE_PAGE_JUMP;
+        drawPageJumpPopup();
+      }
       else if (x < 270) {
         // Left side tap - NEXT page (vertical CJK: reading flows right→left)
         if (currentPage < totalPages - 1) {
           Serial.printf("Left tap - page %d -> %d\n", currentPage, currentPage + 1);
           currentPage++;
           if (loadCurrentPage()) {
-            saveReadingPosition();
+            if (currentPage % 5 == 0) saveReadingPosition();
             drawReading();
           }
         }
@@ -1132,12 +1180,15 @@ void loop() {
           Serial.printf("Right tap - page %d -> %d\n", currentPage, currentPage - 1);
           currentPage--;
           if (loadCurrentPage()) {
-            saveReadingPosition();
+            if (currentPage % 5 == 0) saveReadingPosition();
             drawReading();
           }
         }
       }
       } // end non-image else block
+    }
+    else if (currentMode == MODE_PAGE_JUMP) {
+      handlePageJumpTouch(x, y);
     }
     else if (currentMode == MODE_SHOPPING_LIST) {
       // Vertical CJK: left button = NEXT page (forward)
@@ -2205,6 +2256,14 @@ void loop() {
             M5.Display.endWrite();
             M5.Display.display();
             
+            // Stop web server and WiFi before starting MSC (SD card won't be accessible)
+            if (webServerRunning) {
+              stopWebServer();
+            }
+            WiFi.disconnect(true);
+            WiFi.mode(WIFI_OFF);
+            Serial.println("WiFi stopped for USB MSC");
+            
             usbMSCEnabled = true;
             startUSBMSC();
             
@@ -2657,11 +2716,11 @@ void loop() {
         drawBookList();
       }
       // Touch book to open
-      else if (y >= 120 && y <= 120 + BOOKS_PER_PAGE * 50) {
+      else if (y >= 120 && y <= 120 + BOOKS_PER_PAGE * BOOK_ROW_HEIGHT) {
         Serial.printf("Touch on book list: y=%d\n", y);
         if (sdCardAvailable && bookCount > 0) {
           // Load book from SD card
-          int bookIndex = bookListPage * BOOKS_PER_PAGE + (y - 120) / 50;
+          int bookIndex = bookListPage * BOOKS_PER_PAGE + (y - 120) / BOOK_ROW_HEIGHT;
           if (bookIndex >= 0 && bookIndex < bookCount) {
             currentBook = bookDisplayName[bookIndex];
             Serial.printf("Selected: %s (%s)\n", currentBook.c_str(), bookList[bookIndex].c_str());
@@ -2670,21 +2729,37 @@ void loop() {
             {
               M5.Display.setEpdMode(epd_mode_t::epd_fastest);
               M5.Display.fillRect(20, 800, 500, 60, TFT_WHITE);
-              drawSystemText("載入中...", 20, 810, 24);
+              char loadMsg[80];
+              snprintf(loadMsg, sizeof(loadMsg), "載入中... (PSRAM:%uK)", ESP.getFreePsram() / 1024);
+              drawSystemText(loadMsg, 20, 810, 24);
               M5.Display.display();
             }
+            Serial.printf("\n=== Attempting to load book index %d ===\n", bookIndex);
+            Serial.printf("Pre-loadBook: Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+            Serial.printf("Pre-loadBook state: currentBookIsEpub=%d, epubFullText=%p, epubZipEntries=%p\n",
+                          currentBookIsEpub, epubFullText, epubZipEntries);
             
             if (loadBook(bookIndex)) {
+              Serial.printf("Book loaded OK - Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
               currentMode = MODE_READING;
               drawReading();
             } else {
               // Show error message, then redraw book list
-              Serial.println("Failed to load book, showing error");
+              Serial.printf("Failed to load book! Free heap: %u, Free PSRAM: %u, error: %s\n",
+                            ESP.getFreeHeap(), ESP.getFreePsram(), lastLoadError.c_str());
+              Serial.printf("State: currentBookIsEpub=%d, epubFullText=%p, epubZipEntries=%p\n",
+                            currentBookIsEpub, epubFullText, epubZipEntries);
               M5.Display.setEpdMode(epd_mode_t::epd_fastest);
-              M5.Display.fillRect(20, 800, 500, 60, TFT_WHITE);
-              drawSystemText("載入失敗 - 檔案可能過大或損壞", 20, 810, 20);
+              M5.Display.fillRect(20, 700, 500, 160, TFT_WHITE);
+              char errMsg1[80], errMsg2[80];
+              snprintf(errMsg1, sizeof(errMsg1), "載入失敗 [%s]", lastLoadError.c_str());
+              snprintf(errMsg2, sizeof(errMsg2), "PSRAM:%uK Heap:%uK OFR:%d",
+                       ESP.getFreePsram() / 1024, ESP.getFreeHeap() / 1024,
+                       (int)ofr_file_list.size());
+              drawSystemText(errMsg1, 20, 710, 28);
+              drawSystemText(errMsg2, 20, 760, 24);
               M5.Display.display();
-              delay(2000);
+              delay(15000);
               drawBookList();
             }
           }

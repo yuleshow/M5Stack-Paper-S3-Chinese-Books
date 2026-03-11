@@ -6,6 +6,11 @@
 static uint16_t zipU16(const uint8_t* b) { return b[0] | (b[1] << 8); }
 static uint32_t zipU32(const uint8_t* b) { return b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24); }
 
+// Helper: show loading step on screen (bottom area, serial only — no display refresh)
+static void showLoadStep(const char* step) {
+  Serial.printf("EPUB step: %s\n", step);
+}
+
 #define MAX_ZIP_ENTRIES 3000
 
 // Parse ZIP central directory and return entries
@@ -14,20 +19,31 @@ int zipReadDirectory(File& f, ZipEntry* entries, int maxEntries) {
   if (fileSize < 22) return 0;
 
   // Search backwards for End of Central Directory record (signature 0x06054b50)
-  uint32_t searchFrom = (fileSize > 65557) ? fileSize - 65557 : 0;
-  uint8_t sig[4];
+  // Read in chunks for efficiency (avoids thousands of individual SD card reads)
+  uint32_t searchLen = (fileSize > 65557) ? 65557 : fileSize;
+  uint32_t searchFrom = fileSize - searchLen;
   uint32_t eocdPos = 0;
   bool found = false;
 
-  for (uint32_t pos = fileSize - 22; pos >= searchFrom; pos--) {
-    f.seek(pos);
-    f.read(sig, 4);
-    if (sig[0] == 0x50 && sig[1] == 0x4B && sig[2] == 0x05 && sig[3] == 0x06) {
-      eocdPos = pos;
-      found = true;
-      break;
+  const int CHUNK = 4096;
+  uint8_t buf[CHUNK + 4];  // extra 4 bytes to handle signatures spanning chunks
+
+  for (uint32_t offset = fileSize; offset > searchFrom && !found; ) {
+    uint32_t readStart = (offset > (uint32_t)CHUNK) ? offset - CHUNK : searchFrom;
+    uint32_t readLen = offset - readStart;
+
+    f.seek(readStart);
+    f.read(buf, readLen);
+    yield();
+
+    // Search backwards within this chunk
+    for (int i = (int)readLen - 4; i >= 0 && !found; i--) {
+      if (buf[i] == 0x50 && buf[i+1] == 0x4B && buf[i+2] == 0x05 && buf[i+3] == 0x06) {
+        eocdPos = readStart + i;
+        found = true;
+      }
     }
-    if (pos == 0) break;
+    offset = readStart;
   }
   if (!found) {
     Serial.println("ZIP: EOCD not found");
@@ -101,6 +117,10 @@ uint8_t* zipExtractFile(File& f, ZipEntry& entry, size_t& outLen) {
 
   if (entry.method == 0) {
     // Stored (no compression)
+    if (entry.uncompSize > 4 * 1024 * 1024) {
+      Serial.printf("ZIP: entry too large (%u bytes), skipping\n", entry.uncompSize);
+      return nullptr;
+    }
     uint8_t* buf = (uint8_t*)ps_malloc(entry.uncompSize + 1);
     if (!buf) return nullptr;
     f.read(buf, entry.uncompSize);
@@ -110,6 +130,10 @@ uint8_t* zipExtractFile(File& f, ZipEntry& entry, size_t& outLen) {
   }
   else if (entry.method == 8) {
     // Deflated — read compressed data then inflate using ROM
+    if (entry.compSize > 4 * 1024 * 1024 || entry.uncompSize > 8 * 1024 * 1024) {
+      Serial.printf("ZIP: entry too large (comp=%u, uncomp=%u), skipping\n", entry.compSize, entry.uncompSize);
+      return nullptr;
+    }
     uint8_t* compBuf = (uint8_t*)ps_malloc(entry.compSize);
     if (!compBuf) {
       Serial.printf("ZIP: ps_malloc(%u) failed for compBuf, free PSRAM: %u\n",
@@ -357,7 +381,7 @@ String epubGetTitle(const String& epubPath) {
   else { f = SD.open(epubPath.c_str()); }
   if (!f) return "";
 
-  const int TITLE_MAX_ENTRIES = 200;  // Only need a few entries for title lookup
+  const int TITLE_MAX_ENTRIES = 500;  // Enough entries for image-heavy EPUBs to find container.xml/OPF
   ZipEntry* entries = (ZipEntry*)ps_malloc(sizeof(ZipEntry) * TITLE_MAX_ENTRIES);
   if (!entries) { f.close(); return ""; }
   for (int i = 0; i < TITLE_MAX_ENTRIES; i++) new (&entries[i]) ZipEntry();
@@ -419,6 +443,7 @@ bool epubLoad(const String& epubPath) {
   Serial.printf("\n=== EPUB: Loading %s ===\n", epubPath.c_str());
 
   // Clean up previous EPUB data
+  showLoadStep("Step 0: cleanup...");
   epubCleanup();
 
   epubFilePath = epubPath;
@@ -426,21 +451,30 @@ bool epubLoad(const String& epubPath) {
   File f;
   if (sdMutex) { xSemaphoreTake(sdMutex, portMAX_DELAY); f = SD.open(epubPath.c_str()); xSemaphoreGive(sdMutex); }
   else { f = SD.open(epubPath.c_str()); }
-  if (!f) { Serial.println("EPUB: Cannot open file"); return false; }
+  if (!f) { Serial.println("EPUB: Cannot open file"); lastLoadError = "epub SD.open"; return false; }
 
   Serial.printf("EPUB: File size = %u bytes, Free PSRAM = %u bytes\n", f.size(), ESP.getFreePsram());
 
   // Parse ZIP central directory — allocate persistent entries
+  showLoadStep("Step 1: parse ZIP...");
+  Serial.printf("EPUB: Allocating %d ZipEntries (%u bytes)\n", MAX_ZIP_ENTRIES,
+                (unsigned)(sizeof(ZipEntry) * MAX_ZIP_ENTRIES));
   epubZipEntries = (ZipEntry*)ps_malloc(sizeof(ZipEntry) * MAX_ZIP_ENTRIES);
-  if (!epubZipEntries) { f.close(); return false; }
+  if (!epubZipEntries) {
+    Serial.printf("EPUB: Failed to allocate ZipEntries! Free PSRAM: %u\n", ESP.getFreePsram());
+    lastLoadError = "alloc ZipEnt";
+    f.close(); return false;
+  }
   for (int i = 0; i < MAX_ZIP_ENTRIES; i++) new (&epubZipEntries[i]) ZipEntry();
   epubZipEntryCount = zipReadDirectory(f, epubZipEntries, MAX_ZIP_ENTRIES);
   Serial.printf("EPUB: ZIP has %d entries\n", epubZipEntryCount);
   if (epubZipEntryCount == 0) {
+    lastLoadError = "ZIP 0 entries";
     epubCleanup(); f.close(); return false;
   }
 
   // Step 1: Find container.xml → get OPF path
+  showLoadStep("Step 2: find OPF...");
   String opfPath = "";
   for (int i = 0; i < epubZipEntryCount; i++) {
     if (epubZipEntries[i].filename == "META-INF/container.xml") {
@@ -461,12 +495,14 @@ bool epubLoad(const String& epubPath) {
   }
   Serial.printf("EPUB: OPF path = %s\n", opfPath.c_str());
   if (opfPath.length() == 0) {
+    lastLoadError = "no OPF";
     epubCleanup(); f.close(); return false;
   }
 
   epubBasePath = pathDir(opfPath);
 
   // Step 2: Read OPF → build manifest (id→href) and read spine order
+  showLoadStep("Step 3: parse manifest...");
   String opfContent = "";
   for (int i = 0; i < epubZipEntryCount; i++) {
     if (epubZipEntries[i].filename == opfPath) {
@@ -475,6 +511,7 @@ bool epubLoad(const String& epubPath) {
     }
   }
   if (opfContent.length() == 0) {
+    lastLoadError = "empty OPF";
     epubCleanup(); f.close(); return false;
   }
 
@@ -482,7 +519,7 @@ bool epubLoad(const String& epubPath) {
   struct ManifestItem { String id; String href; bool isContent; };
   const int MAX_MANIFEST = 3000;
   ManifestItem* manifest = (ManifestItem*)ps_malloc(sizeof(ManifestItem) * MAX_MANIFEST);
-  if (!manifest) { epubCleanup(); f.close(); return false; }
+  if (!manifest) { lastLoadError = "alloc manifest"; epubCleanup(); f.close(); return false; }
   for (int i = 0; i < MAX_MANIFEST; i++) new (&manifest[i]) ManifestItem();
   int manifestCount = 0;
 
@@ -516,11 +553,12 @@ bool epubLoad(const String& epubPath) {
   Serial.printf("EPUB: Manifest has %d items\n", manifestCount);
 
   // Parse spine: <itemref idref="..."/>
+  showLoadStep("Step 4: parse spine...");
   const int MAX_SPINE = 1500;
   String* spineRefs = (String*)ps_malloc(sizeof(String) * MAX_SPINE);
   if (!spineRefs) {
     for (int i = 0; i < MAX_MANIFEST; i++) manifest[i].~ManifestItem();
-    free(manifest); epubCleanup(); f.close(); return false;
+    free(manifest); lastLoadError = "alloc spine"; epubCleanup(); f.close(); return false;
   }
   for (int i = 0; i < MAX_SPINE; i++) new (&spineRefs[i]) String();
   int spineCount = 0;
@@ -546,12 +584,13 @@ bool epubLoad(const String& epubPath) {
   opfContent = "";  // Free OPF content early
 
   // Step 3: Build chapter index with estimated text sizes
+  showLoadStep("Step 5: build chapters...");
   epubChapters = (EpubChapterInfo*)ps_malloc(sizeof(EpubChapterInfo) * spineCount);
   if (!epubChapters) {
     for (int i = 0; i < MAX_SPINE; i++) spineRefs[i].~String();
     free(spineRefs);
     for (int i = 0; i < MAX_MANIFEST; i++) manifest[i].~ManifestItem();
-    free(manifest); epubCleanup(); f.close(); return false;
+    free(manifest); lastLoadError = "alloc chapters"; epubCleanup(); f.close(); return false;
   }
   epubChapterCount = 0;
   size_t cumOffset = 0;
@@ -593,17 +632,21 @@ bool epubLoad(const String& epubPath) {
   Serial.printf("EPUB: Free PSRAM after metadata: %u bytes\n", ESP.getFreePsram());
 
   if (epubChapterCount == 0) {
+    lastLoadError = "0 chapters";
     epubCleanup();
     return false;
   }
 
   // Step 4: Load initial chapters into buffer
+  showLoadStep("Step 6: load chapters...");
   if (!epubLoadChapterRange(0)) {
+    if (lastLoadError.isEmpty()) lastLoadError = "chapterRange";
     epubCleanup();
     return false;
   }
 
   // Step 5: Detect image-based EPUB (manga/comics)
+  showLoadStep("Step 7: detect type...");
   // If most chapters contain mainly image markers (little real text), treat as image-based
   if (epubChapterCount >= 2) {
     int loadedChapters = 0;
@@ -678,8 +721,14 @@ bool epubLoad(const String& epubPath) {
 // Allocates buffer using available PSRAM, loads as many chapters as fit.
 // Returns true if at least one chapter was loaded.
 bool epubLoadChapterRange(int startChapter) {
-  if (!epubChapters || startChapter < 0 || startChapter >= epubChapterCount) return false;
-  if (epubFilePath.isEmpty() || !epubZipEntries) return false;
+  if (!epubChapters || startChapter < 0 || startChapter >= epubChapterCount) {
+    lastLoadError = "chRange args";
+    return false;
+  }
+  if (epubFilePath.isEmpty() || !epubZipEntries) {
+    lastLoadError = "chRange state";
+    return false;
+  }
 
   Serial.printf("EPUB: Loading chapters from %d/%d\n", startChapter, epubChapterCount);
 
@@ -706,6 +755,7 @@ bool epubLoadChapterRange(int startChapter) {
 
   if (freePsram <= headroom + 65536) {
     Serial.printf("EPUB: Not enough PSRAM! Free: %u, headroom: %u\n", freePsram, headroom);
+    lastLoadError = "PSRAM low";
     return false;
   }
 
@@ -714,9 +764,27 @@ bool epubLoadChapterRange(int startChapter) {
   // Cap at 4MB to be conservative
   if (bufferSize > 4 * 1024 * 1024) bufferSize = 4 * 1024 * 1024;
 
+  Serial.printf("EPUB: Trying to allocate text buffer: %u bytes (free PSRAM: %u)\n", bufferSize, freePsram);
   epubFullText = (char*)ps_malloc(bufferSize);
+  // If allocation fails, retry with progressively smaller sizes (PSRAM fragmentation)
+  if (!epubFullText && bufferSize > 512 * 1024) {
+    for (size_t trySize = bufferSize / 2; trySize >= 256 * 1024; trySize /= 2) {
+      Serial.printf("EPUB: Retrying with %u bytes\n", trySize);
+      epubFullText = (char*)ps_malloc(trySize);
+      if (epubFullText) {
+        bufferSize = trySize;
+        Serial.printf("EPUB: Allocated %u bytes on retry\n", trySize);
+        break;
+      }
+    }
+  }
   if (!epubFullText) {
-    Serial.println("EPUB: Failed to allocate text buffer");
+    Serial.printf("EPUB: Failed to allocate text buffer! Tried %u, free PSRAM: %u, largest free: %u\n",
+                  bufferSize, ESP.getFreePsram(), heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    char errDetail[40];
+    snprintf(errDetail, sizeof(errDetail), "textBuf %uK/%uK", bufferSize/1024,
+             heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)/1024);
+    lastLoadError = String(errDetail);
     return false;
   }
   epubFullTextLen = 0;
@@ -732,6 +800,7 @@ bool epubLoadChapterRange(int startChapter) {
   if (!f) {
     free(epubFullText); epubFullText = nullptr;
     Serial.println("EPUB: Cannot open file for chapter loading");
+    lastLoadError = "chRange open";
     return false;
   }
 
@@ -742,6 +811,13 @@ bool epubLoadChapterRange(int startChapter) {
   for (int c = startChapter; c < epubChapterCount; c++) {
     EpubChapterInfo& ch = epubChapters[c];
     ZipEntry& entry = epubZipEntries[ch.zipEntryIndex];
+
+    // Show progress every 10 chapters
+    if ((c - startChapter) % 10 == 0) {
+      char stepMsg[48];
+      snprintf(stepMsg, sizeof(stepMsg), "Step 6: ch %d/%d ...", c + 1, epubChapterCount);
+      showLoadStep(stepMsg);
+    }
 
     Serial.printf("  Chapter %d/%d: %s (%u bytes)\n",
                   c + 1, epubChapterCount, entry.filename.c_str(), entry.uncompSize);

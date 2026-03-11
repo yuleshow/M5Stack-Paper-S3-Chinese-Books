@@ -27,9 +27,13 @@ void loadWiFiConfig() {
   
   Serial.println("Loading config from config.ini");
   String section = "";
+  int lineCount = 0;
   while (configFile.available()) {
     String line = configFile.readStringUntil('\n');
     line.trim();
+    lineCount++;
+    if (lineCount > 200) { Serial.println("Config too long, stopping"); break; }
+    if (lineCount % 20 == 0) yield();
     
     if (line.length() == 0 || line.startsWith("#") || line.startsWith(";")) {
       continue;
@@ -235,10 +239,12 @@ bool connectToWiFi() {
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < MAX_WIFI_CONNECT_ATTEMPTS) {
     delay(500);
+    yield();
     Serial.print(".");
     attempts++;
   }
   Serial.println();
+  Serial.printf("WiFi connect took %d attempts (%d ms)\n", attempts, attempts * 500);
   
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("WiFi connected!");

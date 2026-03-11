@@ -135,7 +135,26 @@ void scanBooks() {
         String lowerName = filename;
         lowerName.toLowerCase();
         if (lowerName.endsWith(".epub")) {
-          String epubTitle = epubGetTitle("/books/" + filename);
+          // Sanity check: skip very large EPUBs during boot scan (title extraction)
+          File epubCheck;
+          String epubCheckPath = "/books/" + filename;
+          if (sdMutex) { xSemaphoreTake(sdMutex, portMAX_DELAY); epubCheck = SD.open(epubCheckPath.c_str()); xSemaphoreGive(sdMutex); }
+          else { epubCheck = SD.open(epubCheckPath.c_str()); }
+          bool skipTitle = false;
+          if (epubCheck) {
+            size_t epubSize = epubCheck.size();
+            epubCheck.close();
+            if (epubSize < 100 || epubSize > 500UL * 1024 * 1024) {
+              Serial.printf("  Skipping title extraction: file size %u suspicious\n", epubSize);
+              skipTitle = true;
+            }
+          } else {
+            skipTitle = true;
+          }
+          String epubTitle = "";
+          if (!skipTitle) {
+            epubTitle = epubGetTitle("/books/" + filename);
+          }
           if (epubTitle.length() > 0) {
             bookDisplayName[bookCount] = epubTitle;
           } else {
@@ -414,10 +433,35 @@ bool loadCurrentPage() {
   return true;
 }
 
+String lastLoadError = "";  // Stores the specific failure reason for on-screen display
+
 bool loadBook(int bookIndex) {
-  if (!sdCardAvailable || bookIndex >= bookCount) return false;
+  lastLoadError = "";
+  Serial.printf("\n=== loadBook(%d) === Free heap: %u, Free PSRAM: %u, OFR files: %d\n",
+                bookIndex, ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+  if (!sdCardAvailable || bookIndex >= bookCount) {
+    Serial.printf("loadBook: early exit - sdCardAvailable=%d, bookIndex=%d, bookCount=%d\n",
+                  sdCardAvailable, bookIndex, bookCount);
+    lastLoadError = "SD/index err";
+    return false;
+  }
   comicZoomQuadrant = -1;  // Reset zoom state
-  
+
+  // Clean up any previous book state before loading new one
+  Serial.printf("loadBook: cleanup - epubFullText=%p, epubZipEntries=%p, epubChapters=%p\n",
+                epubFullText, epubZipEntries, epubChapters);
+  epubCleanup();
+  currentBookIsEpub = false;
+  currentPageContent = "";
+  currentPage = 0;
+  totalPages = 1;
+  totalBookBytes = 0;
+  pageOffsetsCount = 0;
+  currentPageByteOffset = 0;
+  bookmarkCount = 0;
+  Serial.printf("loadBook: after cleanup - Free heap: %u, Free PSRAM: %u\n",
+                ESP.getFreeHeap(), ESP.getFreePsram());
+
   // bookList contains the actual filenames (can be Chinese UTF-8)
   String filename = bookList[bookIndex];
   currentBookPath = "/books/" + filename;
@@ -430,6 +474,7 @@ bool loadBook(int bookIndex) {
     currentBookIsEpub = true;
     if (!epubLoad(currentBookPath)) {
       Serial.println("EPUB: Failed to load");
+      if (lastLoadError.isEmpty()) lastLoadError = "epubLoad fail";
       currentBookIsEpub = false;
       return false;
     }
@@ -467,18 +512,17 @@ bool loadBook(int bookIndex) {
                   currentPage, totalPages, epubIsImageBased, epubChapterCount);
     if (currentPage >= totalPages) currentPage = 0;
     loadBookmarks();
-    return loadCurrentPage();
+    if (!loadCurrentPage()) { lastLoadError = "epub loadPage"; return false; }
+    return true;
   }
   
   // Plain text file
-  currentBookIsEpub = false;
-  epubCleanup();  // Free any leftover EPUB data when switching to plain text
-  
   {
     ScopedSDLock lock;
     File file = SD.open(currentBookPath.c_str());
     if (!file) {
       Serial.println("File not found");
+      lastLoadError = "txt open fail";
       return false;
     }
     totalBookBytes = file.size();
@@ -491,7 +535,8 @@ bool loadBook(int bookIndex) {
   loadBookmarks();
   
   // Load first page
-  return loadCurrentPage();
+  if (!loadCurrentPage()) { lastLoadError = "txt loadPage"; return false; }
+  return true;
 }
 
 void drawBookList() {
@@ -522,7 +567,42 @@ void drawBookList() {
     // Show books for current page
     for (int i = startIdx; i < endIdx; i++) {
       int row = i - startIdx;
-      drawSystemText(bookDisplayName[i].c_str(), 40, 120 + (row * 50), 24);
+      // Truncate long names to fit display width (540px - 40px left margin - 20px right margin)
+      String displayName = bookDisplayName[i];
+      const int maxDisplayWidth = DISPLAY_WIDTH - 40 - 20;  // 480px
+      // Fast truncation: estimate max UTF-8 characters that fit, then verify once
+      // At font size 28: CJK chars ~28px wide, ASCII ~14px wide
+      // Conservative estimate: assume all chars are 16px wide → ~30 chars max
+      int len = displayName.length();
+      if (len > 30) {
+        // Count UTF-8 characters
+        int charCount = 0;
+        int bytePos = 0;
+        while (bytePos < len) {
+          uint8_t c = (uint8_t)displayName[bytePos];
+          if (c < 0x80) bytePos += 1;
+          else if (c < 0xE0) bytePos += 2;
+          else if (c < 0xF0) bytePos += 3;
+          else bytePos += 4;
+          charCount++;
+        }
+        if (charCount > 17) {
+          // Likely too long — truncate to ~16 UTF-8 chars and add ellipsis
+          int targetChars = 16;
+          bytePos = 0;
+          int count = 0;
+          while (bytePos < len && count < targetChars) {
+            uint8_t c = (uint8_t)displayName[bytePos];
+            if (c < 0x80) bytePos += 1;
+            else if (c < 0xE0) bytePos += 2;
+            else if (c < 0xF0) bytePos += 3;
+            else bytePos += 4;
+            count++;
+          }
+          displayName = displayName.substring(0, bytePos) + "\xe2\x80\xa6";  // "…"
+        }
+      }
+      drawSystemText(displayName.c_str(), 40, 120 + (row * BOOK_ROW_HEIGHT), 28);
     }
     
     // Draw pagination nav arrows if needed
@@ -537,13 +617,13 @@ void drawBookList() {
     if (totalBookPages > 1) {
       bookInfo += " | 第 " + String(bookListPage + 1) + "/" + String(totalBookPages) + " 頁";
     }
-    drawSystemText(bookInfo.c_str(), 20, 900, 18);
+    drawSystemText(bookInfo.c_str(), 20, 840, 28);
   } else {
     // Show sample books
-    drawSystemText("示例書籍1.txt", 40, 120, 24);
-    drawSystemText("示例書籍2.txt", 40, 170, 24);
-    drawSystemText("示例書籍3.txt", 40, 220, 24);
-    drawSystemText("觸控選擇書籍", 20, 860, 18);
+    drawSystemText("示例書籍1.txt", 40, 120, 28);
+    drawSystemText("示例書籍2.txt", 40, 175, 28);
+    drawSystemText("示例書籍3.txt", 40, 230, 28);
+    drawSystemText("觸控選擇書籍", 20, 840, 28);
   }
   
   Serial.println("Calling display()...");
@@ -554,20 +634,20 @@ void drawBookList() {
 
 // Determine e-ink refresh mode based on pageRefreshMode setting
 static epd_mode_t getReadingEpdMode() {
-  if (pageRefreshMode == 2) {
-    // Every 10 pages: full refresh when counter hits 0
-    if (pagesSinceFullRefresh >= 10) {
-      pagesSinceFullRefresh = 0;
-    }
-    if (pagesSinceFullRefresh == 0) {
-      pagesSinceFullRefresh++;
-      return epd_mode_t::epd_quality;
-    }
-    pagesSinceFullRefresh++;
-    return epd_mode_t::epd_fast;
+  if (pageRefreshMode == 1) {
+    // Mode 1: always quality (slowest, cleanest)
+    return epd_mode_t::epd_quality;
   }
-  // Mode 0 (system default) and mode 1 (every page): always quality
-  return epd_mode_t::epd_quality;
+  // Mode 0 and 2: fast with periodic quality refresh every 10 pages for cleanup
+  if (pagesSinceFullRefresh >= 10) {
+    pagesSinceFullRefresh = 0;
+  }
+  if (pagesSinceFullRefresh == 0) {
+    pagesSinceFullRefresh++;
+    return epd_mode_t::epd_quality;
+  }
+  pagesSinceFullRefresh++;
+  return epd_mode_t::epd_fast;
 }
 
 void drawReading() {
@@ -595,7 +675,6 @@ void drawReading() {
     
     M5.Display.endWrite();
     M5.Display.display();
-    delay(500);
     return;
   }
   
@@ -616,11 +695,11 @@ void drawReading() {
       if (hasNext) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
       if (hasPrev) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
     }
-    // Page number centered
+    // Page number centered, vertically aligned with arrows
     {
       char pageStr[16];
       snprintf(pageStr, sizeof(pageStr), "%d / %d", currentPage + 1, totalPages);
-      drawSystemText(pageStr, 180, NAV_Y + 10, 24);
+      drawSystemText(pageStr, 180, NAV_Y + (NAV_ICON_SIZE - 24) / 2, 24);
     }
     // Comic zoom mode toggle button
     {
@@ -664,7 +743,6 @@ void drawReading() {
     
     M5.Display.endWrite();
     M5.Display.display();
-    delay(500);
     return;
   }
   
@@ -682,8 +760,6 @@ void drawReading() {
     bool hasNext = (currentPage < totalPages - 1);
     drawVerticalNavBar(hasPrev, hasNext);
   }
-  
-  delay(100);
   
   // Determine which font renderer to use
   // Priority: OFR TTF > Binary font > Built-in
@@ -742,7 +818,7 @@ void drawReading() {
   
   int charHeight = fontSizePt + (fontSizePt / 5);  // ~1.2x font size for spacing
   int columnSpacing = fontSizePt + (fontSizePt / 5);
-  int charsPerColumn = (VERTICAL_TEXT_MAX_Y - READING_AREA_TOP) / charHeight;
+  int charsPerColumn = (VERTICAL_TEXT_MAX_Y - READING_AREA_TOP) / charHeight - 2;
   int columnX = READING_AREA_RIGHT - columnSpacing;
   int startY = READING_AREA_TOP;
   
@@ -775,6 +851,102 @@ void drawReading() {
     if (unicode == 0x3000) continue;  // Ideographic space
     // Skip ASCII spaces (paragraph indentation is handled by column breaks)
     if (unicode == ' ') continue;
+    
+    // Latin text run: collect consecutive printable ASCII chars and render rotated 90° CW
+    // Only trigger for runs containing at least one letter (skip lone digits/punctuation)
+    if (unicode >= 0x21 && unicode <= 0x7E && renderer == FONT_OFR) {
+      // Peek ahead to check if there's at least one letter in the run
+      bool hasLetter = (unicode >= 'A' && unicode <= 'Z') || (unicode >= 'a' && unicode <= 'z');
+      if (!hasLetter) {
+        int peek_i = i;
+        while (peek_i < (int)sampleText.length()) {
+          unsigned char pc = (unsigned char)sampleText.charAt(peek_i);
+          if ((pc >= 'A' && pc <= 'Z') || (pc >= 'a' && pc <= 'z')) { hasLetter = true; break; }
+          if (pc >= 0x21 && pc <= 0x7E) { peek_i++; continue; }
+          if (pc == ' ' && peek_i + 1 < (int)sampleText.length() &&
+              (unsigned char)sampleText.charAt(peek_i + 1) >= 0x21 &&
+              (unsigned char)sampleText.charAt(peek_i + 1) <= 0x7E) { peek_i++; continue; }
+          break;
+        }
+      }
+      if (!hasLetter) {
+        // No letters — treat as normal character (draw vertically as-is)
+        goto draw_normal_char;
+      }
+      // Rewind to collect the full run (we already decoded one char)
+      i = charStart;
+      int runStart = i;
+      String latinRun = "";
+      while (i < (int)sampleText.length()) {
+        unsigned char peek = (unsigned char)sampleText.charAt(i);
+        if (peek >= 0x21 && peek <= 0x7E) {
+          latinRun += (char)peek;
+          i++;
+        } else if (peek == ' ' && i + 1 < (int)sampleText.length() &&
+                   (unsigned char)sampleText.charAt(i + 1) >= 0x21 &&
+                   (unsigned char)sampleText.charAt(i + 1) <= 0x7E) {
+          // Include spaces between Latin words
+          latinRun += ' ';
+          i++;
+        } else {
+          break;
+        }
+      }
+      if (latinRun.length() == 0) continue;
+
+      // Measure text width using OFR
+      ofr.setFontSize(fontSizePt);
+      uint32_t textW = ofr.getTextWidth(latinRun.c_str());
+      int spriteW = (int)textW + 4;
+      int spriteH = fontSizePt + 4;
+      int rotatedH = spriteW;  // After 90° rotation, width becomes height
+
+      // Check if the rotated text fits in the remaining column space
+      if (currentY + rotatedH > VERTICAL_TEXT_MAX_Y - charHeight) {
+        // Doesn't fit — move to next column and try again
+        columnX -= columnSpacing;
+        currentY = startY;
+        charIndex = 0;
+        if (columnX < READING_AREA_LEFT) {
+          renderStopByte = runStart;  // Reprocess this run on next page
+          i = runStart;
+          break;
+        }
+      }
+
+      // Render into sprite, then push rotated
+      LGFX_Sprite sprite(&M5.Display);
+      if (sprite.createSprite(spriteW, spriteH)) {
+        sprite.fillSprite(TFT_WHITE);
+        ofr.setDrawer(sprite);
+        ofr.setFontSize(fontSizePt);
+        ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+        ofr.cdrawString(latinRun.c_str(), spriteW / 2, 2, TFT_BLACK, TFT_WHITE);
+        // pushRotateZoom(dest, pivotX, pivotY, angle, scaleX, scaleY)
+        // 90° CW rotation: pivot at center of where we want it on screen
+        int destX = columnX;
+        int destY = currentY + rotatedH / 2;
+        sprite.pushRotateZoom(&M5.Display, destX, destY, 90, 1.0, 1.0);
+        sprite.deleteSprite();
+        ofr.setDrawer(M5.Display);  // Restore OFR drawer to main display
+      }
+
+      currentY += rotatedH;
+      charIndex += latinRun.length();
+      charsDrawn += latinRun.length();
+
+      // Check column overflow
+      if (charIndex >= charsPerColumn || currentY > READING_AREA_BOTTOM) {
+        columnX -= columnSpacing;
+        currentY = startY;
+        charIndex = 0;
+        if (columnX < READING_AREA_LEFT) {
+          renderStopByte = i;
+          break;
+        }
+      }
+      continue;
+    }
     
     // Handle EPUB image markers: \x01<image_path>\x01
     if (unicode == EPUB_IMG_MARKER && currentBookIsEpub) {
@@ -820,6 +992,7 @@ void drawReading() {
     }
     
     // Draw character using the selected renderer
+    draw_normal_char:
     // Vertically center each glyph within its charHeight cell
     int vOffset = (charHeight - fontSizePt) / 2;
     if (renderer == FONT_OFR) {
@@ -874,6 +1047,80 @@ void drawReading() {
     
     // Move to next column when column is full
     if (charIndex >= charsPerColumn || currentY > READING_AREA_BOTTOM) {
+      // Kinsoku (禁則處理): peek at next character — if it's a punctuation mark
+      // that should not start a new column, pull it into the reserved bottom slot
+      if (i < (int)sampleText.length()) {
+        int peekI = i;
+        uint32_t peekUnicode = utf8Decode(sampleText, peekI);
+        uint32_t mappedPeek = toVerticalPunct(peekUnicode);
+        if (isColumnStartProhibited(peekUnicode) || isColumnStartProhibited(mappedPeek)) {
+          // Check if the character AFTER this one is also start-prohibited (e.g. 。﹂)
+          int peek2I = peekI;
+          uint32_t peek2Unicode = 0;
+          uint32_t mapped2 = 0;
+          bool hasSecond = false;
+          if (peek2I < (int)sampleText.length()) {
+            peek2Unicode = utf8Decode(sampleText, peek2I);
+            mapped2 = toVerticalPunct(peek2Unicode);
+            hasSecond = isColumnStartProhibited(peek2Unicode) || isColumnStartProhibited(mapped2);
+          }
+
+          String peekCh = sampleText.substring(i, peekI);
+          applyVerticalPunct(peekCh, mappedPeek);
+
+          if (hasSecond) {
+            // Two consecutive prohibited chars — draw both in the reserved slot at half height
+            String peek2Ch = sampleText.substring(peekI, peek2I);
+            applyVerticalPunct(peek2Ch, mapped2);
+            int halfH = charHeight / 2;
+            int halfFont = fontSizePt / 2;
+            if (renderer == FONT_OFR) {
+              ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+              ofr.setFontSize(halfFont);
+              ofr.cdrawString(peekCh.c_str(), columnX, currentY, TFT_BLACK, TFT_WHITE);
+              ofr.cdrawString(peek2Ch.c_str(), columnX, currentY + halfH, TFT_BLACK, TFT_WHITE);
+              ofr.setFontSize(fontSizePt);  // Restore
+            } else if (renderer == FONT_BINFONT) {
+              // Binary font doesn't support scaling — draw at normal size stacked tightly
+              GlyphIndex* g1 = findGlyph(mappedPeek);
+              if (g1 && g1->width > 0)
+                drawBinFontChar(mappedPeek, columnX - g1->width/2, currentY);
+              GlyphIndex* g2 = findGlyph(mapped2);
+              if (g2 && g2->width > 0)
+                drawBinFontChar(mapped2, columnX - g2->width/2, currentY + halfH);
+            } else {
+              M5.Display.setFont(&fonts::Font2);
+              M5.Display.setTextSize(1);
+              M5.Display.setCursor(columnX - 8, currentY);
+              M5.Display.print(peekCh);
+              M5.Display.setCursor(columnX - 8, currentY + halfH);
+              M5.Display.print(peek2Ch);
+            }
+            charsDrawn += 2;
+            i = peek2I;  // Consume both characters
+          } else {
+            // Single prohibited char — draw at normal size
+            int vOff = (charHeight - fontSizePt) / 2;
+            if (renderer == FONT_OFR) {
+              ofr.setFontSize(fontSizePt);
+              ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+              ofr.cdrawString(peekCh.c_str(), columnX, currentY + vOff, TFT_BLACK, TFT_WHITE);
+            } else if (renderer == FONT_BINFONT) {
+              GlyphIndex* glyph = findGlyph(mappedPeek);
+              if (glyph && glyph->width > 0) {
+                drawBinFontChar(mappedPeek, columnX - glyph->width/2, currentY + (charHeight - glyph->height) / 2);
+              }
+            } else {
+              M5.Display.setFont(&fonts::Font2);
+              M5.Display.setTextSize(1);
+              M5.Display.setCursor(columnX - 8, currentY + vOff);
+              M5.Display.print(peekCh);
+            }
+            charsDrawn++;
+            i = peekI;  // Consume the peeked character
+          }
+        }
+      }
       columnX -= columnSpacing;
       currentY = startY;
       charIndex = 0;
@@ -941,19 +1188,23 @@ void drawReading() {
     if (fillW > 0) {
       M5.Display.fillRect(barX, barY, fillW, barH, TFT_BLACK);
     }
-    // Page number above bar on the left
-    char pageStr[16];
-    snprintf(pageStr, sizeof(pageStr), "%d/%d", currentPage + 1, totalPages);
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(BL_DATUM);
-    M5.Display.drawString(pageStr, barX, barY - 4);
     // Percentage above bar on the right
     char pctStr[8];
     snprintf(pctStr, sizeof(pctStr), "%d%%", (int)(progress * 100));
+    M5.Display.setFont(&fonts::Font2);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setTextDatum(BR_DATUM);
-    M5.Display.drawString(pctStr, barX + barW, barY - 4);
+    M5.Display.drawString(pctStr, barX + barW, barY - 6);
+    M5.Display.setTextDatum(TL_DATUM);
+    // Page number on the left side above progress bar (avoid overlapping font buttons)
+    char pageStr[16];
+    snprintf(pageStr, sizeof(pageStr), "%d/%d", currentPage + 1, totalPages);
+    M5.Display.setFont(&fonts::Font2);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_BLACK);
+    M5.Display.setTextDatum(BL_DATUM);
+    M5.Display.drawString(pageStr, barX, barY - 6);
     M5.Display.setTextDatum(TL_DATUM);
   }
   
@@ -993,14 +1244,188 @@ void drawReading() {
       M5.Display.setTextColor(TFT_BLACK);
       M5.Display.setTextDatum(TL_DATUM);
     } else {
-      drawSystemText("BM", 340, btnRowY + 6, 20);
+      M5.Display.setFont(&fonts::Font2);
+      M5.Display.setTextSize(1);
+      M5.Display.setTextColor(TFT_BLACK);
+      M5.Display.setCursor(340, btnRowY + 6);
+      M5.Display.print("BM");
     }
   }
   
   Serial.println("Calling display()...");
   M5.Display.endWrite();
   M5.Display.display();
-  
-  delay(500);  // Brief wait for e-ink refresh
   Serial.println("Reading mode displayed");
+}
+
+// ==================== Page Jump Popup ====================
+
+// Draw a numeric keyboard popup overlay for jumping to a specific page
+void drawPageJumpPopup() {
+  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
+  M5.Display.fillScreen(TFT_WHITE);
+
+  // Popup card dimensions
+  const int cardW = 460, cardH = 560;
+  const int cardX = (DISPLAY_WIDTH - cardW) / 2;   // 40
+  const int cardY = (DISPLAY_HEIGHT - cardH) / 2;  // 200
+
+  // Draw card frame
+  M5.Display.fillRoundRect(cardX, cardY, cardW, cardH, 12, TFT_WHITE);
+  M5.Display.drawRoundRect(cardX, cardY, cardW, cardH, 12, TFT_BLACK);
+  M5.Display.drawRoundRect(cardX + 1, cardY + 1, cardW - 2, cardH - 2, 11, TFT_BLACK);
+
+  // Title: "跳到頁面" (Jump to page)
+  drawSystemTextCentered("跳到頁面", DISPLAY_WIDTH / 2, cardY + 20, 32);
+
+  // Show total pages info
+  char totalStr[32];
+  snprintf(totalStr, sizeof(totalStr), "共 %d 頁", totalPages);
+  drawSystemTextCentered(totalStr, DISPLAY_WIDTH / 2, cardY + 60, 22, EPD_DARK_GRAY);
+
+  // Input display area
+  const int inputX = cardX + 30, inputY = cardY + 95;
+  const int inputW = cardW - 60, inputH = 50;
+  M5.Display.drawRect(inputX, inputY, inputW, inputH, TFT_BLACK);
+  // Show current input
+  if (pageJumpInput.length() > 0) {
+    drawSystemText(pageJumpInput.c_str(), inputX + 15, inputY + 10, 28);
+  } else {
+    drawSystemText("_", inputX + 15, inputY + 10, 28, EPD_LIGHT_GRAY);
+  }
+
+  // Numpad layout: 3x4 grid
+  // [1] [2] [3]
+  // [4] [5] [6]
+  // [7] [8] [9]
+  // [清除] [0] [確定]
+  const int btnW = 120, btnH = 70;
+  const int padX = cardX + (cardW - 3 * btnW - 2 * 15) / 2;  // center the 3 columns
+  const int padY = cardY + 160;
+  const int gapX = 15, gapY = 12;
+
+  const char* labels[4][3] = {
+    {"1", "2", "3"},
+    {"4", "5", "6"},
+    {"7", "8", "9"},
+    {"清除", "0", "確定"}
+  };
+
+  for (int row = 0; row < 4; row++) {
+    for (int col = 0; col < 3; col++) {
+      int bx = padX + col * (btnW + gapX);
+      int by = padY + row * (btnH + gapY);
+      M5.Display.drawRoundRect(bx, by, btnW, btnH, 8, TFT_BLACK);
+      // Use smaller font for Chinese labels, larger for digits
+      int fontSize = (row == 3 && col != 1) ? 24 : 32;
+      drawSystemTextCentered(labels[row][col], bx + btnW / 2, by + (btnH - fontSize) / 2, fontSize);
+    }
+  }
+
+  // Cancel button at bottom-left corner
+  drawSystemText("返回", cardX + 20, cardY + cardH - 45, 24, EPD_DARK_GRAY);
+
+  M5.Display.endWrite();
+  M5.Display.display();
+}
+
+// Lightweight update: only redraw the input field area (no full e-ink refresh)
+static void updatePageJumpInput() {
+  const int cardW = 460, cardH = 560;
+  const int cardX = (DISPLAY_WIDTH - cardW) / 2;
+  const int cardY = (DISPLAY_HEIGHT - cardH) / 2;
+  const int inputX = cardX + 30, inputY = cardY + 95;
+  const int inputW = cardW - 60, inputH = 50;
+
+  M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+  M5.Display.startWrite();
+  M5.Display.fillRect(inputX + 1, inputY + 1, inputW - 2, inputH - 2, TFT_WHITE);
+  if (pageJumpInput.length() > 0) {
+    drawSystemText(pageJumpInput.c_str(), inputX + 15, inputY + 10, 28);
+  } else {
+    drawSystemText("_", inputX + 15, inputY + 10, 28, EPD_LIGHT_GRAY);
+  }
+  M5.Display.endWrite();
+  M5.Display.display();
+}
+
+// Handle touch input on the page jump popup
+// Returns true if touch was handled (consumed)
+bool handlePageJumpTouch(int x, int y) {
+  const int cardW = 460, cardH = 560;
+  const int cardX = (DISPLAY_WIDTH - cardW) / 2;
+  const int cardY = (DISPLAY_HEIGHT - cardH) / 2;
+
+  const int btnW = 120, btnH = 70;
+  const int padX = cardX + (cardW - 3 * btnW - 2 * 15) / 2;
+  const int padY = cardY + 160;
+  const int gapX = 15, gapY = 12;
+
+  // Check cancel/return button (bottom-left of card)
+  if (x >= cardX && x <= cardX + 100 && y >= cardY + cardH - 55 && y <= cardY + cardH) {
+    Serial.println("Page jump: cancelled");
+    pageJumpInput = "";
+    currentMode = MODE_READING;
+    drawReading();
+    return true;
+  }
+
+  // Check numpad buttons
+  for (int row = 0; row < 4; row++) {
+    for (int col = 0; col < 3; col++) {
+      int bx = padX + col * (btnW + gapX);
+      int by = padY + row * (btnH + gapY);
+      if (x >= bx && x <= bx + btnW && y >= by && y <= by + btnH) {
+        if (row == 3 && col == 0) {
+          // Clear button
+          pageJumpInput = "";
+          Serial.println("Page jump: cleared");
+          updatePageJumpInput();
+        } else if (row == 3 && col == 2) {
+          // Confirm button
+          if (pageJumpInput.length() > 0) {
+            int targetPage = pageJumpInput.toInt();
+            if (targetPage >= 1 && targetPage <= totalPages) {
+              currentPage = targetPage - 1;  // 0-based internally
+              pageJumpInput = "";
+              currentMode = MODE_READING;
+              if (loadCurrentPage()) {
+                saveReadingPosition();
+                drawReading();
+              }
+              Serial.printf("Page jump: jumped to page %d\n", targetPage);
+            } else {
+              // Invalid page — flash the input (redraw to show it's wrong)
+              Serial.printf("Page jump: invalid page %d (max %d)\n", targetPage, totalPages);
+              pageJumpInput = "";
+              updatePageJumpInput();
+            }
+          }
+        } else {
+          // Digit button
+          int digit = row * 3 + col + 1;
+          if (row == 3 && col == 1) digit = 0;
+          // Prevent leading zeros
+          if (digit == 0 && pageJumpInput.length() == 0) {
+            return true;
+          }
+          String candidate = pageJumpInput + String(digit);
+          int candidateVal = candidate.toInt();
+          // Only allow input if the number doesn't exceed totalPages
+          // Also limit input length to prevent overflow
+          if (candidateVal <= totalPages && candidate.length() <= 6) {
+            pageJumpInput = candidate;
+            Serial.printf("Page jump: input = %s\n", pageJumpInput.c_str());
+            updatePageJumpInput();
+          } else {
+            Serial.printf("Page jump: %d exceeds totalPages %d, ignored\n", candidateVal, totalPages);
+          }
+        }
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
