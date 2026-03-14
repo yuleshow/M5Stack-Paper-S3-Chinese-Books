@@ -64,32 +64,51 @@ void drawFontMenu() {
       typeLabel = "Ⓣ ";
     }
     
-    // Small filename line (using system font)
+    // Small filename line (using system font) — bottom-aligned just above sample text
     String fileInfo = typeLabel + fileName;
     if (i == selectedFontIndex) {
       fileInfo += " ✓";
     }
-    drawSystemText(fileInfo.c_str(), 50, y - 2, 16);
+    int fileInfoSize = (systemFontChoice == 1) ? 20 : 16;  // Larger for Silver font
+    drawSystemText(fileInfo.c_str(), 50, y + 2, fileInfoSize);
     
     // Render font display name using its own font face
+    int sampleY = y + 26;  // More space between filename and preview
     if (fileName.endsWith(".bin") || fileName.endsWith(".BIN")) {
-      // For .bin fonts, just show the name with system font (can't easily swap bin fonts)
-      String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
-      drawSystemText(sampleLine.c_str(), 50, y + 20, 24);
+      // Free previous bin font if loaded
+      if (g_binFont.loaded) {
+        if (g_binFont.index) { free(g_binFont.index); g_binFont.index = nullptr; }
+        g_binFont.fontFile.close();
+        g_binFont.loaded = false;
+      }
+      if (loadBinaryFont(fileName.c_str())) {
+        String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
+        drawBinFontString(sampleLine, 50, sampleY, g_binFont.fontSize);
+      } else {
+        String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
+        drawSystemText(sampleLine.c_str(), 50, sampleY, 24);
+      }
     } else {
       // TTF/TTC font: temporarily load and render the name in its own typeface
       bool loaded = loadTTFFont(fileName.c_str(), 24);
       if (loaded && ofrFontLoaded) {
         ofr.setFontColor(TFT_BLACK, (i == selectedFontIndex) ? TFT_LIGHTGRAY : TFT_WHITE);
         String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
-        ofr.drawString(sampleLine.c_str(), 50, y + 20);
+        ofr.drawString(sampleLine.c_str(), 50, sampleY);
       } else {
         String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
-        drawSystemText(sampleLine.c_str(), 50, y + 20, 24);
+        drawSystemText(sampleLine.c_str(), 50, sampleY, 24);
       }
     }
   }
   
+  // Free any bin font loaded during preview
+  if (g_binFont.loaded) {
+    if (g_binFont.index) { free(g_binFont.index); g_binFont.index = nullptr; }
+    g_binFont.fontFile.close();
+    g_binFont.loaded = false;
+  }
+
   // Restore system font after rendering font previews
   loadSystemFont();
   
@@ -117,7 +136,13 @@ void drawFontMenu() {
   M5.Display.endWrite();
   M5.Display.display();
   
-  delay(500);  // Brief wait for e-ink refresh
+  // Flush stale touch state after e-ink quality refresh to prevent phantom
+  // touches from locking out subsequent input.
+  delay(200);
+  for (int i = 0; i < 3; i++) {
+    M5.update();
+    delay(50);
+  }
   Serial.println("Font menu displayed");
 }
 
@@ -688,7 +713,9 @@ void drawSetupMenu() {
 
     drawSystemText("USB 外接磁碟", 40, y + 18, 32, TFT_BLACK, cardTextBg);
 
-    if (usbMSCActive) {
+    if (!sdCardAvailable) {
+      drawSystemText("未插入 SD 卡", 40, y + 62, 22, EPD_DARK_GRAY, cardTextBg);
+    } else if (usbMSCActive) {
       drawSystemText("執行中 - 裝置停用", 40, y + 62, 22, EPD_DARK_GRAY, cardTextBg);
     } else {
       drawSystemText("未啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
@@ -784,6 +811,21 @@ void drawSetupMenu() {
       drawSystemText("每10頁全刷新", 40, y + 62, 22, TFT_BLACK, cardTextBg);
     } else {
       drawSystemText("系統預設", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + 18;
+
+    // System Font Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("系統字體", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (systemFontChoice == 0) {
+      drawSystemText("源樣明體 GenYoMinTW", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("Silver（像素風格字體）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
     }
   }
   
@@ -1181,4 +1223,59 @@ void drawBluetoothSetup() {
   M5.Display.endWrite();
   M5.Display.display();
   Serial.println("Bluetooth setup displayed");
+}
+
+void drawSystemFontSetup() {
+  Serial.println("Drawing system font setup screen...");
+  
+  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
+  M5.Display.fillScreen(TFT_WHITE);
+  M5.Display.setTextColor(TFT_BLACK);
+  
+  // Status bar + return button
+  drawStatusBar();
+  drawReturnButton();
+  
+  // Title
+  drawSystemText("系統字體", 20, 30, 40);
+  
+  // Current status
+  drawSystemText("目前：", 20, 120, 32);
+  if (systemFontChoice == 0) {
+    drawSystemText("源樣明體", 160, 120, 32, EPD_DARK_GRAY);
+  } else {
+    drawSystemText("Silver", 160, 120, 32, EPD_DARK_GRAY);
+  }
+  
+  // Toggle button (full width)
+  int btnY = 400;
+  if (systemFontChoice == 0) {
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("切換為 Silver", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
+  } else {
+    M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
+    drawSystemTextCentered("切換為 源樣明體", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);
+  }
+  
+  // Info section
+  int infoY = 530;
+  M5.Display.drawRect(20, infoY, 500, 370, TFT_BLACK);
+  
+  drawSystemText("說明", 30, infoY + 15, 32);
+  M5.Display.drawLine(20, infoY + 55, 520, infoY + 55, EPD_LIGHT_GRAY);
+  
+  drawSystemText("源樣明體 GenYoMinTW", 40, infoY + 75, 28);
+  drawSystemText("• 預設系統字體", 40, infoY + 115, 24);
+  drawSystemText("• 標籤內建於韌體中", 40, infoY + 150, 24);
+  drawSystemText("• 適合繁體中文閱讀", 40, infoY + 185, 24);
+  
+  drawSystemText("Silver", 40, infoY + 235, 28);
+  drawSystemText("• 像素風格點陣字體", 40, infoY + 275, 24);
+  drawSystemText("• 標籤從 SD 卡載入", 40, infoY + 310, 24);
+  drawSystemText("• 切換後需重新啟動", 40, infoY + 345, 24);
+  
+  M5.Display.endWrite();
+  M5.Display.display();
+  Serial.println("System font setup displayed");
 }

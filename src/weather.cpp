@@ -7,8 +7,7 @@
 
 // Get width of a bitmap for text at given size, 0 if not found
 static int wGetBitmapWidth(const char* text, int size) {
-  const LabelBitmap* lb = findLabelBitmap(text, size);
-  return lb ? lb->w : 0;
+  return getSystemTextWidth(text, size);
 }
 
 // Draw a string char-by-char using bitmaps at the given size, returns total width

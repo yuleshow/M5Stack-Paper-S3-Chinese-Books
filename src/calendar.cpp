@@ -1094,8 +1094,7 @@ static bool hasAnyEvent(int sYear, int sMonth, int sDay, int lMonth, int lDay, i
 
 // Get width of a bitmap for text at given size, 0 if not found
 static int getBitmapWidth(const char* text, int size) {
-  const LabelBitmap* lb = findLabelBitmap(text, size);
-  return lb ? lb->w : 0;
+  return getSystemTextWidth(text, size);
 }
 
 // Draw integer number digit-by-digit using pre-rendered bitmaps, returns total width
@@ -1762,7 +1761,7 @@ void drawCalendar() {
   
   // ===== 宜 (Auspicious) =====
   M5.Display.fillRect(18, secY, 60, 55, TFT_BLACK);
-  drawSystemText("宜", 28, secY + 10, 34, TFT_WHITE, TFT_BLACK);
+  drawSystemTextCentered("宜", 48, secY + 10, 34, TFT_WHITE, TFT_BLACK);
   
   const char* yiText = getYiActivities(dayGanIdx, dayZhiIdx);
   drawSystemText(yiText, 90, secY + 8, 32);
@@ -1771,7 +1770,7 @@ void drawCalendar() {
   
   // ===== 忌 (Inauspicious) =====
   M5.Display.fillRect(18, secY, 60, 55, TFT_BLACK);
-  drawSystemText("忌", 28, secY + 10, 34, TFT_WHITE, TFT_BLACK);
+  drawSystemTextCentered("忌", 48, secY + 10, 34, TFT_WHITE, TFT_BLACK);
   
   const char* jiText = getJiActivities(dayGanIdx, dayZhiIdx);
   drawSystemText(jiText, 90, secY + 8, 32);

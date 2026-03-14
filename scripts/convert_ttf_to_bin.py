@@ -27,6 +27,9 @@ def get_common_chinese_chars():
         # Additional punctuation and symbols commonly used in Chinese
         (0x3000, 0x303F),  # CJK Symbols and Punctuation
         (0xFF00, 0xFFEF),  # Halfwidth and Fullwidth Forms
+        # Vertical presentation forms (used for vertical CJK text)
+        (0xFE10, 0xFE1F),  # Vertical Forms
+        (0xFE30, 0xFE4F),  # CJK Compatibility Forms (vertical brackets etc.)
     ]
     
     for start, end in common_ranges:
@@ -35,7 +38,7 @@ def get_common_chinese_chars():
     return sorted(list(chars), key=lambda x: ord(x))
 
 def render_glyph(font, char, font_size):
-    """Render a single character to bitmap"""
+    """Render a single character to bitmap, returning bearing offsets"""
     # Create a larger canvas to avoid clipping
     canvas_size = font_size * 3
     img = Image.new('1', (canvas_size, canvas_size), 1)  # 1-bit, white background
@@ -48,7 +51,7 @@ def render_glyph(font, char, font_size):
         text_height = bbox[3] - bbox[1]
         
         if text_width <= 0 or text_height <= 0:
-            return None, 0, 0
+            return None, 0, 0, 0, 0
         
         # Draw text
         draw.text((0, 0), char, font=font, fill=0)  # Black text
@@ -56,10 +59,14 @@ def render_glyph(font, char, font_size):
         # Crop to actual content
         img_crop = img.crop(bbox)
         
-        return img_crop, text_width, text_height
+        # Return bearing offsets (position of tight crop within the em-square)
+        bearing_x = bbox[0]  # X offset from origin to glyph left edge
+        bearing_y = bbox[1]  # Y offset from origin to glyph top edge
+        
+        return img_crop, text_width, text_height, bearing_x, bearing_y
     except Exception as e:
         print(f"Error rendering '{char}' (U+{ord(char):04X}): {e}")
-        return None, 0, 0
+        return None, 0, 0, 0, 0
 
 def bitmap_to_bytes(img):
     """Convert PIL 1-bit image to packed bytes"""
@@ -112,7 +119,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
         if i % 100 == 0:
             print(f"  Progress: {i}/{len(chars)} ({100*i//len(chars)}%)")
         
-        img, width, height = render_glyph(font, char, font_size)
+        img, width, height, bearing_x, bearing_y = render_glyph(font, char, font_size)
         
         if img is None:
             # Skip characters that can't be rendered
@@ -130,6 +137,8 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
             'width': width,
             'height': height,
             'size': bitmap_size,
+            'bearing_x': bearing_x,
+            'bearing_y': bearing_y,
             'bitmap': bitmap_bytes  # Store temporarily
         })
     
@@ -152,7 +161,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
     with open(output_path, 'wb') as f:
         # Header (137 bytes)
         char_count = len(index_entries)
-        version = 1
+        version = 2
         family_name = b"MingLiU".ljust(64, b'\x00')
         style_name = b"Regular".ljust(64, b'\x00')
         
@@ -171,8 +180,9 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
             f.write(struct.pack('<H', entry['height']))       # 2 bytes
             f.write(struct.pack('<I', entry['offset']))       # 4 bytes
             f.write(struct.pack('<I', entry['size']))         # 4 bytes
-            # Padding to 20 bytes
-            f.write(struct.pack('<I', 0))                     # 4 bytes padding
+            # Bearing offsets (v2: replaces padding)
+            f.write(struct.pack('<h', entry['bearing_x']))    # 2 bytes (int16)
+            f.write(struct.pack('<h', entry['bearing_y']))    # 2 bytes (int16)
         
         # Bitmap data
         f.write(bitmap_data)

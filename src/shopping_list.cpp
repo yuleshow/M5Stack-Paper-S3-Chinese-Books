@@ -477,7 +477,8 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
       applyVerticalPunct(ch, unicode);
       
       if (ofrFontLoaded) {
-        ofr.setFontSize(charSpacing);
+        int renderSize = (systemFontChoice == 1) ? silverScaledSize(charSpacing) : charSpacing;
+        ofr.setFontSize(renderSize);
         ofr.setFontColor(TFT_BLACK, TFT_WHITE);
         ofr.cdrawString(ch.c_str(), x, y, TFT_BLACK, TFT_WHITE);
       } else if (g_binFont.loaded) {
@@ -504,6 +505,8 @@ void calculateShoppingPages() {
   
   // Layout parameters (must match drawShoppingList)
   int fontSizePt = ofrFontLoaded ? 42 : (g_binFont.loaded ? g_binFont.fontSize : 36);
+  int renderFontSize = (ofrFontLoaded && systemFontChoice == 1) ? silverScaledSize(fontSizePt) : fontSizePt;
+  int cjkSpacing = 56;
   int columnSpacing = fontSizePt + 18;
   int groupSpacing = fontSizePt + 38;
   int startY = VERTICAL_TEXT_START_Y;
@@ -548,7 +551,7 @@ void calculateShoppingPages() {
             }
           } else {
             j += utf8CharLen(c);
-            groupTextHeight += 56;
+            groupTextHeight += cjkSpacing;
           }
         }
         
@@ -562,7 +565,7 @@ void calculateShoppingPages() {
       String item = shoppingList[i].itemName;
       if (item.length() > 0) {
         int itemHeight = 28 + 10;  // checkbox + gap
-        // Estimate height: measure ASCII runs (split by words), CJK=56px each
+        // Estimate height: measure ASCII runs (split by words), CJK=cjkSpacing each
         M5.Display.setFont(&fonts::Font2);
         M5.Display.setTextSize(2.0);
         for (int j = 0; j < item.length(); ) {
@@ -577,7 +580,7 @@ void calculateShoppingPages() {
             }
           } else {
             j += utf8CharLen(c);
-            itemHeight += 56;
+            itemHeight += cjkSpacing;
           }
         }
         itemHeight += 10;
@@ -611,14 +614,14 @@ void calculateShoppingPages() {
             }
             y += runHeight;
           } else {
-            int charSpacing = 56;
-            if (y + charSpacing > maxY - 60) {
+            int charSp = cjkSpacing;
+            if (y + charSp > maxY - 60) {
               columnX -= columnSpacing;
               if (columnX < (leftMargin + 40)) break;
               y = startY;
             }
             j += utf8CharLen(c);
-            y += charSpacing;
+            y += charSp;
           }
         }
         if (columnX < (leftMargin + 40)) break;
@@ -682,6 +685,8 @@ void drawShoppingList() {
   
   // Vertical text layout parameters
   int fontSizePt = ofrFontLoaded ? 42 : (g_binFont.loaded ? g_binFont.fontSize : 36);
+  int renderFontSize = (ofrFontLoaded && systemFontChoice == 1) ? silverScaledSize(fontSizePt) : fontSizePt;
+  int cjkSpacing = 56;
   int charHeight = fontSizePt + 10;  // Spacing between characters vertically
   int columnSpacing = fontSizePt + 18;  // Tighter spacing between item columns
   int groupSpacing = fontSizePt + 38;  // Spacing after group name
@@ -755,7 +760,7 @@ void drawShoppingList() {
           }
         } else {
           j += utf8CharLen(c);
-          groupTextHeight += 56;
+          groupTextHeight += cjkSpacing;
         }
       }
       
@@ -836,7 +841,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
           String ch = currentGroup.substring(charStart, j);
           applyVerticalPunct(ch, unicode);
           if (ofrFontLoaded) {
-            ofr.setFontSize(fontSizePt);
+            ofr.setFontSize(renderFontSize);
             ofr.setFontColor(TFT_WHITE, 0x5AEB);
             ofr.cdrawString(ch.c_str(), columnX, y, TFT_WHITE, 0x5AEB);
           } else if (g_binFont.loaded) {
@@ -845,7 +850,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             M5.Display.setCursor(columnX - 14, y);
             M5.Display.print(ch);
           }
-          y += 56;  // Chinese spacing
+          y += cjkSpacing;  // Chinese spacing
         }
       }
       
@@ -877,7 +882,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
           }
         } else {
           j += utf8CharLen(c);
-          itemHeight += 56;
+          itemHeight += cjkSpacing;
         }
       }
       itemHeight += 10;  // Bottom spacing
@@ -993,10 +998,10 @@ bgWidth, groupTextHeight + bgPadding * 2,
             wordIdx++;
           }
         } else {
-          int charSpacing = 56;
+          int charSp = cjkSpacing;
           
           // Check if next character will exceed bottom margin
-          if (y + charSpacing > maxY - 60) {
+          if (y + charSp > maxY - 60) {
             if (y > itemBottomY) itemBottomY = y;
             columnX -= columnSpacing;
             if (columnX < (leftMargin + 40)) break;
@@ -1008,7 +1013,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
           String ch = item.substring(charStart, j);
           applyVerticalPunct(ch, unicode);
           if (ofrFontLoaded) {
-            ofr.setFontSize(fontSizePt);
+            ofr.setFontSize(renderFontSize);
             ofr.setFontColor(TFT_BLACK, TFT_WHITE);
             ofr.cdrawString(ch.c_str(), columnX, y, TFT_BLACK, TFT_WHITE);
           } else if (g_binFont.loaded) {
@@ -1017,7 +1022,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             M5.Display.setCursor(columnX - 14, y);
             M5.Display.print(ch);
           }
-          y += 56;  // Chinese spacing
+          y += cjkSpacing;  // Chinese spacing
         }
       }
       

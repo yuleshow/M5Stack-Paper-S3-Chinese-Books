@@ -13,7 +13,7 @@ OUT_DIR = os.path.join("src", "icons")
 ICONS = [
     "icon1.png", "icon2.png", "icon3.png", "icon4.png",
     "icon5.png", "icon6.png", "icon7.png", "icon8.png",
-    "back.png", "next.png", "return.png",
+    "back.png", "next.png", "return.png", "reader_toolbar.png",
 ]
 
 

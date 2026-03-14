@@ -69,6 +69,12 @@ static const int READING_AREA_BOTTOM = 850;
 static const int READING_AREA_LEFT   = 50;
 static const int READING_AREA_RIGHT  = 520;
 
+// Silver font: tighter margins for pixel font
+static const int SILVER_AREA_TOP     = 40;
+static const int SILVER_AREA_LEFT    = 20;
+static const int SILVER_AREA_RIGHT   = 530;
+static const int SILVER_MAX_Y        = 910;
+
 // Vertical text layout (shopping list / todo list)
 static const int VERTICAL_TEXT_START_Y    = 60;
 static const int VERTICAL_TEXT_MAX_Y      = 900;
@@ -94,7 +100,7 @@ static const int UTF8_READ_PADDING = 100;
 
 // WiFi limits
 static const int MAX_WIFI_NETWORKS        = 20;
-static const int MAX_WIFI_CONNECT_ATTEMPTS = 20;
+static const int MAX_WIFI_CONNECT_ATTEMPTS = 10;
 
 // Navigation bar layout
 extern const int NAV_ICON_SIZE;
@@ -138,7 +144,9 @@ enum Mode {
   MODE_FORTUNE_SHAKE,
   MODE_FORTUNE_SLIP_VIEW,
   MODE_FORTUNE_SLIP_WORDING,
-  MODE_FORTUNE_SLIP_STORY
+  MODE_FORTUNE_SLIP_STORY,
+  MODE_PAGE_JUMP,
+  MODE_TOC
 };
 
 // ==================== Struct Definitions ====================
@@ -269,6 +277,8 @@ struct GlyphIndex {
   uint16_t height;
   uint32_t bitmapOffset;
   uint32_t bitmapSize;
+  int16_t bearingX;  // X offset within em-square (v2 format; 0 for v1)
+  int16_t bearingY;  // Y offset within em-square (v2 format; 0 for v1)
 };
 
 struct BinFont {
@@ -309,7 +319,6 @@ struct LunarDate {
 extern USBMSC msc;
 extern sdmmc_card_t* sdCard;
 extern Preferences prefs;
-extern String currentFont;
 extern String currentBook;
 extern unsigned long lastActivityTime;
 extern const unsigned long IDLE_SLEEP_TIMEOUT;
@@ -374,7 +383,8 @@ extern String bookList[MAX_BOOKS];
 extern String bookDisplayName[MAX_BOOKS];
 extern int bookCount;
 extern int bookListPage;
-static const int BOOKS_PER_PAGE = 15;
+static const int BOOKS_PER_PAGE = 13;
+static const int BOOK_ROW_HEIGHT = 55;
 extern String currentBookPath;
 extern String currentPageContent;
 extern int currentPage;
@@ -388,6 +398,7 @@ extern int pageOffsetsCount;
 extern size_t currentPageByteOffset;
 extern Bookmark bookmarks[5];
 extern int bookmarkCount;
+extern String pageJumpInput;
 
 // EPUB
 extern bool currentBookIsEpub;
@@ -416,6 +427,17 @@ extern String epubBasePath;          // OPF base path for resolving references
 extern size_t epubEstimatedTotalBytes; // Estimated total text across all chapters
 extern bool epubIsImageBased;         // True for manga/image-only EPUBs (1 chapter = 1 page)
 extern bool epubHasMultiImageChapters;  // Warning flag: some chapters have multiple images
+
+// EPUB Table of Contents
+static const int MAX_TOC_ENTRIES = 200;
+static const int TOC_PER_PAGE = 13;
+struct TocEntry {
+  String label;           // Chapter title
+  int chapterIndex;       // Index into epubChapters[]
+};
+extern TocEntry* epubTocEntries;
+extern int epubTocCount;
+extern int tocListPage;
 
 // Todo
 static const int MAX_TODO = 50;
@@ -507,6 +529,20 @@ extern BinFont g_binFont;
 extern OpenFontRender ofr;
 extern bool ofrFontLoaded;
 extern std::list<File> ofr_file_list;
+extern String lastLoadError;
+extern int systemFontChoice;  // 0 = GenYoMinTW (default), 1 = Silver
+
+// SD-card label bitmaps (loaded at runtime for non-default system fonts)
+extern uint8_t* sdLabelData;       // Raw binary data from /labels.bin
+extern int sdLabelCount;           // Number of entries
+struct SDLabelEntry {
+  const char* text;    // Points into sdLabelData
+  uint16_t fontSize;
+  uint16_t w;
+  uint16_t h;
+  const uint8_t* bitmap;  // Points into sdLabelData
+};
+extern SDLabelEntry* sdLabelEntries;
 
 // ==================== Function Declarations ====================
 
@@ -514,11 +550,15 @@ extern std::list<File> ofr_file_list;
 void scanFontFiles();
 bool loadBinaryFont(const char* fontPath);
 GlyphIndex* findGlyph(uint32_t unicode);
-bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color = TFT_BLACK);
+bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color = TFT_BLACK, float scale = 1.0f);
+void clearGlyphCache();
 int drawBinFontString(const String &text, int x, int y, int charSpacing);
+bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontSize);
 bool loadTTFFont(const char* fontPath, int size = 30);
 bool loadSystemFont();
 bool loadReadingFont();
+bool loadSDLabels();
+void freeSDLabels();
 
 // wifi_config
 void loadWiFiConfig();
@@ -560,6 +600,8 @@ bool epubLoad(const String& epubPath);
 bool epubLoadChapterRange(int startChapter);
 bool epubLoadSingleChapter(int chapterIndex);
 int epubChapterForOffset(size_t offset);
+bool epubParseToc();
+void epubFreeToc();
 void epubCleanup();
 bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH,
                              int quadrant = -1, float zoomCenterX = 0.5f, float zoomCenterY = 0.5f);
@@ -583,6 +625,9 @@ bool loadCurrentPage();
 bool loadBook(int bookIndex);
 void drawBookList();
 void drawReading();
+void drawPageJumpPopup();
+bool handlePageJumpTouch(int x, int y);
+void drawTocList();
 
 // ui_drawing
 bool drawNavIcon(const char* iconName, int x, int y);
@@ -597,6 +642,8 @@ void drawBatteryIndicator();
 void drawCurrentTime();
 void drawStatusBar();
 int drawSystemText(const char* text, int x, int y, int size = 28, uint16_t color = TFT_BLACK, uint16_t bg = TFT_WHITE);
+int getSystemTextWidth(const char* text, int size = 28);
+int silverScaledSize(int size);
 void drawSystemTextCentered(const char* text, int centerX, int y, int size = 28, uint16_t color = TFT_BLACK, uint16_t bg = TFT_WHITE);
 int drawVerticalMixedText(String text, int x, int startY, int charSpacing = 30);
 
@@ -679,7 +726,8 @@ void drawIconSetup();
 void drawCalendarSetup();
 void drawBluetoothSetup();
 void drawFontMenu();
+void drawSystemFontSetup();
 
 // cleanup
-void deleteDotFiles(const String& path = "/");
+void deleteDotFiles(const String& path, int depth = 0);
 void cleanupMacOSFiles();

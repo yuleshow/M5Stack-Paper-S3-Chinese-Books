@@ -1,12 +1,18 @@
 #include "globals.h"
 
-// Delete macOS dot files from SD card (recursive)
-void deleteDotFiles(const String& path) {
+// Delete macOS dot files from SD card (recursive with depth limit)
+void deleteDotFiles(const String& path, int depth) {
+  if (depth > 5) {
+    Serial.printf("Max depth reached at: %s\n", path.c_str());
+    return;
+  }
+  
   File dir = SD.open(path.c_str());
   if (!dir || !dir.isDirectory()) {
     return;
   }
   
+  int fileCount = 0;
   File file = dir.openNextFile();
   while (file) {
     String rawName = String(file.name());
@@ -32,7 +38,7 @@ void deleteDotFiles(const String& path) {
     
     if (isDir) {
       // Recursively clean subdirectory
-      deleteDotFiles(fullPath);
+      deleteDotFiles(fullPath, depth + 1);
       
       // Delete empty dot directories like .Trashes, .Spotlight-V100
       if (filename.startsWith(".")) {
@@ -66,6 +72,8 @@ void deleteDotFiles(const String& path) {
     
     // Get next file (don't reopen directory!)
     file = dir.openNextFile();
+    fileCount++;
+    if (fileCount % 5 == 0) yield();  // prevent WDT reset on large SD cards
   }
   
   dir.close();
@@ -81,7 +89,7 @@ void cleanupMacOSFiles() {
   Serial.println("   (dot files, AppleDouble, Thumbs.db, etc.)");
   
   unsigned long startTime = millis();
-  deleteDotFiles("/");
+  deleteDotFiles("/", 0);
   unsigned long elapsed = millis() - startTime;
   
   Serial.printf("✅ Cleanup complete in %lu ms\n", elapsed);

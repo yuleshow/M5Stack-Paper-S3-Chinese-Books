@@ -220,6 +220,8 @@ void calculateTodoPages() {
 
   // Layout parameters (must match drawTodoList)
   int fontSizePt = ofrFontLoaded ? 36 : (g_binFont.loaded ? g_binFont.fontSize : 30);
+  int renderFontSize = (ofrFontLoaded && systemFontChoice == 1) ? silverScaledSize(fontSizePt) : fontSizePt;
+  int cjkSpacing = 48;
   int columnSpacing = fontSizePt + 15;
   int startY = VERTICAL_TEXT_START_Y;
   int maxY = VERTICAL_TEXT_MAX_Y;
@@ -248,7 +250,7 @@ void calculateTodoPages() {
       for (int j = 0; j < todoList[i].task.length(); ) {
         unsigned char c = todoList[i].task.charAt(j);
         bool isASCII = (c < 0x80);
-        int charSpacing = isASCII ? 30 : 48;
+        int charSpacing = isASCII ? 30 : cjkSpacing;
 
         if (isASCII) {
           // Look ahead to find whole word height
@@ -350,6 +352,8 @@ void drawTodoList() {
   
   // Vertical text layout parameters
   int fontSizePt = useOfr ? 36 : (g_binFont.loaded ? g_binFont.fontSize : 30);
+  int renderFontSize = (useOfr && systemFontChoice == 1) ? silverScaledSize(fontSizePt) : fontSizePt;
+  int cjkSpacing = 48;
   int charHeight = fontSizePt + 8;
   int columnSpacing = fontSizePt + 15;
   int startY = VERTICAL_TEXT_START_Y;
@@ -441,7 +445,8 @@ void drawTodoList() {
         sprite.fillSprite(TFT_WHITE);
         if (useOfr) {
           ofr.setDrawer(sprite);
-          ofr.setFontSize(28);
+          int spriteSize = (systemFontChoice == 1) ? silverScaledSize(28) : 28;
+          ofr.setFontSize(spriteSize);
           ofr.setFontColor(EPD_DARK_GRAY, TFT_WHITE);
           ofr.drawString(ch.c_str(), 10, 10, EPD_DARK_GRAY, TFT_WHITE);
           ofr.drawString(ch.c_str(), 11, 10, EPD_DARK_GRAY, TFT_WHITE);  // Faux bold
@@ -476,7 +481,7 @@ void drawTodoList() {
       unsigned char c = todoList[i].task.charAt(j);
       String ch = "";
       bool isASCII = (c < 0x80);
-      int charSpacing = 48;  // Default for Chinese
+      int charSpacing = cjkSpacing;  // Default for Chinese
       
       // For ASCII, check if we need to keep whole word together
       if (isASCII) {
@@ -533,7 +538,8 @@ void drawTodoList() {
           sprite.fillSprite(TFT_WHITE);
           if (ofrFontLoaded) {
             ofr.setDrawer(sprite);
-            ofr.setFontSize(28);
+            int spriteSize = (systemFontChoice == 1) ? silverScaledSize(28) : 28;
+            ofr.setFontSize(spriteSize);
             ofr.setFontColor(TFT_BLACK, TFT_WHITE);
             ofr.drawString(ch.c_str(), 10, 10, TFT_BLACK, TFT_WHITE);
             ofr.drawString(ch.c_str(), 11, 10, TFT_BLACK, TFT_WHITE);  // Faux bold
@@ -552,7 +558,7 @@ void drawTodoList() {
         }
       } else {
         if (ofrFontLoaded) {
-          ofr.setFontSize(fontSizePt);
+          ofr.setFontSize(renderFontSize);
           ofr.setFontColor(TFT_BLACK, TFT_WHITE);
           ofr.cdrawString(ch.c_str(), columnX, y - 5, TFT_BLACK, TFT_WHITE);
         } else if (g_binFont.loaded) {
@@ -561,7 +567,7 @@ void drawTodoList() {
           M5.Display.setCursor(columnX - 12, y - 5);
           M5.Display.print(ch);
         }
-        y += 48;
+        y += cjkSpacing;
       }
     }
     

@@ -6,7 +6,6 @@
 USBMSC msc;
 sdmmc_card_t* sdCard = nullptr;
 Preferences prefs;
-String currentFont = "efont";
 String currentBook = "";
 unsigned long lastActivityTime = 0;
 const unsigned long IDLE_SLEEP_TIMEOUT = 10 * 60 * 1000;  // 10 minutes
@@ -260,6 +259,7 @@ int pageOffsetsCount = 0;
 size_t currentPageByteOffset = 0;  // Actual byte offset used for current page
 Bookmark bookmarks[5];
 int bookmarkCount = 0;
+String pageJumpInput = "";
 
 // EPUB
 bool currentBookIsEpub = false;
@@ -281,6 +281,9 @@ String epubBasePath = "";
 size_t epubEstimatedTotalBytes = 0;
 bool epubIsImageBased = false;
 bool epubHasMultiImageChapters = false;
+TocEntry* epubTocEntries = nullptr;
+int epubTocCount = 0;
+int tocListPage = 0;
 int comicZoomQuadrant = -1;
 int comicZoomMode = 0;
 float comicZoomCX = 0.5f;
@@ -393,6 +396,12 @@ BinFont g_binFont = {0};
 OpenFontRender ofr;
 bool ofrFontLoaded = false;
 std::list<File> ofr_file_list;
+int systemFontChoice = 0;  // 0 = GenYoMinTW, 1 = Silver
+
+// SD-card label bitmaps
+uint8_t* sdLabelData = nullptr;
+int sdLabelCount = 0;
+SDLabelEntry* sdLabelEntries = nullptr;
 
 // Navigation bar constants
 const int NAV_ICON_SIZE = 64;

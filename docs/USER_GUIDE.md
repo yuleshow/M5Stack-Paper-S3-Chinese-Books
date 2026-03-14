@@ -518,7 +518,8 @@ Tap **設定** on the dashboard. Six settings are available:
 
 - Exposes the SD card as a USB drive to your computer
 - **Warning:** While active, the device cannot access the SD card
-- Disabling USB MSC **restarts the device**
+- WiFi and web server are automatically disabled when USB MSC is started
+- Disabling USB MSC **restarts the device** (WiFi reconnects on reboot)
 
 ### 5. 圖標來源 (Icon Source)
 
@@ -596,7 +597,7 @@ An alternative to the web file manager for transferring files.
 4. Copy files directly via your file manager
 5. **Disable USB MSC when done** — this will restart the device
 
-> **Note:** While USB MSC is active, the device itself cannot access the SD card. All other features are unavailable until disabled.
+> **Note:** While USB MSC is active, the device itself cannot access the SD card. WiFi and the web server are automatically shut down to save power. All other features are unavailable until USB MSC is disabled (which restarts the device).
 
 ---
 
@@ -662,7 +663,7 @@ An alternative to the web file manager for transferring files.
 - Always safely eject before removing the SD card
 - Disable USB MSC mode before physically removing the card
 - Use high-quality microSD cards (Class 10 or UHS-I recommended)
-- Do not access the SD card from the web server and USB MSC simultaneously
+- WiFi and web server are automatically disabled during USB MSC mode
 
 ### Web file manager not accessible
 

@@ -42,6 +42,9 @@
 #include "label_calendar_calc.h"
 #include "label_bluetooth.h"
 #include "label_auto_sleep.h"
+#include "label_comic_zoom_mode.h"
+#include "label_comic_zoom_free.h"
+#include "label_comic_zoom_quad.h"
 #include "label_not_set.h"
 #include "label_status.h"
 #include "label_current.h"
@@ -1252,6 +1255,86 @@
 #include "label_d38_7.h"
 #include "label_d38_8.h"
 #include "label_d38_9.h"
+#include "label_s20_ble_uart.h"
+#include "label_s20_scan_connect.h"
+#include "label_s20_enable_via.h"
+#include "label_s20_shuo.h"
+#include "label_s20_wang.h"
+#include "label_s20_ble_transfer.h"
+#include "label_s20_data_to_device.h"
+#include "label_s22_silver_pixel.h"
+#include "label_s22_scanning.h"
+#include "label_s22_no_device.h"
+#include "label_s22_every10_refresh.h"
+#include "label_s22_every_refresh.h"
+#include "label_s22_genyomin.h"
+#include "label_s22_sys_default.h"
+#include "label_s22_device_name.h"
+#include "label_s22_desc_colon.h"
+#include "label_s22_convert_upload.h"
+#include "label_s22_fortune_sd.h"
+#include "label_s24_pixel_font.h"
+#include "label_s24_restart_needed.h"
+#include "label_s24_labels_builtin.h"
+#include "label_s24_labels_sd.h"
+#include "label_s24_tc_reading.h"
+#include "label_s24_default_font.h"
+#include "label_s24_img_load_fail.h"
+#include "label_s24_no_img_content.h"
+#include "label_s24_clear_date.h"
+#include "label_s24_loading.h"
+#include "label_s24_slideshow.h"
+#include "label_s24_slideshowing.h"
+#include "label_s24_return.h"
+#include "label_s24_random.h"
+#include "label_s24_tap_continue.h"
+#include "label_s26_jie_yue.h"
+#include "label_s26_shi_yi.h"
+#include "label_s28_silver.h"
+#include "label_s28_underscore.h"
+#include "label_s28_today.h"
+#include "label_s28_cancel.h"
+#include "label_s28_scan.h"
+#include "label_s28_scan_device.h"
+#include "label_s28_clock.h"
+#include "label_s28_genyomin.h"
+#include "label_s28_cant_read_story.h"
+#include "label_s28_cant_read_slip.h"
+#include "label_s28_cant_open_slip.h"
+#include "label_s28_confirm.h"
+#include "label_s28_sample1.h"
+#include "label_s28_sample2.h"
+#include "label_s28_sample3.h"
+#include "label_s28_slip_data_err.h"
+#include "label_s28_slip_fmt_err.h"
+#include "label_s28_slip_empty.h"
+#include "label_s28_touch_select.h"
+#include "label_s28_out_of_mem.h"
+#include "label_s28_slip_read_fail.h"
+#include "label_s28_connect.h"
+#include "label_s28_nearby_ble.h"
+#include "label_s32_silver.h"
+#include "label_s32_show_first_img.h"
+#include "label_s32_connected.h"
+#include "label_s32_motto.h"
+#include "label_s32_multi_img.h"
+#include "label_s32_genyomin.h"
+#include "label_s32_status.h"
+#include "label_s32_current.h"
+#include "label_s32_sys_font.h"
+#include "label_s32_page_refresh.h"
+#include "label_s32_jump_page.h"
+#include "label_s32_wake.h"
+#include "label_s36_switch_silver.h"
+#include "label_s36_switch_genyomin.h"
+#include "label_s36_safe_mode.h"
+#include "label_s36_fortune.h"
+#include "label_s36_select_ym.h"
+#include "label_s40_sys_font.h"
+#include "label_s40_bluetooth.h"
+#include "label_s22_no_sd.h"
+#include "label_s32_no_sd.h"
+#include "label_s24_insert_sd.h"
 
 // Label bitmap entry for lookup
 struct LabelBitmap {
@@ -1262,7 +1345,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1246;
+const int kLabelBitmapCount = 1329;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -1301,6 +1384,9 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"曆法計算", 32, label_calendar_calc_w, label_calendar_calc_h, label_calendar_calc_bitmap},
   {"藍牙", 32, label_bluetooth_w, label_bluetooth_h, label_bluetooth_bitmap},
   {"自動休眠", 32, label_auto_sleep_w, label_auto_sleep_h, label_auto_sleep_bitmap},
+  {"漫畫縮放模式", 32, label_comic_zoom_mode_w, label_comic_zoom_mode_h, label_comic_zoom_mode_bitmap},
+  {"自由定位 - 點擊處為中心", 22, label_comic_zoom_free_w, label_comic_zoom_free_h, label_comic_zoom_free_bitmap},
+  {"四分區 - 點擊顯示該象限", 22, label_comic_zoom_quad_w, label_comic_zoom_quad_h, label_comic_zoom_quad_bitmap},
   {"未設定", 22, label_not_set_w, label_not_set_h, label_not_set_bitmap},
   {"狀態: ", 32, label_status_w, label_status_h, label_status_bitmap},
   {"目前: ", 32, label_current_w, label_current_h, label_current_bitmap},
@@ -2511,6 +2597,86 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"7", 38, label_d38_7_w, label_d38_7_h, label_d38_7_bitmap},
   {"8", 38, label_d38_8_w, label_d38_8_h, label_d38_8_bitmap},
   {"9", 38, label_d38_9_w, label_d38_9_h, label_d38_9_bitmap},
+  {"• BLE UART 模式", 20, label_s20_ble_uart_w, label_s20_ble_uart_h, label_s20_ble_uart_bitmap},
+  {"• 可掃描並連接裝置", 20, label_s20_scan_connect_w, label_s20_scan_connect_h, label_s20_scan_connect_bitmap},
+  {"啟用後可通過", 20, label_s20_enable_via_w, label_s20_enable_via_h, label_s20_enable_via_bitmap},
+  {"朔", 20, label_s20_shuo_w, label_s20_shuo_h, label_s20_shuo_bitmap},
+  {"望", 20, label_s20_wang_w, label_s20_wang_h, label_s20_wang_bitmap},
+  {"藍牙低功耗傳輸", 20, label_s20_ble_transfer_w, label_s20_ble_transfer_h, label_s20_ble_transfer_bitmap},
+  {"資料到裝置", 20, label_s20_data_to_device_w, label_s20_data_to_device_h, label_s20_data_to_device_bitmap},
+  {"Silver（像素風格字體）", 22, label_s22_silver_pixel_w, label_s22_silver_pixel_h, label_s22_silver_pixel_bitmap},
+  {"掃描中...", 22, label_s22_scanning_w, label_s22_scanning_h, label_s22_scanning_bitmap},
+  {"未發現裝置", 22, label_s22_no_device_w, label_s22_no_device_h, label_s22_no_device_bitmap},
+  {"每10頁全刷新", 22, label_s22_every10_refresh_w, label_s22_every10_refresh_h, label_s22_every10_refresh_bitmap},
+  {"每頁全刷新", 22, label_s22_every_refresh_w, label_s22_every_refresh_h, label_s22_every_refresh_bitmap},
+  {"源樣明體 GenYoMinTW", 22, label_s22_genyomin_w, label_s22_genyomin_h, label_s22_genyomin_bitmap},
+  {"系統預設", 22, label_s22_sys_default_w, label_s22_sys_default_h, label_s22_sys_default_bitmap},
+  {"裝置名稱：M5Paper-BLE", 22, label_s22_device_name_w, label_s22_device_name_h, label_s22_device_name_bitmap},
+  {"說明：", 22, label_s22_desc_colon_w, label_s22_desc_colon_h, label_s22_desc_colon_bitmap},
+  {"請先轉換並上傳 .bin 檔案", 22, label_s22_convert_upload_w, label_s22_convert_upload_h, label_s22_convert_upload_bitmap},
+  {"請將 fortune_slips.bin 放至 SD 卡", 22, label_s22_fortune_sd_w, label_s22_fortune_sd_h, label_s22_fortune_sd_bitmap},
+  {"• 像素風格點陣字體", 24, label_s24_pixel_font_w, label_s24_pixel_font_h, label_s24_pixel_font_bitmap},
+  {"• 切換後需重新啟動", 24, label_s24_restart_needed_w, label_s24_restart_needed_h, label_s24_restart_needed_bitmap},
+  {"• 標籤內建於韌體中", 24, label_s24_labels_builtin_w, label_s24_labels_builtin_h, label_s24_labels_builtin_bitmap},
+  {"• 標籤從 SD 卡載入", 24, label_s24_labels_sd_w, label_s24_labels_sd_h, label_s24_labels_sd_bitmap},
+  {"• 適合繁體中文閱讀", 24, label_s24_tc_reading_w, label_s24_tc_reading_h, label_s24_tc_reading_bitmap},
+  {"• 預設系統字體", 24, label_s24_default_font_w, label_s24_default_font_h, label_s24_default_font_bitmap},
+  {"圖片載入失敗", 24, label_s24_img_load_fail_w, label_s24_img_load_fail_h, label_s24_img_load_fail_bitmap},
+  {"此頁無圖片內容", 24, label_s24_no_img_content_w, label_s24_no_img_content_h, label_s24_no_img_content_bitmap},
+  {"清除日期", 24, label_s24_clear_date_w, label_s24_clear_date_h, label_s24_clear_date_bitmap},
+  {"載入中...", 24, label_s24_loading_w, label_s24_loading_h, label_s24_loading_bitmap},
+  {"輪播", 24, label_s24_slideshow_w, label_s24_slideshow_h, label_s24_slideshow_bitmap},
+  {"輪播中", 24, label_s24_slideshowing_w, label_s24_slideshowing_h, label_s24_slideshowing_bitmap},
+  {"返回", 24, label_s24_return_w, label_s24_return_h, label_s24_return_bitmap},
+  {"隨機", 24, label_s24_random_w, label_s24_random_h, label_s24_random_bitmap},
+  {"點擊螢幕繼續", 24, label_s24_tap_continue_w, label_s24_tap_continue_h, label_s24_tap_continue_bitmap},
+  {"【解曰】", 26, label_s26_jie_yue_w, label_s26_jie_yue_h, label_s26_jie_yue_bitmap},
+  {"【詩意】", 26, label_s26_shi_yi_w, label_s26_shi_yi_h, label_s26_shi_yi_bitmap},
+  {"Silver", 28, label_s28_silver_w, label_s28_silver_h, label_s28_silver_bitmap},
+  {"_", 28, label_s28_underscore_w, label_s28_underscore_h, label_s28_underscore_bitmap},
+  {"今天", 28, label_s28_today_w, label_s28_today_h, label_s28_today_bitmap},
+  {"取消", 28, label_s28_cancel_w, label_s28_cancel_h, label_s28_cancel_bitmap},
+  {"掃描", 28, label_s28_scan_w, label_s28_scan_h, label_s28_scan_bitmap},
+  {"掃描裝置", 28, label_s28_scan_device_w, label_s28_scan_device_h, label_s28_scan_device_bitmap},
+  {"時鐘", 28, label_s28_clock_w, label_s28_clock_h, label_s28_clock_bitmap},
+  {"源樣明體 GenYoMinTW", 28, label_s28_genyomin_w, label_s28_genyomin_h, label_s28_genyomin_bitmap},
+  {"無法讀取故事", 28, label_s28_cant_read_story_w, label_s28_cant_read_story_h, label_s28_cant_read_story_bitmap},
+  {"無法讀取籖文", 28, label_s28_cant_read_slip_w, label_s28_cant_read_slip_h, label_s28_cant_read_slip_bitmap},
+  {"無法開啟籖檔", 28, label_s28_cant_open_slip_w, label_s28_cant_open_slip_h, label_s28_cant_open_slip_bitmap},
+  {"確定", 28, label_s28_confirm_w, label_s28_confirm_h, label_s28_confirm_bitmap},
+  {"示例書籍1.txt", 28, label_s28_sample1_w, label_s28_sample1_h, label_s28_sample1_bitmap},
+  {"示例書籍2.txt", 28, label_s28_sample2_w, label_s28_sample2_h, label_s28_sample2_bitmap},
+  {"示例書籍3.txt", 28, label_s28_sample3_w, label_s28_sample3_h, label_s28_sample3_bitmap},
+  {"籖圖資料異常", 28, label_s28_slip_data_err_w, label_s28_slip_data_err_h, label_s28_slip_data_err_bitmap},
+  {"籖檔格式錯誤", 28, label_s28_slip_fmt_err_w, label_s28_slip_fmt_err_h, label_s28_slip_fmt_err_bitmap},
+  {"籖檔為空", 28, label_s28_slip_empty_w, label_s28_slip_empty_h, label_s28_slip_empty_bitmap},
+  {"觸控選擇書籍", 28, label_s28_touch_select_w, label_s28_touch_select_h, label_s28_touch_select_bitmap},
+  {"記憶體不足", 28, label_s28_out_of_mem_w, label_s28_out_of_mem_h, label_s28_out_of_mem_bitmap},
+  {"讀取籖圖失敗", 28, label_s28_slip_read_fail_w, label_s28_slip_read_fail_h, label_s28_slip_read_fail_bitmap},
+  {"連接", 28, label_s28_connect_w, label_s28_connect_h, label_s28_connect_bitmap},
+  {"附近藍牙裝置：", 28, label_s28_nearby_ble_w, label_s28_nearby_ble_h, label_s28_nearby_ble_bitmap},
+  {"Silver", 32, label_s32_silver_w, label_s32_silver_h, label_s32_silver_bitmap},
+  {"僅顯示每頁第一張圖片", 32, label_s32_show_first_img_w, label_s32_show_first_img_h, label_s32_show_first_img_bitmap},
+  {"已連接", 32, label_s32_connected_w, label_s32_connected_h, label_s32_connected_bitmap},
+  {"格言", 32, label_s32_motto_w, label_s32_motto_h, label_s32_motto_bitmap},
+  {"此EPUB每頁含多張圖片", 32, label_s32_multi_img_w, label_s32_multi_img_h, label_s32_multi_img_bitmap},
+  {"源樣明體", 32, label_s32_genyomin_w, label_s32_genyomin_h, label_s32_genyomin_bitmap},
+  {"狀態：", 32, label_s32_status_w, label_s32_status_h, label_s32_status_bitmap},
+  {"目前：", 32, label_s32_current_w, label_s32_current_h, label_s32_current_bitmap},
+  {"系統字體", 32, label_s32_sys_font_w, label_s32_sys_font_h, label_s32_sys_font_bitmap},
+  {"翻頁刷新模式", 32, label_s32_page_refresh_w, label_s32_page_refresh_h, label_s32_page_refresh_bitmap},
+  {"跳到頁面", 32, label_s32_jump_page_w, label_s32_jump_page_h, label_s32_jump_page_bitmap},
+  {"醒世", 32, label_s32_wake_w, label_s32_wake_h, label_s32_wake_bitmap},
+  {"切換為 Silver", 36, label_s36_switch_silver_w, label_s36_switch_silver_h, label_s36_switch_silver_bitmap},
+  {"切換為 源樣明體", 36, label_s36_switch_genyomin_w, label_s36_switch_genyomin_h, label_s36_switch_genyomin_bitmap},
+  {"安全模式", 36, label_s36_safe_mode_w, label_s36_safe_mode_h, label_s36_safe_mode_bitmap},
+  {"求籖", 36, label_s36_fortune_w, label_s36_fortune_h, label_s36_fortune_bitmap},
+  {"選擇年月", 36, label_s36_select_ym_w, label_s36_select_ym_h, label_s36_select_ym_bitmap},
+  {"系統字體", 40, label_s40_sys_font_w, label_s40_sys_font_h, label_s40_sys_font_bitmap},
+  {"藍牙", 40, label_s40_bluetooth_w, label_s40_bluetooth_h, label_s40_bluetooth_bitmap},
+  {"未插入 SD 卡", 22, label_s22_no_sd_w, label_s22_no_sd_h, label_s22_no_sd_bitmap},
+  {"未插入 SD 卡", 32, label_s32_no_sd_w, label_s32_no_sd_h, label_s32_no_sd_bitmap},
+  {"請插入 SD 卡後重新啟動", 24, label_s24_insert_sd_w, label_s24_insert_sd_h, label_s24_insert_sd_bitmap},
 };
 
 // Find a pre-rendered label bitmap by text and font size.

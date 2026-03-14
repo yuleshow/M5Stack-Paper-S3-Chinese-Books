@@ -46,7 +46,8 @@ void drawCangjieInput() {
   if (cjComposedText.length() > 0) {
     // Draw composed text with OFR (horizontal for display)
     if (ofrFontLoaded) {
-      ofr.setFontSize(32);
+      int cjRenderSize = (systemFontChoice == 1) ? silverScaledSize(32) : 32;
+      ofr.setFontSize(cjRenderSize);
       ofr.setCursor(18, 56);
       ofr.setDrawer(M5.Display);
       // Draw up to what fits in the box
@@ -79,7 +80,7 @@ void drawCangjieInput() {
       if (keyIdx >= 0 && keyIdx < 26) {
         // Draw the Cangjie root character
         if (ofrFontLoaded) {
-          ofr.setFontSize(26);
+          ofr.setFontSize((systemFontChoice == 1) ? silverScaledSize(26) : 26);
           ofr.setCursor(drawX, 146);
           ofr.setDrawer(M5.Display);
           ofr.printf("%s", CJ_KEY_LABELS[keyIdx]);
@@ -114,7 +115,7 @@ void drawCangjieInput() {
       // Draw candidate character
       String ch = unicodeToUTF8(cjCandidates[i]);
       if (ofrFontLoaded) {
-        ofr.setFontSize(32);
+        ofr.setFontSize((systemFontChoice == 1) ? silverScaledSize(32) : 32);
         ofr.setDrawer(M5.Display);
         // Center in cell
         ofr.setCursor(cx + 16, 196);
@@ -197,7 +198,7 @@ void drawCangjieInput() {
       // Cangjie root label (top of key)
       if (keyIdx >= 0 && keyIdx < 26) {
         if (ofrFontLoaded) {
-          ofr.setFontSize(20);
+          ofr.setFontSize((systemFontChoice == 1) ? silverScaledSize(20) : 20);
           ofr.setDrawer(M5.Display);
           ofr.setCursor(kx + 8, rowY + 2);
           ofr.printf("%s", CJ_KEY_LABELS[keyIdx]);
@@ -272,7 +273,7 @@ void updateCangjieInputArea() {
   M5.Display.drawRect(10, 42, 520, 90, TFT_BLACK);
   if (cjComposedText.length() > 0) {
     if (ofrFontLoaded) {
-      ofr.setFontSize(32);
+      ofr.setFontSize((systemFontChoice == 1) ? silverScaledSize(32) : 32);
       ofr.setCursor(18, 56);
       ofr.setDrawer(M5.Display);
       ofr.printf("%s", cjComposedText.c_str());
@@ -290,7 +291,7 @@ void updateCangjieInputArea() {
       int keyIdx = cjInputCode[i] - 'a';
       if (keyIdx >= 0 && keyIdx < 26) {
         if (ofrFontLoaded) {
-          ofr.setFontSize(26);
+          ofr.setFontSize((systemFontChoice == 1) ? silverScaledSize(26) : 26);
           ofr.setCursor(drawX, 146);
           ofr.setDrawer(M5.Display);
           ofr.printf("%s", CJ_KEY_LABELS[keyIdx]);
@@ -322,7 +323,7 @@ void updateCangjieInputArea() {
       int cx = 10 + col * cellW;
       String ch = unicodeToUTF8(cjCandidates[i]);
       if (ofrFontLoaded) {
-        ofr.setFontSize(32);
+        ofr.setFontSize((systemFontChoice == 1) ? silverScaledSize(32) : 32);
         ofr.setDrawer(M5.Display);
         ofr.setCursor(cx + 16, 196);
         ofr.printf("%s", ch.c_str());

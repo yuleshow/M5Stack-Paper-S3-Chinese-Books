@@ -13,6 +13,7 @@
 #include "icons/back_png.h"
 #include "icons/next_png.h"
 #include "icons/return_png.h"
+#include "icons/reader_toolbar_png.h"
 
 // Lookup table for embedded icons by name
 struct EmbeddedIcon {
@@ -33,6 +34,7 @@ const EmbeddedIcon embeddedIcons[] = {
   { "back.png",   back_png,   back_png_len   },
   { "next.png",   next_png,   next_png_len   },
   { "return.png", return_png, return_png_len },
+  { "reader_toolbar.png", reader_toolbar_png, reader_toolbar_png_len },
 };
 
 const int embeddedIconCount = sizeof(embeddedIcons) / sizeof(embeddedIcons[0]);

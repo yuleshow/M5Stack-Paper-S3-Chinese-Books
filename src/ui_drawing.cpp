@@ -2,6 +2,23 @@
 #include "embedded_icons.h"
 #include "labels/label_bitmaps.h"
 
+// Silver font renders smaller than GenYoMinTW at the same pt size.
+// Per-size scale table: {nominal_size, render_size} computed from actual glyph measurements.
+static const struct { uint8_t nominal; uint8_t scaled; } silverScaleTable[] = {
+  {16, 23}, {18, 25}, {20, 27}, {22, 29}, {24, 32}, {26, 35},
+  {28, 39}, {32, 44}, {34, 47}, {36, 49}, {38, 53}, {40, 58}, {64, 90}
+};
+static const int silverScaleCount = sizeof(silverScaleTable) / sizeof(silverScaleTable[0]);
+
+// Look up scaled font size for Silver; falls back to ×1.38 for unlisted sizes.
+int silverScaledSize(int size) {
+  for (int i = 0; i < silverScaleCount; i++) {
+    if (silverScaleTable[i].nominal == size)
+      return silverScaleTable[i].scaled;
+  }
+  return (int)(size * 1.38f + 0.5f);
+}
+
 // ==================== Mid-Render Touch Detection ====================
 // Poll touch hardware during long rendering operations.
 // If a nav button (return, prev, next) is touched, store coordinates
@@ -155,7 +172,8 @@ void drawBatteryIndicator() {
   snprintf(batStr, sizeof(batStr), "%d%%", batLevel);
   int textRightEdge = bx - 42;
   if (ofrFontLoaded) {
-    ofr.setFontSize(18);
+    int renderSize = (systemFontChoice == 1) ? silverScaledSize(18) : 18;
+    ofr.setFontSize(renderSize);
     ofr.setFontColor(TFT_BLACK, TFT_WHITE);
     int tw = ofr.getTextWidth(batStr);
     ofr.drawString(batStr, textRightEdge - tw, by + 1, TFT_BLACK, TFT_WHITE);
@@ -186,7 +204,8 @@ void drawCurrentTime() {
   char timeStr[8];
   snprintf(timeStr, sizeof(timeStr), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
   if (ofrFontLoaded) {
-    ofr.setFontSize(20);
+    int renderSize = (systemFontChoice == 1) ? silverScaledSize(20) : 20;
+    ofr.setFontSize(renderSize);
     ofr.setFontColor(TFT_BLACK, TFT_WHITE);
     ofr.drawString(timeStr, 8, 6, TFT_BLACK, TFT_WHITE);
   } else {
@@ -270,23 +289,52 @@ static void drawLabelBitmap(const LabelBitmap* label, int x, int y, uint16_t col
   sprite.deleteSprite();
 }
 
+// Search SD-card labels (Unifont mode). Returns matching entry or nullptr.
+static const SDLabelEntry* findSDLabel(const char* text, uint16_t fontSize) {
+  if (sdLabelCount > 0 && sdLabelEntries) {
+    for (int i = 0; i < sdLabelCount; i++) {
+      if (sdLabelEntries[i].fontSize == fontSize &&
+          strcmp(sdLabelEntries[i].text, text) == 0) {
+        return &sdLabelEntries[i];
+      }
+    }
+  }
+  return nullptr;
+}
+
+// Draw an SD label bitmap (same layout as LabelBitmap; pgm_read_byte works on
+// regular RAM on ESP32).
+static void drawSDLabel(const SDLabelEntry* e, int x, int y, uint16_t color, uint16_t bg) {
+  // Reinterpret as LabelBitmap — identical struct layout
+  drawLabelBitmap(reinterpret_cast<const LabelBitmap*>(e), x, y, color, bg);
+}
+
 // Helper: draw Chinese/mixed text using system TTF font (OFR) if loaded, else built-in.
 // Returns the pixel width of the drawn text (for chaining multiple draws).
 int drawSystemText(const char* text, int x, int y, int size, uint16_t color, uint16_t bg) {
-  // Check for pre-rendered label bitmap first (fastest path)
-  const LabelBitmap* label = findLabelBitmap(text, size);
-  if (label) {
-    // Bottom-align short bitmaps (e.g. dot/period) with full-height glyphs
-    int yOff = (label->h < (uint16_t)size) ? (size - label->h) : 0;
-    drawLabelBitmap(label, x, y + yOff, color, bg);
-    return label->w;
+  // Check SD-card labels first (Unifont mode overrides PROGMEM labels)
+  const SDLabelEntry* sdLabel = findSDLabel(text, size);
+  if (sdLabel) {
+    int yOff = (sdLabel->h < (uint16_t)size) ? (size - sdLabel->h) : 0;
+    drawSDLabel(sdLabel, x, y + yOff, color, bg);
+    return sdLabel->w;
+  }
+  // Check for pre-rendered PROGMEM labels (only for default GenYoMinTW font)
+  if (systemFontChoice == 0) {
+    const LabelBitmap* label = findLabelBitmap(text, size);
+    if (label) {
+      int yOff = (label->h < (uint16_t)size) ? (size - label->h) : 0;
+      drawLabelBitmap(label, x, y + yOff, color, bg);
+      return label->w;
+    }
   }
   // Ensure system font is active (not reading font)
   if (ofrFontLoaded && systemFontFile.length() > 0 && currentFontFile != systemFontFile) {
     loadSystemFont();
   }
   if (ofrFontLoaded) {
-    ofr.setFontSize(size);
+    int renderSize = (systemFontChoice == 1) ? silverScaledSize(size) : size;
+    ofr.setFontSize(renderSize);
     ofr.setFontColor(color, bg);
     return (int)ofr.drawString(text, x, y, color, bg);
   } else {
@@ -298,21 +346,47 @@ int drawSystemText(const char* text, int x, int y, int size, uint16_t color, uin
   }
 }
 
+// Helper: measure text width using the same lookup chain as drawSystemText
+int getSystemTextWidth(const char* text, int size) {
+  const SDLabelEntry* sdLabel = findSDLabel(text, size);
+  if (sdLabel) return sdLabel->w;
+  if (systemFontChoice == 0) {
+    const LabelBitmap* label = findLabelBitmap(text, size);
+    if (label) return label->w;
+  }
+  if (ofrFontLoaded) {
+    int renderSize = (systemFontChoice == 1) ? silverScaledSize(size) : size;
+    ofr.setFontSize(renderSize);
+    return (int)ofr.getTextWidth(text);
+  }
+  return 0;
+}
+
 // Helper: draw centered text using system TTF font
 void drawSystemTextCentered(const char* text, int centerX, int y, int size, uint16_t color, uint16_t bg) {
-  // Check for pre-rendered label bitmap first (fastest path)
-  const LabelBitmap* label = findLabelBitmap(text, size);
-  if (label) {
-    int x = centerX - label->w / 2;
-    drawLabelBitmap(label, x, y, color, bg);
+  // Check SD-card labels first (Unifont mode overrides PROGMEM labels)
+  const SDLabelEntry* sdLabel = findSDLabel(text, size);
+  if (sdLabel) {
+    int x = centerX - sdLabel->w / 2;
+    drawSDLabel(sdLabel, x, y, color, bg);
     return;
+  }
+  // Check for pre-rendered PROGMEM labels (only for default GenYoMinTW font)
+  if (systemFontChoice == 0) {
+    const LabelBitmap* label = findLabelBitmap(text, size);
+    if (label) {
+      int x = centerX - label->w / 2;
+      drawLabelBitmap(label, x, y, color, bg);
+      return;
+    }
   }
   // Ensure system font is active (not reading font)
   if (ofrFontLoaded && systemFontFile.length() > 0 && currentFontFile != systemFontFile) {
     loadSystemFont();
   }
   if (ofrFontLoaded) {
-    ofr.setFontSize(size);
+    int renderSize = (systemFontChoice == 1) ? silverScaledSize(size) : size;
+    ofr.setFontSize(renderSize);
     ofr.setFontColor(color, bg);
     ofr.cdrawString(text, centerX, y, color, bg);
   } else {

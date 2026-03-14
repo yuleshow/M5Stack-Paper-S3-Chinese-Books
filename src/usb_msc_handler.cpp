@@ -240,13 +240,17 @@ void drawUSBMSCSetup() {
     M5.Display.print("Disabling will restart device");
   } else {
     drawSystemText("狀態: ", 20, 120, 32);
-    drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
-    
-    drawSystemText("將整張 SD 卡作為 USB 磁碟", 20, 180, 24);
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(1);
-    M5.Display.setCursor(20, 210);
-    M5.Display.print("Expose entire SD card as USB drive");
+    if (!sdCardAvailable) {
+      drawSystemText("未插入 SD 卡", 160, 120, 32, EPD_DARK_GRAY);
+      drawSystemText("請插入 SD 卡後重新啟動", 20, 180, 24, EPD_DARK_GRAY);
+    } else {
+      drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
+      drawSystemText("將整張 SD 卡作為 USB 磁碟", 20, 180, 24);
+      M5.Display.setFont(&fonts::Font2);
+      M5.Display.setTextSize(1);
+      M5.Display.setCursor(20, 210);
+      M5.Display.print("Expose entire SD card as USB drive");
+    }
   }
   
   // Toggle button (full width)
@@ -254,6 +258,9 @@ void drawUSBMSCSetup() {
   if (usbMSCActive) {
     M5.Display.fillRect(20, btnY, 500, 90, TFT_BLACK);
     drawSystemTextCentered("關閉 USB 磁碟", 270, btnY + 28, 36, TFT_WHITE, TFT_BLACK);
+  } else if (!sdCardAvailable) {
+    M5.Display.fillRect(20, btnY, 500, 90, TFT_LIGHTGRAY);
+    drawSystemTextCentered("啟用 USB 磁碟", 270, btnY + 28, 36, EPD_DARK_GRAY, TFT_LIGHTGRAY);
   } else {
     M5.Display.fillRect(20, btnY, 500, 90, EPD_DARK_GRAY);
     drawSystemTextCentered("啟用 USB 磁碟", 270, btnY + 28, 36, TFT_WHITE, EPD_DARK_GRAY);

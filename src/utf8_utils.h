@@ -164,6 +164,65 @@ inline void applyVerticalPunct(String &ch, uint32_t &unicode) {
   }
 }
 
+// Check if a codepoint is a punctuation mark that should NOT start a new column
+// (禁則處理 kinsoku: line-start / column-start prohibited characters)
+inline bool isColumnStartProhibited(uint32_t cp) {
+  switch (cp) {
+    // Closing brackets / quotes
+    case 0x300D: // 」
+    case 0x300F: // 』
+    case 0x300B: // 》
+    case 0x3009: // 〉
+    case 0x3011: // 】
+    case 0x3015: // 〕
+    case 0x3017: // 〗
+    case 0xFF09: // ）
+    case 0xFF5D: // ｝
+    case 0xFF3D: // ］
+    case 0x201D: // \xe2\x80\x9d
+    case 0x2019: // \xe2\x80\x99
+    // Periods / commas / stops
+    case 0x3002: // 。
+    case 0xFF0C: // ，
+    case 0x3001: // 、
+    case 0xFF1B: // ；
+    case 0xFF1A: // ：
+    case 0xFF01: // ！
+    case 0xFF1F: // ？
+    // Small punctuation
+    case 0x30FB: // ・
+    case 0x2026: // …
+    case 0x2025: // ‥
+    case 0x2014: // —
+    // Vertical forms (after applyVerticalPunct mapping)
+    case 0xFE42: // ﹂
+    case 0xFE44: // ﹄
+    case 0xFE3E: // ︾
+    case 0xFE40: // ﹀
+    case 0xFE3C: // ︼
+    case 0xFE3A: // ︺
+    case 0xFE18: // ︘
+    case 0xFE36: // ︶
+    case 0xFE38: // ︸
+    case 0xFE48: // ﹈
+    case 0xFE19: // ︙
+    case 0xFE30: // ︰
+    case 0xFE31: // ︱
+    // ASCII equivalents
+    case 0x002C: // ,
+    case 0x002E: // .
+    case 0x003F: // ?
+    case 0x0021: // !
+    case 0x003B: // ;
+    case 0x003A: // :
+    case 0x0029: // )
+    case 0x005D: // ]
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Extract one UTF-8 character as a substring from a String at position `pos`.
 // Advances `pos` past the character. Returns the substring.
 inline String utf8ExtractChar(const String &text, int &pos) {

@@ -160,6 +160,73 @@ static String extractTTFName(File &f) {
   return bestName;
 }
 
+// Check if a TTF/TTC/OTF font supports CJK Unified Ideographs
+// by reading the OS/2 table's ulUnicodeRange2 field (bit 59 = CJK Unified Ideographs)
+static bool ttfHasCJK(File &f) {
+  uint32_t startPos = 0;
+
+  uint8_t tag[4];
+  f.seek(0);
+  if (f.read(tag, 4) != 4) return false;
+
+  if (tag[0] == 't' && tag[1] == 't' && tag[2] == 'c' && tag[3] == 'f') {
+    f.seek(8);
+    uint8_t buf4[4];
+    if (f.read(buf4, 4) != 4) return false;
+    uint32_t numFonts = ((uint32_t)buf4[0] << 24) | (buf4[1] << 16) | (buf4[2] << 8) | buf4[3];
+    if (numFonts == 0) return false;
+    if (f.read(buf4, 4) != 4) return false;
+    startPos = ((uint32_t)buf4[0] << 24) | (buf4[1] << 16) | (buf4[2] << 8) | buf4[3];
+  }
+
+  f.seek(startPos + 4);
+  uint8_t hdr[8];
+  if (f.read(hdr, 8) != 8) return false;
+  uint16_t numTables = (hdr[0] << 8) | hdr[1];
+
+  uint32_t os2Offset = 0;
+  for (int i = 0; i < numTables && i < 100; i++) {
+    uint8_t rec[16];
+    f.seek(startPos + 12 + i * 16);
+    if (f.read(rec, 16) != 16) return false;
+    if (rec[0] == 'O' && rec[1] == 'S' && rec[2] == '/' && rec[3] == '2') {
+      os2Offset = ((uint32_t)rec[8] << 24) | (rec[9] << 16) | (rec[10] << 8) | rec[11];
+      break;
+    }
+  }
+  if (os2Offset == 0) return false;
+
+  // ulUnicodeRange2 is at offset 46 in the OS/2 table (big-endian)
+  f.seek(os2Offset + 46);
+  uint8_t range2[4];
+  if (f.read(range2, 4) != 4) return false;
+  uint32_t ulRange2 = ((uint32_t)range2[0] << 24) | (range2[1] << 16) | (range2[2] << 8) | range2[3];
+  // Bit 59 overall = bit 27 in ulUnicodeRange2 = CJK Unified Ideographs
+  return (ulRange2 & (1u << 27)) != 0;
+}
+
+// Check if a .bin font contains CJK characters by sampling the glyph index
+static bool binHasCJK(File &f) {
+  f.seek(0);
+  uint8_t header[5];
+  if (f.read(header, 5) != 5) return false;
+  uint32_t charCount = header[0] | (header[1] << 8) | (header[2] << 16) | (header[3] << 24);
+  if (charCount == 0) return false;
+
+  // Sample a few entries from the glyph index (starts at offset 137, 20 bytes each)
+  // Check ~8 evenly spaced entries for CJK codepoints (U+4E00-U+9FFF)
+  int samples = (charCount < 8) ? charCount : 8;
+  for (int s = 0; s < samples; s++) {
+    uint32_t idx = (uint32_t)s * charCount / samples;
+    f.seek(137 + idx * 20);
+    uint8_t entry[4];
+    if (f.read(entry, 4) != 4) continue;
+    uint32_t unicode = entry[0] | (entry[1] << 8) | (entry[2] << 16) | (entry[3] << 24);
+    if (unicode >= 0x4E00 && unicode <= 0x9FFF) return true;
+  }
+  return false;
+}
+
 // Extract family name from a .bin font file header
 static String extractBinFontName(File &f) {
   f.seek(0);
@@ -196,18 +263,27 @@ void scanFontFiles() {
     String name = String(entry.name());
     if (!name.startsWith("._") && !name.startsWith(".")) {
       if (name.endsWith(".ttf") || name.endsWith(".TTF") ||
-          name.endsWith(".ttc") || name.endsWith(".TTC")) {
-        String displayName = extractTTFName(entry);
-        fontFileList[fontFileCount] = name;
-        fontDisplayNames[fontFileCount] = (displayName.length() > 0) ? displayName : name;
-        Serial.printf("  Font found: %s → %s\n", name.c_str(), fontDisplayNames[fontFileCount].c_str());
-        fontFileCount++;
+          name.endsWith(".ttc") || name.endsWith(".TTC") ||
+          name.endsWith(".otf") || name.endsWith(".OTF")) {
+        if (!ttfHasCJK(entry)) {
+          Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
+        } else {
+          String displayName = extractTTFName(entry);
+          fontFileList[fontFileCount] = name;
+          fontDisplayNames[fontFileCount] = (displayName.length() > 0) ? displayName : name;
+          Serial.printf("  Font found: %s → %s\n", name.c_str(), fontDisplayNames[fontFileCount].c_str());
+          fontFileCount++;
+        }
       } else if (name.endsWith(".bin") || name.endsWith(".BIN")) {
-        String displayName = extractBinFontName(entry);
-        fontFileList[fontFileCount] = name;
-        fontDisplayNames[fontFileCount] = (displayName.length() > 0) ? displayName : name;
-        Serial.printf("  Font found: %s → %s\n", name.c_str(), fontDisplayNames[fontFileCount].c_str());
-        fontFileCount++;
+        if (!binHasCJK(entry)) {
+          Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
+        } else {
+          String displayName = extractBinFontName(entry);
+          fontFileList[fontFileCount] = name;
+          fontDisplayNames[fontFileCount] = (displayName.length() > 0) ? displayName : name;
+          Serial.printf("  Font found: %s → %s\n", name.c_str(), fontDisplayNames[fontFileCount].c_str());
+          fontFileCount++;
+        }
       }
     }
     entry.close();
@@ -242,6 +318,9 @@ void scanFontFiles() {
 bool loadBinaryFont(const char* fontPath) {
   Serial.printf("\n=== loadBinaryFont() called ===\n");
   Serial.printf("Input path: '%s'\n", fontPath);
+  
+  // Clear glyph cache from previous font
+  clearGlyphCache();
   
   if (!sdCardAvailable) {
     Serial.println("✗ SD card not available");
@@ -308,40 +387,51 @@ bool loadBinaryFont(const char* fontPath) {
     return false;
   }
   
-  Serial.println("Reading glyph index...");
-  for (uint32_t i = 0; i < g_binFont.charCount; i++) {
-    uint8_t indexEntry[20];
-    bytesRead = g_binFont.fontFile.read(indexEntry, 20);
-    if (bytesRead != 20) {
-      Serial.printf("✗ Index read error at entry %d\n", i);
+  Serial.println("Reading glyph index (bulk)...");
+  {
+    // Bulk-read entire index from SD in one operation (vs N individual reads)
+    size_t rawSize = g_binFont.charCount * 20;
+    uint8_t* rawIndex = (uint8_t*)ps_malloc(rawSize);
+    if (!rawIndex) {
+      Serial.println("✗ Failed to allocate raw index buffer");
       free(g_binFont.index);
       g_binFont.fontFile.close();
       return false;
     }
-    
-    g_binFont.index[i].unicode = indexEntry[0] | (indexEntry[1] << 8) | (indexEntry[2] << 16) | (indexEntry[3] << 24);
-    g_binFont.index[i].width = indexEntry[4] | (indexEntry[5] << 8);
-    g_binFont.index[i].height = indexEntry[6] | (indexEntry[7] << 8);
-    g_binFont.index[i].bitmapOffset = indexEntry[8] | (indexEntry[9] << 8) | (indexEntry[10] << 16) | (indexEntry[11] << 24);
-    g_binFont.index[i].bitmapSize = indexEntry[12] | (indexEntry[13] << 8) | (indexEntry[14] << 16) | (indexEntry[15] << 24);
-    
-    if (i == 0) {
-      Serial.print("Raw bytes: ");
-      for (int j = 0; j < 20; j++) {
-        Serial.printf("%02X ", indexEntry[j]);
+    bytesRead = g_binFont.fontFile.read(rawIndex, rawSize);
+    if (bytesRead != rawSize) {
+      Serial.printf("✗ Index bulk read error: got %d of %d bytes\n", bytesRead, rawSize);
+      free(rawIndex);
+      free(g_binFont.index);
+      g_binFont.fontFile.close();
+      return false;
+    }
+    // Parse raw bytes into GlyphIndex structs
+    bool hasV2Bearings = (g_binFont.version >= 2);
+    for (uint32_t i = 0; i < g_binFont.charCount; i++) {
+      uint8_t* e = rawIndex + i * 20;
+      g_binFont.index[i].unicode = e[0] | (e[1] << 8) | (e[2] << 16) | (e[3] << 24);
+      g_binFont.index[i].width = e[4] | (e[5] << 8);
+      g_binFont.index[i].height = e[6] | (e[7] << 8);
+      g_binFont.index[i].bitmapOffset = e[8] | (e[9] << 8) | (e[10] << 16) | (e[11] << 24);
+      g_binFont.index[i].bitmapSize = e[12] | (e[13] << 8) | (e[14] << 16) | (e[15] << 24);
+      if (hasV2Bearings) {
+        g_binFont.index[i].bearingX = (int16_t)(e[16] | (e[17] << 8));
+        g_binFont.index[i].bearingY = (int16_t)(e[18] | (e[19] << 8));
+      } else {
+        g_binFont.index[i].bearingX = 0;
+        g_binFont.index[i].bearingY = 0;
       }
-      Serial.println();
+      if (i < 3) {
+        Serial.printf("  [%d] U+%04X %dx%d offset=%d size=%d bearing=(%d,%d)\n",
+          i, g_binFont.index[i].unicode,
+          g_binFont.index[i].width, g_binFont.index[i].height,
+          g_binFont.index[i].bitmapOffset, g_binFont.index[i].bitmapSize,
+          g_binFont.index[i].bearingX, g_binFont.index[i].bearingY);
+      }
     }
-    
-    if (i < 5) {
-      char ch = (g_binFont.index[i].unicode < 128) ? (char)g_binFont.index[i].unicode : '?';
-      Serial.printf("  [%d] U+%04X '%c' %dx%d offset=%d size=%d\n",
-        i, g_binFont.index[i].unicode, ch,
-        g_binFont.index[i].width, g_binFont.index[i].height,
-        g_binFont.index[i].bitmapOffset, g_binFont.index[i].bitmapSize);
-    }
-    
-    if (i % 100 == 0) yield();
+    free(rawIndex);
+    Serial.printf("Parsed %d glyph entries\n", g_binFont.charCount);
   }
   
   std::sort(g_binFont.index, g_binFont.index + g_binFont.charCount,
@@ -356,6 +446,75 @@ bool loadBinaryFont(const char* fontPath) {
 }
 
 // ==================== Glyph Lookup & Drawing ====================
+
+// Glyph bitmap cache — avoids repeated SD reads for the same character
+// Uses a simple hash table with open addressing for O(1) lookup
+static const int GLYPH_CACHE_SIZE = 512;  // Must be power of 2
+struct CachedGlyph {
+  uint32_t unicode;
+  uint8_t* bitmap;
+  uint16_t bitmapSize;
+  uint16_t width;
+  uint16_t height;
+  bool occupied;
+};
+static CachedGlyph* glyphCache = nullptr;
+static uint8_t* glyphBitmapPool = nullptr;  // Contiguous PSRAM pool for bitmap data
+static size_t glyphPoolUsed = 0;
+static const size_t GLYPH_POOL_SIZE = 192 * 1024;  // 192KB for cached bitmaps
+
+static void initGlyphCache() {
+  if (glyphCache) return;  // Already initialized
+  glyphCache = (CachedGlyph*)ps_calloc(GLYPH_CACHE_SIZE, sizeof(CachedGlyph));
+  glyphBitmapPool = (uint8_t*)ps_malloc(GLYPH_POOL_SIZE);
+  if (!glyphCache || !glyphBitmapPool) {
+    Serial.println("Glyph cache alloc failed");
+    if (glyphCache) { free(glyphCache); glyphCache = nullptr; }
+    if (glyphBitmapPool) { free(glyphBitmapPool); glyphBitmapPool = nullptr; }
+    return;
+  }
+  glyphPoolUsed = 0;
+  Serial.printf("Glyph cache initialized: %d slots, %dKB pool\n", GLYPH_CACHE_SIZE, GLYPH_POOL_SIZE / 1024);
+}
+
+void clearGlyphCache() {
+  if (glyphCache) {
+    for (int i = 0; i < GLYPH_CACHE_SIZE; i++) glyphCache[i].occupied = false;
+    glyphPoolUsed = 0;
+  }
+}
+
+static CachedGlyph* cacheFind(uint32_t unicode) {
+  if (!glyphCache) return nullptr;
+  uint32_t idx = (unicode * 2654435761u) & (GLYPH_CACHE_SIZE - 1);  // Knuth hash
+  for (int probe = 0; probe < 8; probe++) {
+    uint32_t slot = (idx + probe) & (GLYPH_CACHE_SIZE - 1);
+    if (!glyphCache[slot].occupied) return nullptr;
+    if (glyphCache[slot].unicode == unicode) return &glyphCache[slot];
+  }
+  return nullptr;
+}
+
+static void cacheInsert(uint32_t unicode, const uint8_t* bitmap, uint16_t bitmapSize, uint16_t w, uint16_t h) {
+  if (!glyphCache || !glyphBitmapPool) return;
+  if (glyphPoolUsed + bitmapSize > GLYPH_POOL_SIZE) return;  // Pool full
+
+  uint32_t idx = (unicode * 2654435761u) & (GLYPH_CACHE_SIZE - 1);
+  for (int probe = 0; probe < 8; probe++) {
+    uint32_t slot = (idx + probe) & (GLYPH_CACHE_SIZE - 1);
+    if (!glyphCache[slot].occupied) {
+      glyphCache[slot].unicode = unicode;
+      glyphCache[slot].bitmap = glyphBitmapPool + glyphPoolUsed;
+      memcpy(glyphCache[slot].bitmap, bitmap, bitmapSize);
+      glyphCache[slot].bitmapSize = bitmapSize;
+      glyphCache[slot].width = w;
+      glyphCache[slot].height = h;
+      glyphCache[slot].occupied = true;
+      glyphPoolUsed += bitmapSize;
+      return;
+    }
+  }
+}
 
 GlyphIndex* findGlyph(uint32_t unicode) {
   if (!g_binFont.loaded || !g_binFont.index || g_binFont.charCount == 0) return nullptr;
@@ -377,83 +536,123 @@ GlyphIndex* findGlyph(uint32_t unicode) {
   return nullptr;
 }
 
-bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color) {
+bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color, float scale) {
   if (!g_binFont.loaded) return false;
   
   GlyphIndex* glyph = findGlyph(unicode);
   if (!glyph) {
-    char ch[5] = {0};
-    utf8Encode(unicode, ch);
-    Serial.printf("Char not found: U+%04X '%s'\n", unicode, ch);
     return false;
   }
   if (glyph->bitmapSize == 0 || glyph->width == 0 || glyph->height == 0) {
-    Serial.printf("Invalid glyph: U+%04X size=%d %dx%d\n", unicode, glyph->bitmapSize, glyph->width, glyph->height);
     return false;
   }
   
-  uint8_t* bitmap = (uint8_t*)malloc(glyph->bitmapSize);
-  if (!bitmap) {
-    return false;
+  // Initialize cache on first use
+  if (!glyphCache) initGlyphCache();
+  
+  const uint8_t* bitmap = nullptr;
+  // Static reusable buffer to avoid per-char malloc (max glyph at 30pt ~112 bytes)
+  static uint8_t* reuseBuf = nullptr;
+  static size_t reuseBufSize = 0;
+  
+  // Check glyph cache first (avoids SD read)
+  CachedGlyph* cached = cacheFind(unicode);
+  if (cached) {
+    bitmap = cached->bitmap;
+  } else {
+    // Read from SD card
+    if (glyph->bitmapSize > reuseBufSize) {
+      if (reuseBuf) free(reuseBuf);
+      reuseBufSize = glyph->bitmapSize + 64;  // Slight overalloc to avoid frequent reallocs
+      reuseBuf = (uint8_t*)malloc(reuseBufSize);
+      if (!reuseBuf) { reuseBufSize = 0; return false; }
+    }
+    
+    if (sdMutex != NULL) xSemaphoreTake(sdMutex, portMAX_DELAY);
+    g_binFont.fontFile.seek(glyph->bitmapOffset);
+    size_t bytesRead = g_binFont.fontFile.read(reuseBuf, glyph->bitmapSize);
+    if (sdMutex != NULL) xSemaphoreGive(sdMutex);
+    
+    if (bytesRead != glyph->bitmapSize) return false;
+    
+    // Cache the bitmap for future use
+    cacheInsert(unicode, reuseBuf, glyph->bitmapSize, glyph->width, glyph->height);
+    bitmap = reuseBuf;
   }
   
-  if (sdMutex != NULL) {
-    xSemaphoreTake(sdMutex, portMAX_DELAY);
-  }
+  // Draw glyph — scaled nearest-neighbor if scale != 1.0
+  int srcW = glyph->width;
+  int srcH = glyph->height;
   
-  g_binFont.fontFile.seek(glyph->bitmapOffset);
-  size_t bytesRead = g_binFont.fontFile.read(bitmap, glyph->bitmapSize);
-  
-  if (sdMutex != NULL) {
-    xSemaphoreGive(sdMutex);
-  }
-  
-  if (bytesRead != glyph->bitmapSize) {
-    free(bitmap);
-    return false;
-  }
-  
-  for (int py = 0; py < glyph->height; py++) {
-    int lineStart = -1;
-    for (int px = 0; px < glyph->width; px++) {
-      int byteIdx = (py * glyph->width + px) / 8;
-      int bitIdx = (py * glyph->width + px) % 8;
-      
-      bool isBlack = bitmap[byteIdx] & (1 << (7 - bitIdx));
-      
-      if (isBlack) {
-        if (lineStart == -1) lineStart = px;
-      } else {
-        if (lineStart != -1) {
-          M5.Display.drawFastHLine(x + lineStart, y + py, px - lineStart, color);
-          lineStart = -1;
+  if (scale <= 1.01f && scale >= 0.99f) {
+    // 1:1 — fast path with run-length hline optimization
+    for (int py = 0; py < srcH; py++) {
+      int lineStart = -1;
+      for (int px = 0; px < srcW; px++) {
+        int bitPos = py * srcW + px;
+        bool isBlack = bitmap[bitPos / 8] & (1 << (7 - (bitPos % 8)));
+        if (isBlack) {
+          if (lineStart == -1) lineStart = px;
+        } else {
+          if (lineStart != -1) {
+            M5.Display.drawFastHLine(x + lineStart, y + py, px - lineStart, color);
+            lineStart = -1;
+          }
         }
       }
+      if (lineStart != -1) {
+        M5.Display.drawFastHLine(x + lineStart, y + py, srcW - lineStart, color);
+      }
     }
-    if (lineStart != -1) {
-      M5.Display.drawFastHLine(x + lineStart, y + py, glyph->width - lineStart, color);
+  } else {
+    // Scaled rendering — nearest-neighbor with hline optimization
+    int dstW = (int)(srcW * scale + 0.5f);
+    int dstH = (int)(srcH * scale + 0.5f);
+    for (int ty = 0; ty < dstH; ty++) {
+      int sy = ty * srcH / dstH;
+      int lineStart = -1;
+      for (int tx = 0; tx < dstW; tx++) {
+        int sx = tx * srcW / dstW;
+        int bitPos = sy * srcW + sx;
+        bool isBlack = bitmap[bitPos / 8] & (1 << (7 - (bitPos % 8)));
+        if (isBlack) {
+          if (lineStart == -1) lineStart = tx;
+        } else {
+          if (lineStart != -1) {
+            M5.Display.drawFastHLine(x + lineStart, y + ty, tx - lineStart, color);
+            lineStart = -1;
+          }
+        }
+      }
+      if (lineStart != -1) {
+        M5.Display.drawFastHLine(x + lineStart, y + ty, dstW - lineStart, color);
+      }
     }
   }
   
-  free(bitmap);
   return true;
 }
 
 int drawBinFontString(const String &text, int x, int y, int charSpacing) {
   if (!g_binFont.loaded) return x;
   
+  int fontSize = g_binFont.fontSize;  // Native em-square height
   int currentX = x;
   for (int i = 0; i < text.length(); ) {
     int charStart = i;
     uint32_t unicode = utf8Decode(text, i);
     
-    if (drawBinFontChar(unicode, currentX, y)) {
-      GlyphIndex* glyph = findGlyph(unicode);
-      if (glyph) {
-        currentX += glyph->width + 2;
-      } else {
-        currentX += charSpacing;
+    GlyphIndex* glyph = findGlyph(unicode);
+    if (glyph && glyph->width > 0) {
+      // Bottom-align: offset shorter glyphs (e.g. Latin) so baselines match
+      int yOffset = fontSize - glyph->height;
+      if (glyph->bearingY != 0) {
+        // v2 font: use bearing for precise baseline positioning
+        yOffset = fontSize - glyph->bearingY;
       }
+      if (yOffset < 0) yOffset = 0;
+      drawBinFontChar(unicode, currentX, y + yOffset);
+      currentX += glyph->width + 2;
     } else {
       M5.Display.setCursor(currentX, y);
       String ch = text.substring(charStart, i);
@@ -465,9 +664,117 @@ int drawBinFontString(const String &text, int x, int y, int charSpacing) {
   return currentX;
 }
 
+// ==================== OFR Cached Glyph Drawing ====================
+// Renders a TTF character via OpenFontRender into a small sprite,
+// converts to 1-bit bitmap, and caches in PSRAM.
+// Subsequent draws of the same character skip FreeType entirely.
+
+bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontSize) {
+  if (!ofrFontLoaded) return false;
+
+  // Ensure glyph cache is initialized
+  if (!glyphCache) initGlyphCache();
+
+  // Check cache first — O(1) lookup
+  CachedGlyph* cached = cacheFind(unicode);
+  if (cached) {
+    const uint8_t* bitmap = cached->bitmap;
+    int w = cached->width;
+    int h = cached->height;
+    for (int py = 0; py < h; py++) {
+      int lineStart = -1;
+      for (int px = 0; px < w; px++) {
+        int bitPos = py * w + px;
+        bool isSet = bitmap[bitPos / 8] & (1 << (7 - (bitPos % 8)));
+        if (isSet) {
+          if (lineStart == -1) lineStart = px;
+        } else {
+          if (lineStart != -1) {
+            M5.Display.drawFastHLine(x + lineStart, y + py, px - lineStart, color);
+            lineStart = -1;
+          }
+        }
+      }
+      if (lineStart != -1) {
+        M5.Display.drawFastHLine(x + lineStart, y + py, w - lineStart, color);
+      }
+    }
+    return true;
+  }
+
+  // Cache miss — render via FreeType into a sprite, then capture bitmap
+  int sprW = fontSize;
+  int sprH = fontSize;
+  LGFX_Sprite sprite(&M5.Display);
+  sprite.setColorDepth(8);
+  if (!sprite.createSprite(sprW, sprH)) return false;
+  sprite.fillSprite(TFT_WHITE);
+
+  ofr.setDrawer(sprite);
+  char chBuf[5];
+  int chLen = utf8Encode(unicode, chBuf);
+  chBuf[chLen] = '\0';
+  ofr.cdrawString(chBuf, sprW / 2, 0, TFT_BLACK, TFT_WHITE);
+  ofr.setDrawer(M5.Display);
+
+  // Convert 8-bit sprite buffer to 1-bit packed bitmap
+  int bitmapSize = (sprW * sprH + 7) / 8;
+  static uint8_t* convBuf = nullptr;
+  static size_t convBufSize = 0;
+  if ((size_t)bitmapSize > convBufSize) {
+    if (convBuf) free(convBuf);
+    convBufSize = bitmapSize + 64;
+    convBuf = (uint8_t*)malloc(convBufSize);
+    if (!convBuf) { convBufSize = 0; sprite.deleteSprite(); return false; }
+  }
+  memset(convBuf, 0, bitmapSize);
+
+  uint8_t* spriteBuf = (uint8_t*)sprite.getBuffer();
+  if (spriteBuf) {
+    for (int py = 0; py < sprH; py++) {
+      for (int px = 0; px < sprW; px++) {
+        uint8_t pixel = spriteBuf[py * sprW + px];
+        if (pixel < 128) {  // Dark pixel (0=black, 255=white in 8-bit)
+          int bitPos = py * sprW + px;
+          convBuf[bitPos / 8] |= (1 << (7 - (bitPos % 8)));
+        }
+      }
+    }
+  }
+  sprite.deleteSprite();
+
+  // Cache the 1-bit bitmap
+  cacheInsert(unicode, convBuf, bitmapSize, sprW, sprH);
+
+  // Draw to display using hline optimization
+  for (int py = 0; py < sprH; py++) {
+    int lineStart = -1;
+    for (int px = 0; px < sprW; px++) {
+      int bitPos = py * sprW + px;
+      bool isSet = convBuf[bitPos / 8] & (1 << (7 - (bitPos % 8)));
+      if (isSet) {
+        if (lineStart == -1) lineStart = px;
+      } else {
+        if (lineStart != -1) {
+          M5.Display.drawFastHLine(x + lineStart, y + py, px - lineStart, color);
+          lineStart = -1;
+        }
+      }
+    }
+    if (lineStart != -1) {
+      M5.Display.drawFastHLine(x + lineStart, y + py, sprW - lineStart, color);
+    }
+  }
+
+  return true;
+}
+
 // ==================== TTF Font Loading ====================
 
 bool loadTTFFont(const char* fontPath, int size) {
+  // Clear glyph cache from previous font/size
+  clearGlyphCache();
+
   if (!sdCardAvailable) {
     Serial.println("SD card not available");
     return false;
@@ -520,12 +827,100 @@ bool loadReadingFont() {
   }
   String fname = fontFileList[readingFontIndex];
   if (ofrFontLoaded && currentFontFile == fname) return true;
+  if (g_binFont.loaded && currentFontFile == fname) return true;
   if (fname.endsWith(".ttf") || fname.endsWith(".TTF") ||
-      fname.endsWith(".ttc") || fname.endsWith(".TTC")) {
+      fname.endsWith(".ttc") || fname.endsWith(".TTC") ||
+      fname.endsWith(".otf") || fname.endsWith(".OTF")) {
     return loadTTFFont(fname.c_str(), readingFontSize);
   } else if (fname.endsWith(".bin") || fname.endsWith(".BIN")) {
     if (ofrFontLoaded) { ofr.unloadFont(); ofrFontLoaded = false; }
-    return loadBinaryFont(fname.c_str());
+    bool ok = loadBinaryFont(fname.c_str());
+    if (ok) currentFontFile = fname;
+    return ok;
   }
   return false;
+}
+
+// ==================== SD-card Label Bitmaps ==================================
+
+bool loadSDLabels() {
+  File f = SD.open("/labels.bin", FILE_READ);
+  if (!f) {
+    Serial.println("SD labels: /labels.bin not found");
+    return false;
+  }
+
+  size_t fileSize = f.size();
+  if (fileSize < 8) {
+    f.close();
+    return false;
+  }
+
+  sdLabelData = (uint8_t*)ps_malloc(fileSize);
+  if (!sdLabelData) {
+    Serial.println("SD labels: out of PSRAM");
+    f.close();
+    return false;
+  }
+
+  f.read(sdLabelData, fileSize);
+  f.close();
+
+  // Validate magic
+  if (memcmp(sdLabelData, "SLBL", 4) != 0) {
+    Serial.println("SD labels: invalid magic");
+    free(sdLabelData);
+    sdLabelData = nullptr;
+    return false;
+  }
+
+  uint32_t count;
+  memcpy(&count, sdLabelData + 4, 4);
+  sdLabelCount = (int)count;
+
+  sdLabelEntries = (SDLabelEntry*)ps_malloc(count * sizeof(SDLabelEntry));
+  if (!sdLabelEntries) {
+    Serial.println("SD labels: out of PSRAM for entries");
+    free(sdLabelData);
+    sdLabelData = nullptr;
+    sdLabelCount = 0;
+    return false;
+  }
+
+  // Parse entries — pointers directly into sdLabelData buffer
+  uint8_t* ptr = sdLabelData + 8;
+  uint8_t* end = sdLabelData + fileSize;
+  for (int i = 0; i < sdLabelCount; i++) {
+    if (ptr + 2 > end) break;
+    uint16_t textLen;
+    memcpy(&textLen, ptr, 2);
+    ptr += 2;
+
+    if (ptr + textLen + 1 + 6 > end) break;
+    sdLabelEntries[i].text = (const char*)ptr;
+    ptr += textLen + 1;  // text + null terminator
+
+    memcpy(&sdLabelEntries[i].fontSize, ptr, 2); ptr += 2;
+    memcpy(&sdLabelEntries[i].w, ptr, 2); ptr += 2;
+    memcpy(&sdLabelEntries[i].h, ptr, 2); ptr += 2;
+
+    sdLabelEntries[i].bitmap = ptr;
+    int bitmapSize = ((sdLabelEntries[i].w + 1) / 2) * sdLabelEntries[i].h;
+    ptr += bitmapSize;
+  }
+
+  Serial.printf("SD labels: loaded %d entries (%d KB)\n", sdLabelCount, (int)(fileSize / 1024));
+  return true;
+}
+
+void freeSDLabels() {
+  if (sdLabelEntries) {
+    free(sdLabelEntries);
+    sdLabelEntries = nullptr;
+  }
+  if (sdLabelData) {
+    free(sdLabelData);
+    sdLabelData = nullptr;
+  }
+  sdLabelCount = 0;
 }

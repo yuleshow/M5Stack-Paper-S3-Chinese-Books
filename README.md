@@ -17,10 +17,16 @@ A feature-rich Chinese e-ink application for the **M5Stack Paper S3** (ESP32-S3,
 ### 📖 Book Reader ![Feature](https://img.shields.io/badge/Feature-Book_Reader-blue)
 - **TXT and EPUB** support with vertical CJK text layout (right-to-left columns)
 - EPUB parsing with built-in ZIP/deflate decompression and HTML-to-text extraction
+- **Table of Contents (TOC)** — NCX-based chapter index for EPUB files; paginated list with tap-to-jump navigation; shows "此書無目錄" popup for TXT or EPUBs without TOC
+- **Bitmap toolbar** — Pre-rendered icon strip with 6 touch buttons: font decrease (−A), font size display, font increase (+A), font menu (Aa), index/TOC (≡), bookmark (★)
 - Configurable font size (20–52px)
+- **Smart font scaling** — Silver font automatically enlarged using per-size scale factors to match GenYoMinTW visual size, with tighter vertical character spacing for optimal readability
+- **Per-character centering** — Each glyph is measured and horizontally centered within its column cell for precise vertical text alignment
 - Reading position auto-saved to SD card (`.pos` sidecar files)
 - Bookmarks support (up to 5 per book, saved as `.bm` files)
-- Multiple font support: TTF, TTC, and pre-rendered BIN fonts
+- **CJK font filtering** — Font selection list automatically hides English-only fonts by detecting CJK support via OS/2 table (TTF) or glyph index sampling (BIN)
+- **Binary font preview** — Font menu renders .bin font samples using actual font glyphs instead of system font
+- Multiple font support: TTF, TTC, OTF, and pre-rendered BIN fonts
 
 ### 📅 Chinese Almanac Calendar (農民曆) ![Feature](https://img.shields.io/badge/Feature-Calendar-blue)
 A complete traditional Chinese almanac with:
@@ -93,9 +99,16 @@ A complete traditional Chinese almanac with:
 - **WiFi** — Network scanning, on-screen keyboard for password
 - **Timezone** — 20+ presets (Asia, Americas, Europe, etc.)
 - **Web Server** — HTTP file manager for browsing/uploading/downloading/deleting files on SD card
-- **USB Mass Storage** — Expose SD card as USB drive for direct file access
+- **USB Mass Storage** — Expose SD card as USB drive for direct file access (WiFi auto-disabled during MSC)
 - **Icon Source** — SD card (customizable) or embedded (faster boot)
 - **Calendar Method** — Meeus vs 壽星天文曆 algorithm
+- **System Font** — GenYoMinTW (default) or Silver (pixel-style); Silver labels are pre-rendered with per-size scale factors so both fonts produce matching visual sizes:
+
+![Font Comparison](output/font_comparison_scaled.png)
+
+Calendar page comparison (March 20, 2026 — 農曆二月初二，春分):
+
+![Calendar Comparison](output/calendar_comparison.png)
 
 ## Hardware
 
@@ -270,8 +283,8 @@ All static Chinese UI text is **pre-rendered at build time** into 4-bit grayscal
 
 ### Build Stats
 
-- Flash: ~89% of 8MB
-- RAM: ~24% of 320KB
+- Flash: ~46% of 8MB
+- RAM: ~33% of 320KB
 - ~1200 pre-rendered bitmap labels (~1 MB)
 
 ## Regenerating Label Bitmaps
