@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 import struct
 import sys
 import os
+from fontTools.ttLib import TTFont
 
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
@@ -98,6 +99,40 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
     print(f"Loading font: {ttf_path}")
     print(f"Font size: {font_size}pt")
     
+    # Extract real font family name from the TTF/TTC file
+    # Prefer Chinese name: Traditional Chinese (langID=1028), Simplified Chinese (langID=2052)
+    try:
+        tt = TTFont(ttf_path)
+        name_table = tt['name']
+        font_family = None
+        font_family_en = None
+        # Collect all nameID=1 records, prefer CJK languages
+        cjk_lang_ids = {1028, 2052, 3076, 1041, 1042}  # zh-TW, zh-CN, zh-HK, ja, ko
+        for record in name_table.names:
+            if record.nameID == 1:
+                try:
+                    decoded = record.toUnicode()
+                    if decoded:
+                        if record.platformID == 3 and record.langID in cjk_lang_ids:
+                            font_family = decoded
+                            break  # Found CJK name, use it
+                        elif record.platformID == 1 and record.platEncID == 2:
+                            # Mac platform with CJK encoding
+                            font_family = decoded
+                        elif font_family_en is None:
+                            font_family_en = decoded
+                except:
+                    pass
+        tt.close()
+        if not font_family:
+            font_family = font_family_en
+        if not font_family:
+            font_family = os.path.splitext(os.path.basename(ttf_path))[0]
+        print(f"Font family: {font_family}")
+    except Exception as e:
+        print(f"Warning: Could not extract font name: {e}")
+        font_family = os.path.splitext(os.path.basename(ttf_path))[0]
+    
     try:
         font = ImageFont.truetype(ttf_path, font_size)
     except Exception as e:
@@ -162,7 +197,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
         # Header (137 bytes)
         char_count = len(index_entries)
         version = 2
-        family_name = b"MingLiU".ljust(64, b'\x00')
+        family_name = font_family.encode('utf-8')[:64].ljust(64, b'\x00')
         style_name = b"Regular".ljust(64, b'\x00')
         
         # Write header in correct order

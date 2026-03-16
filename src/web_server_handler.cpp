@@ -373,6 +373,7 @@ void handleScreenView() {
   html += "<option value='5'>5s</option><option value='10' selected>10s</option>";
   html += "<option value='30'>30s</option><option value='60'>60s</option></select>";
   html += "<button onclick='download()'>💾 Save</button>";
+  html += "<select id='fmt'><option value='png'>PNG</option><option value='jpg'>JPG</option></select>";
   html += "</div>";
   html += "<div class='frame'><img id='screen' src='/screenshot' alt='Screen capture'></div>";
   html += "<div id='status'>Ready</div>";
@@ -397,13 +398,15 @@ void handleScreenView() {
   html += "}";
   html += "function resetAuto(){if(autoOn)startAuto();}";
   html += "function download(){";
+  html += "  let fmt=document.getElementById('fmt').value;";
+  html += "  let mime=fmt==='jpg'?'image/jpeg':'image/png';";
   html += "  let img=document.getElementById('screen');";
   html += "  let c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;";
   html += "  c.getContext('2d').drawImage(img,0,0);";
   html += "  c.toBlob(function(b){";
   html += "    let a=document.createElement('a');a.href=URL.createObjectURL(b);";
-  html += "    a.download='m5paper_'+Date.now()+'.png';a.click();URL.revokeObjectURL(a.href);";
-  html += "  },'image/png');";
+  html += "    a.download='m5paper_'+Date.now()+'.'+fmt;a.click();URL.revokeObjectURL(a.href);";
+  html += "  },mime,0.95);";
   html += "}";
   html += "</script></body></html>";
 

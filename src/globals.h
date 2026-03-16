@@ -146,7 +146,10 @@ enum Mode {
   MODE_FORTUNE_SLIP_WORDING,
   MODE_FORTUNE_SLIP_STORY,
   MODE_PAGE_JUMP,
-  MODE_TOC
+  MODE_TOC,
+  MODE_TOOLS_MENU,
+  MODE_MED_REMINDER,
+  MODE_MED_PASSCODE
 };
 
 // ==================== Struct Definitions ====================
@@ -486,6 +489,14 @@ extern bool wallpaperRotateActive;
 extern unsigned long wallpaperRotateLastChange;
 extern int wallpaperViewMode;  // 0=name list, 1=thumbnails
 
+// Medication Reminder
+extern time_t medReminderPressTime;  // epoch time when button was pressed, 0 = not pressed
+static const unsigned long MED_REMINDER_RESET_SEC = 18UL * 60UL * 60UL;  // 18 hours in seconds
+extern String medPasscode;          // loaded from SD card
+extern String medPasscodeInput;      // current input buffer
+extern bool medSettingNewPasscode;   // true = setting new code, false = verifying
+extern String medPasscodeFirst;      // first entry when setting new code
+
 // Fortune Slips
 extern int fortuneSlipCategory;   // 0=kuanyin, 1=senso-ji
 extern int fortuneSlipNumber;     // slip number to display (0-99)
@@ -553,6 +564,7 @@ GlyphIndex* findGlyph(uint32_t unicode);
 bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color = TFT_BLACK, float scale = 1.0f);
 void clearGlyphCache();
 int drawBinFontString(const String &text, int x, int y, int charSpacing);
+int drawBinFontStringScaled(const String &text, int x, int y, float scale, bool noYOffset = false);
 bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontSize);
 bool loadTTFFont(const char* fontPath, int size = 30);
 bool loadSystemFont();
@@ -638,8 +650,6 @@ void drawVerticalNavBar(bool hasPrev, bool hasNext);
 bool touchedReturnButton(int x, int y);
 bool touchedPrevPage(int x, int y);
 bool touchedNextPage(int x, int y);
-void drawBatteryIndicator();
-void drawCurrentTime();
 void drawStatusBar();
 int drawSystemText(const char* text, int x, int y, int size = 28, uint16_t color = TFT_BLACK, uint16_t bg = TFT_WHITE);
 int getSystemTextWidth(const char* text, int size = 28);
@@ -678,11 +688,21 @@ void loadMottos();
 void drawMottoOnSleep();
 void drawMottoScreen();
 
+// tools menu
+void drawToolsMenu();
+
 // wallpaper
 void loadWallpaperFiles();
 void drawWallpaperList();
 void drawWallpaper();
 void drawWallpaperWithIndex(int index);
+
+// medication reminder
+void drawMedReminder();
+void loadMedPasscode();
+void saveMedPasscode();
+void drawMedPasscode();
+void updateMedPasscodeInput();
 
 // fortune slips
 void drawFortuneSlipsMenu();

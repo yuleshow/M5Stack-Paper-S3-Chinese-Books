@@ -124,8 +124,6 @@ inline uint32_t toVerticalPunct(uint32_t cp) {
     case 0x300D: return 0xFE42; // 」 → ﹂
     case 0x201C: return 0xFE41; // " → ﹁
     case 0x201D: return 0xFE42; // " → ﹂
-    case 0xFF1F: return 0x003F; // ？ → ?
-    case 0xFF01: return 0x0021; // ！ → !
     case 0x3008: return 0xFE3F; // 〈 → ︿
     case 0x3009: return 0xFE40; // 〉 → ﹀
     case 0x300E: return 0xFE43; // 『 → ﹃

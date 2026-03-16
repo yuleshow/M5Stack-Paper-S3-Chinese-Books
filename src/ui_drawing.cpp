@@ -1,6 +1,7 @@
 #include "globals.h"
 #include "embedded_icons.h"
 #include "labels/label_bitmaps.h"
+#include "labels/silver/silver_label_bitmaps.h"
 
 // Silver font renders smaller than GenYoMinTW at the same pt size.
 // Per-size scale table: {nominal_size, render_size} computed from actual glyph measurements.
@@ -144,85 +145,55 @@ bool touchedNextPage(int x, int y) {
 
 // ==================== End Navigation Bar ====================
 
-// Draw battery icon + percentage at top-right corner
-void drawBatteryIndicator() {
+// Universal status bar: time (top-left) + battery icon & % (top-right)
+// Always uses built-in font for consistent appearance regardless of OFR state.
+void drawStatusBar() {
+  M5.Display.setFont(&fonts::Font2);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_BLACK);
+
+  // Time (top-left)
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    char timeStr[8];
+    snprintf(timeStr, sizeof(timeStr), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+    M5.Display.setTextSize(2);
+    M5.Display.setTextDatum(TL_DATUM);
+    M5.Display.drawString(timeStr, 8, 4);
+    M5.Display.setTextSize(1);
+  }
+
+  // Battery (top-right)
   int batLevel = M5.Power.getBatteryLevel();  // 0-100
   bool charging = (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging);
-  
+
   int w = M5.Display.width();
-  int bx = w - 46;  // battery icon x
-  int by = 6;       // battery icon y
-  int bw = 34;      // battery body width
-  int bh = 18;      // battery body height
-  
-  // Battery body outline
+  int bx = w - 46, by = 12, bw = 34, bh = 18;
+
+  // Icon outline + tip
   M5.Display.drawRect(bx, by, bw, bh, TFT_BLACK);
-  M5.Display.drawRect(bx + 1, by + 1, bw - 2, bh - 2, TFT_BLACK);  // thicker outline
-  // Battery tip (positive terminal)
+  M5.Display.drawRect(bx + 1, by + 1, bw - 2, bh - 2, TFT_BLACK);
   M5.Display.fillRect(bx + bw, by + 4, 4, bh - 8, TFT_BLACK);
-  
+
   // Fill level
   int fillW = (bw - 6) * batLevel / 100;
-  if (fillW > 0) {
-    M5.Display.fillRect(bx + 3, by + 3, fillW, bh - 6, TFT_BLACK);
-  }
-  
-  // Percentage text — always at fixed position, 24px gap left of battery
+  if (fillW > 0) M5.Display.fillRect(bx + 3, by + 3, fillW, bh - 6, TFT_BLACK);
+
+  // Percentage text
   char batStr[8];
   snprintf(batStr, sizeof(batStr), "%d%%", batLevel);
-  int textRightEdge = bx - 42;
-  if (ofrFontLoaded) {
-    int renderSize = (systemFontChoice == 1) ? silverScaledSize(18) : 18;
-    ofr.setFontSize(renderSize);
-    ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-    int tw = ofr.getTextWidth(batStr);
-    ofr.drawString(batStr, textRightEdge - tw, by + 1, TFT_BLACK, TFT_WHITE);
-  } else {
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(1.5);
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(TR_DATUM);
-    M5.Display.drawString(batStr, textRightEdge, by);
-    M5.Display.setTextDatum(TL_DATUM);
-    M5.Display.setTextSize(1);
-  }
-  
-  // Charging indicator: bold "+" in the gap between text and battery
+  M5.Display.setTextSize(2);
+  M5.Display.setTextDatum(TR_DATUM);
+  M5.Display.drawString(batStr, bx - 8, 4);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextDatum(TL_DATUM);
+
+  // Charging "+" indicator
   if (charging) {
-    int cx = bx - 10;  // closer to battery icon
-    int cy = by + bh / 2;
-    // Draw a thick plus sign
-    M5.Display.fillRect(cx - 5, cy - 1, 10, 3, TFT_BLACK);  // horizontal bar
-    M5.Display.fillRect(cx - 1, cy - 5, 3, 10, TFT_BLACK);  // vertical bar
+    int cx = bx - 4, cy = by + bh / 2;
+    M5.Display.fillRect(cx - 4, cy - 1, 8, 3, TFT_BLACK);
+    M5.Display.fillRect(cx - 1, cy - 4, 3, 8, TFT_BLACK);
   }
-}
-
-// Draw current time in the top-left corner
-void drawCurrentTime() {
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) return;
-  char timeStr[8];
-  snprintf(timeStr, sizeof(timeStr), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
-  if (ofrFontLoaded) {
-    int renderSize = (systemFontChoice == 1) ? silverScaledSize(20) : 20;
-    ofr.setFontSize(renderSize);
-    ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-    ofr.drawString(timeStr, 8, 6, TFT_BLACK, TFT_WHITE);
-  } else {
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(1.5);
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(TL_DATUM);
-    M5.Display.drawString(timeStr, 8, 6);
-    M5.Display.setTextSize(1);
-  }
-}
-
-// Universal status bar: time (top-left) + battery % (top-right)
-// Call this on every screen except the welcome page
-void drawStatusBar() {
-  drawCurrentTime();
-  drawBatteryIndicator();
 }
 
 // Draw a pre-rendered label bitmap at (x, y) with color support.
@@ -328,6 +299,15 @@ int drawSystemText(const char* text, int x, int y, int size, uint16_t color, uin
       return label->w;
     }
   }
+  // Check for pre-rendered Silver PROGMEM labels
+  if (systemFontChoice == 1) {
+    const LabelBitmap* label = findSilverLabelBitmap(text, size);
+    if (label) {
+      int yOff = (label->h < (uint16_t)size) ? (size - label->h) : 0;
+      drawLabelBitmap(label, x, y + yOff, color, bg);
+      return label->w;
+    }
+  }
   // Ensure system font is active (not reading font)
   if (ofrFontLoaded && systemFontFile.length() > 0 && currentFontFile != systemFontFile) {
     loadSystemFont();
@@ -354,6 +334,10 @@ int getSystemTextWidth(const char* text, int size) {
     const LabelBitmap* label = findLabelBitmap(text, size);
     if (label) return label->w;
   }
+  if (systemFontChoice == 1) {
+    const LabelBitmap* label = findSilverLabelBitmap(text, size);
+    if (label) return label->w;
+  }
   if (ofrFontLoaded) {
     int renderSize = (systemFontChoice == 1) ? silverScaledSize(size) : size;
     ofr.setFontSize(renderSize);
@@ -374,6 +358,15 @@ void drawSystemTextCentered(const char* text, int centerX, int y, int size, uint
   // Check for pre-rendered PROGMEM labels (only for default GenYoMinTW font)
   if (systemFontChoice == 0) {
     const LabelBitmap* label = findLabelBitmap(text, size);
+    if (label) {
+      int x = centerX - label->w / 2;
+      drawLabelBitmap(label, x, y, color, bg);
+      return;
+    }
+  }
+  // Check for pre-rendered Silver PROGMEM labels
+  if (systemFontChoice == 1) {
+    const LabelBitmap* label = findSilverLabelBitmap(text, size);
     if (label) {
       int x = centerX - label->w / 2;
       drawLabelBitmap(label, x, y, color, bg);

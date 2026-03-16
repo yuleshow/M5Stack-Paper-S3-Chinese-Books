@@ -16,3 +16,8 @@ units=metric
 [unlock]
 enabled=false
 device_name=M5Paper-BLE
+
+# Optional: numeric passcode to protect medication reminder reset
+# Remove this section or leave empty for no passcode
+[medicine]
+passcode=

@@ -46,6 +46,7 @@ LABELS = [
     ("採辦",         32, "shopping"),
     ("天氣",         32, "weather"),
     ("壁紙",         32, "wallpaper"),
+    ("工具",         32, "tools"),
     ("設定",         32, "settings"),
     ("求籖",         32, "fortune_slips"),
 
@@ -195,6 +196,24 @@ LABELS = [
 
     # ── Wallpaper picker title ──
     ("壁紙選擇",     36, "wallpaper_title"),    # wallpaper.cpp: title at top of picker
+
+    # ── Tools menu and medication reminder ──
+    ("工具",         36, "tools_title"),
+    ("壁紙",         36, "tools_wallpaper"),
+    ("吃藥提醒器",   36, "med_reminder"),
+    ("吃藥提醒器",   36, "med_title"),         # title at top
+    ("已吃藥",       48, "med_taken"),
+    ("未吃藥",       48, "med_not_taken"),
+    ("吃藥後請按此", 28, "med_press_hint"),
+    ("點擊手動復位", 22, "med_manual_reset"),
+    ("輸入密碼",     36, "med_passcode_title"),
+    ("設定新密碼",   36, "med_set_new"),
+    ("確認密碼",     36, "med_confirm"),
+    ("請輸入新的數字密碼", 22, "med_set_hint"),
+    ("請再輸入一次", 22, "med_confirm_hint"),
+    ("密碼錯誤",     22, "med_passcode_wrong"),
+    ("吃藥時按一下按鈕",     24, "med_instr1"),
+    ("忘了是否吃過，看一眼就知道", 22, "med_instr2"),
     ("切換縮圖",     24, "switch_thumbnail"),   # wallpaper.cpp: toggle button
     ("切換列表",     24, "switch_list"),        # wallpaper.cpp: toggle button
     ("SD卡中沒有壁紙",       24, "no_wallpaper"),       # wallpaper.cpp: empty state

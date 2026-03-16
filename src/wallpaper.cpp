@@ -1,4 +1,5 @@
 #include "globals.h"
+#include "sleeping_jpg.h"
 
 // Wallpaper functions
 void loadWallpaperFiles() {
@@ -157,15 +158,15 @@ void drawWallpaperList() {
   drawStatusBar();
   
   // Title
-  drawSystemText("壁紙選擇", 20, 30, 36);
+  drawSystemText("壁紙選擇", 20, 42, 40);
   
   // View toggle button (top-right, below status bar)
-  int toggleX = 380, toggleY = 30, toggleW = 140, toggleH = 40;
+  int toggleX = 380, toggleY = 42, toggleW = 140, toggleH = 40;
   M5.Display.fillRoundRect(toggleX, toggleY, toggleW, toggleH, 6, TFT_BLACK);
   if (wallpaperViewMode == 0) {
-    drawSystemTextCentered("切換縮圖", toggleX + toggleW / 2, toggleY + toggleH / 2 - 12, 24, TFT_WHITE, TFT_BLACK);
+    drawSystemTextCentered("切換縮圖", toggleX + toggleW / 2, toggleY + toggleH / 2 - 14, 28, TFT_WHITE, TFT_BLACK);
   } else {
-    drawSystemTextCentered("切換列表", toggleX + toggleW / 2, toggleY + toggleH / 2 - 12, 24, TFT_WHITE, TFT_BLACK);
+    drawSystemTextCentered("切換列表", toggleX + toggleW / 2, toggleY + toggleH / 2 - 14, 28, TFT_WHITE, TFT_BLACK);
   }
   
   // Load wallpaper files if not loaded
@@ -182,14 +183,14 @@ void drawWallpaperList() {
     drawReturnButton();
   } else if (wallpaperViewMode == 0) {
     // ===== NAME LIST VIEW =====
-    int y = 80;
+    int y = 92;
     int itemHeight = 60;
     int maxVisible = 11;  // 12 - 1 (motto takes first slot)
     
     // Always draw motto entry first (pinned)
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 8, EPD_LIGHT_GRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 8, TFT_BLACK);
-    drawSystemText("醒世格言", 35, y + 15, 28);
+    drawSystemText("醒世格言", 35, y + 12, 32);
     y += itemHeight + 5;
     
     int startIdx = wallpaperScrollOffset;
@@ -202,19 +203,23 @@ void drawWallpaperList() {
         M5.Display.fillRoundRect(20, y, 500, itemHeight, 8, TFT_WHITE);
       }
       M5.Display.drawRoundRect(20, y, 500, itemHeight, 8, TFT_BLACK);
-      M5.Display.setCursor(35, y + 20);
+      M5.Display.setFont(&fonts::Font2);
+      M5.Display.setTextSize(2);
+      M5.Display.setCursor(35, y + 15);
       M5.Display.print(wallpaperFiles[i]);
+      M5.Display.setTextSize(1);
       y += itemHeight + 5;
     }
     
     // Scroll indicator (top center, between title and toggle)
     if (wallpaperCount > maxVisible) {
-      M5.Display.setTextSize(1);
+      M5.Display.setTextSize(2);
       M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextDatum(MC_DATUM);
       char buf[32];
       snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);
-      M5.Display.drawString(buf, 270, 50);
+      M5.Display.drawString(buf, 270, 70);
+      M5.Display.setTextSize(1);
       M5.Display.setTextDatum(TL_DATUM);
     }
     
@@ -226,14 +231,14 @@ void drawWallpaperList() {
     // Extra buttons: 隨機 and 輪播 — centered text
     int btnW = 100, btnH = 44, btnY = 900;
     M5.Display.fillRect(200, btnY, btnW, btnH, TFT_BLACK);
-    drawSystemTextCentered("隨機", 250, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+    drawSystemTextCentered("隨機", 250, btnY + 8, 28, TFT_WHITE, TFT_BLACK);
     
     if (wallpaperRotateActive) {
       M5.Display.fillRect(330, btnY, btnW + 10, btnH, TFT_BLACK);
-      drawSystemTextCentered("輪播中", 385, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+      drawSystemTextCentered("輪播中", 385, btnY + 8, 28, TFT_WHITE, TFT_BLACK);
     } else {
       M5.Display.fillRect(330, btnY, btnW, btnH, TFT_BLACK);
-      drawSystemTextCentered("輪播", 380, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+      drawSystemTextCentered("輪播", 380, btnY + 8, 28, TFT_WHITE, TFT_BLACK);
     }
   } else {
     // ===== THUMBNAIL VIEW =====
@@ -242,7 +247,7 @@ void drawWallpaperList() {
     int cols = 3;
     int rows = 3;
     int thumbPad = 8;
-    int contentTop = 80;
+    int contentTop = 92;
     int contentBot = 875;
     int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
     int thumbH = (contentBot - contentTop - thumbPad * (rows + 1)) / rows;
@@ -252,12 +257,49 @@ void drawWallpaperList() {
     {
       int mottoTx = thumbPad + 2 * (thumbW + thumbPad);
       int mottoTy = contentTop + thumbPad;
-      // Draw a styled motto placeholder with label
-      M5.Display.fillRect(mottoTx, mottoTy, thumbW, thumbH, EPD_LIGHT_GRAY);
+      // Draw sleeping.jpg as motto thumbnail background
+      M5.Display.drawJpg(sleeping_jpg, sleeping_jpg_len, mottoTx, mottoTy, thumbW, thumbH);
       M5.Display.drawRect(mottoTx, mottoTy, thumbW, thumbH, TFT_BLACK);
       M5.Display.drawRect(mottoTx + 1, mottoTy + 1, thumbW - 2, thumbH - 2, TFT_BLACK);
-      drawSystemTextCentered("醒世", mottoTx + thumbW / 2, mottoTy + thumbH / 2 - 30, 32);
-      drawSystemTextCentered("格言", mottoTx + thumbW / 2, mottoTy + thumbH / 2 + 10, 32);
+
+      // Small vertical card with "醒世格言" in Kai font
+      int charSize = 28;
+      int charSpacing = 34;
+      int padV = 14, padH = 10;
+      int cardW = charSize + padH * 2;
+      int cardH = 4 * charSpacing + padV * 2;
+      int cardX = mottoTx + (thumbW - cardW) / 2;
+      int cardY = mottoTy + (thumbH - cardH) / 2;
+
+      M5.Display.fillRoundRect(cardX, cardY, cardW, cardH, 6, TFT_WHITE);
+      M5.Display.drawRoundRect(cardX, cardY, cardW, cardH, 6, TFT_BLACK);
+      M5.Display.drawRoundRect(cardX + 2, cardY + 2, cardW - 4, cardH - 4, 4, EPD_DARK_GRAY);
+
+      // Load Kai font for vertical motto text
+      String prevFontFile = currentFontFile;
+      bool prevOfrLoaded = ofrFontLoaded;
+      bool kaiFontLoaded = false;
+      if (sdCardAvailable) {
+        kaiFontLoaded = loadTTFFont("/fonts/TW-Kai-98_1.ttf", charSize);
+      }
+
+      const char* chars[] = {"\u9192", "\u4e16", "\u683c", "\u8a00"};
+      int cx = cardX + cardW / 2;
+      for (int i = 0; i < 4; i++) {
+        int cy = cardY + padV + i * charSpacing + charSpacing / 2 - 13;
+        if (kaiFontLoaded) {
+          ofr.setFontSize(charSize);
+          ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+          ofr.cdrawString(chars[i], cx, cy, TFT_BLACK, TFT_WHITE);
+        } else {
+          drawSystemTextCentered(chars[i], cx, cy - charSize / 2, charSize);
+        }
+      }
+
+      // Restore previous font
+      if (kaiFontLoaded && prevOfrLoaded && prevFontFile.length() > 0) {
+        loadTTFFont(prevFontFile.c_str(), 30);
+      }
     }
     
     int startIdx = wallpaperScrollOffset;
@@ -276,12 +318,13 @@ void drawWallpaperList() {
     
     // Scroll indicator (top center, between title and toggle)
     if (wallpaperCount > maxVisible) {
-      M5.Display.setTextSize(1);
+      M5.Display.setTextSize(2);
       M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextDatum(MC_DATUM);
       char buf[32];
       snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);
-      M5.Display.drawString(buf, 270, 50);
+      M5.Display.drawString(buf, 270, 70);
+      M5.Display.setTextSize(1);
       M5.Display.setTextDatum(TL_DATUM);
     }
     
@@ -293,14 +336,14 @@ void drawWallpaperList() {
     // Extra buttons: 隨機 and 輪播 — centered text
     int btnW = 100, btnH = 44, btnY = 900;
     M5.Display.fillRect(200, btnY, btnW, btnH, TFT_BLACK);
-    drawSystemTextCentered("隨機", 250, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+    drawSystemTextCentered("隨機", 250, btnY + 8, 28, TFT_WHITE, TFT_BLACK);
     
     if (wallpaperRotateActive) {
       M5.Display.fillRect(330, btnY, btnW + 10, btnH, TFT_BLACK);
-      drawSystemTextCentered("輪播中", 385, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+      drawSystemTextCentered("輪播中", 385, btnY + 8, 28, TFT_WHITE, TFT_BLACK);
     } else {
       M5.Display.fillRect(330, btnY, btnW, btnH, TFT_BLACK);
-      drawSystemTextCentered("輪播", 380, btnY + 10, 24, TFT_WHITE, TFT_BLACK);
+      drawSystemTextCentered("輪播", 380, btnY + 8, 28, TFT_WHITE, TFT_BLACK);
     }
   }
   

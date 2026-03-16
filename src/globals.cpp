@@ -211,7 +211,7 @@ void connectBLEDevice(int index) {
 int numFonts = 4;
 int selectedFontIndex = 0;
 int fontMenuPage = 0;
-const int FONTS_PER_PAGE = 9;
+const int FONTS_PER_PAGE = 7;  // (800-70)/105 = 6.95 → 7 items, last ends at y=805
 String fontFileList[MAX_FONT_FILES];
 String fontDisplayNames[MAX_FONT_FILES];
 int fontFileCount = 0;
@@ -234,7 +234,7 @@ const char* kIconLabels[kIconCount] = {
   "待辦事項",
   "採辦",
   "天氣",
-  "壁紙",
+  "工具",
   "設定",
   "求籖"
 };
@@ -326,11 +326,18 @@ int mottoCount = 0;
 // Wallpaper
 String wallpaperFiles[MAX_WALLPAPERS];
 int wallpaperCount = 0;
-int selectedWallpaper = 0;
+int selectedWallpaper = -1;
 int wallpaperScrollOffset = 0;
 bool wallpaperRotateActive = false;
 unsigned long wallpaperRotateLastChange = 0;
 int wallpaperViewMode = 0;  // 0=name list, 1=thumbnails
+
+// Medication Reminder
+time_t medReminderPressTime = 0;
+String medPasscode = "";
+String medPasscodeInput = "";
+bool medSettingNewPasscode = false;
+String medPasscodeFirst = "";
 
 // Fortune Slips
 int fortuneSlipCategory = -1;  // 0=kuanyin, 1=senso-ji

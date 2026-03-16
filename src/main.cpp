@@ -6,6 +6,7 @@
 #include "sleeping_jpg.h"
 #include <esp_sleep.h>
 #include <esp_random.h>
+#include <esp_task_wdt.h>
 #include <driver/gpio.h>
 
 SET_LOOP_TASK_STACK_SIZE(32 * 1024);
@@ -263,6 +264,8 @@ void setup() {
     Serial.println("Loading mottos...");
     loadMottos();
 
+    // Med passcode is loaded from config.ini by loadWiFiConfig()
+
     // Load custom calendar events from SD card
     Serial.println("Loading custom calendar events...");
     loadCustomEvents();
@@ -504,6 +507,14 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   usbMSCEnabled = loadPrefBool("m5paper", "usbMSC", false);
   useSDCardIcons = loadPrefBool("m5paper", "sdIcons", false);
   useSxwnlCalendar = loadPrefBool("m5paper", "sxwnl", false);
+
+  // Load medication reminder state (persists across reboots)
+  prefs.begin("m5paper", true);
+  medReminderPressTime = (time_t)prefs.getLong("medTime", 0);
+  prefs.end();
+  if (medReminderPressTime != 0) {
+    Serial.printf("Med reminder: restored press time %ld\n", (long)medReminderPressTime);
+  }
   Serial.printf("Web server enabled: %s\n", webServerEnabled ? "YES" : "NO");
   Serial.printf("USB MSC enabled: %s\n", usbMSCEnabled ? "YES" : "NO");
   Serial.printf("Use SD card icons: %s\n", useSDCardIcons ? "YES" : "NO");
@@ -583,6 +594,21 @@ void loop() {
     }
   }
 
+  // Medication reminder auto-reset after 18 hours
+  if (medReminderPressTime != 0) {
+    time_t now = time(NULL);
+    if (now > 1000000000 && (now - medReminderPressTime > (time_t)MED_REMINDER_RESET_SEC)) {
+      Serial.println("Med reminder: auto-reset after 18 hours");
+      medReminderPressTime = 0;
+      prefs.begin("m5paper", false);
+      prefs.putLong("medTime", 0);
+      prefs.end();
+      if (currentMode == MODE_MED_REMINDER) {
+        drawMedReminder();
+      }
+    }
+  }
+
   // Idle sleep: auto-sleep after 10 minutes of inactivity (when enabled and no external power)
   if (autoSleepEnabled) {
     bool hasExternalPower = isExternalPowerConnected();
@@ -634,6 +660,13 @@ void loop() {
   int x = -1, y = -1;
   bool hasTouchEvent = false;
   
+  // Swipe detection for reading mode
+  static int swipeTouchStartX = -1;
+  static int swipeTouchStartY = -1;
+  static unsigned long swipeTouchStartTime = 0;
+  bool hasSwipeEvent = false;
+  int swipeDeltaX = 0;
+  
   if (pendingNavTouch) {
     // Process touch detected during rendering
     x = pendingTouchX;
@@ -649,6 +682,21 @@ void loop() {
       x = touch.x;
       y = touch.y;
       hasTouchEvent = true;
+      // Record swipe start
+      swipeTouchStartX = touch.x;
+      swipeTouchStartY = touch.y;
+      swipeTouchStartTime = millis();
+    }
+    if (touch.wasReleased() && swipeTouchStartX >= 0) {
+      swipeDeltaX = touch.x - swipeTouchStartX;
+      int swipeDeltaY = touch.y - swipeTouchStartY;
+      unsigned long swipeDuration = millis() - swipeTouchStartTime;
+      // Horizontal swipe: min 60px, mostly horizontal, within 800ms
+      if (abs(swipeDeltaX) > 60 && abs(swipeDeltaX) > abs(swipeDeltaY) * 2 && swipeDuration < 800) {
+        hasSwipeEvent = true;
+        Serial.printf("Swipe detected: dx=%d, dy=%d, duration=%lums\n", swipeDeltaX, swipeDeltaY, swipeDuration);
+      }
+      swipeTouchStartX = -1;
     }
   }
   
@@ -701,11 +749,11 @@ void loop() {
             currentMode = MODE_WEATHER;
             drawWeather(true);
           }
-          // Icon 5 is Wallpaper (壁紙)
+          // Icon 5 is Tools (工具)
           else if (i == 5) {
-            DEBUG_LOG("Opening wallpaper list...");
-            currentMode = MODE_WALLPAPER_LIST;
-            drawWallpaperList();
+            DEBUG_LOG("Opening tools menu...");
+            currentMode = MODE_TOOLS_MENU;
+            drawToolsMenu();
           }
           // Icon 6 is Settings (設定)
           else if (i == 6) {
@@ -1017,8 +1065,8 @@ void loop() {
         }
       }
       // Select font by touch Y position (75px per item, starting at y=100)
-      else if (y >= 100 && y <= 800) {
-        int fontIdx = fontMenuPage * FONTS_PER_PAGE + (y - 100) / 75;
+      else if (y >= 70 && y <= 800) {
+        int fontIdx = fontMenuPage * FONTS_PER_PAGE + (y - 70) / 105;
         Serial.printf("FONT_MENU: tap y=%d → fontIdx=%d (fontFileCount=%d)\n", y, fontIdx, fontFileCount);
         if (fontIdx >= 0 && fontIdx < fontFileCount) {
         selectedFontIndex = fontIdx;
@@ -1046,6 +1094,23 @@ void loop() {
       }
     } 
     else if (currentMode == MODE_READING) {
+      // Swipe gesture for page turning (both image and text reading)
+      if (hasSwipeEvent) {
+        if (swipeDeltaX > 0 && currentPage < totalPages - 1) {
+          // Swipe left→right: next page (forward in vertical CJK)
+          Serial.printf("Swipe right - next page %d -> %d\n", currentPage, currentPage + 1);
+          currentPage++;
+          if (currentBookIsEpub && epubIsImageBased) comicZoomQuadrant = -1;
+          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+        } else if (swipeDeltaX < 0 && currentPage > 0) {
+          // Swipe right→left: previous page (backward in vertical CJK)
+          Serial.printf("Swipe left - prev page %d -> %d\n", currentPage, currentPage - 1);
+          currentPage--;
+          if (currentBookIsEpub && epubIsImageBased) comicZoomQuadrant = -1;
+          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+        }
+      }
+      else if (hasTouchEvent) {
       Serial.printf("READING touch: x=%d, y=%d\n", x, y);
       // Image-based EPUB (comic/manga) zoom handling
       if (currentBookIsEpub && epubIsImageBased) {
@@ -1209,6 +1274,7 @@ void loop() {
             epubParseToc();
           }
           if (epubTocCount > 0) {
+            loadSystemFont();  // Switch to system font for TOC UI
             tocListPage = 0;
             currentMode = MODE_TOC;
             drawTocList();
@@ -1272,6 +1338,7 @@ void loop() {
         }
       }
       } // end non-image else block
+      } // end hasTouchEvent
     }
     else if (currentMode == MODE_PAGE_JUMP) {
       handlePageJumpTouch(x, y);
@@ -2669,6 +2736,146 @@ void loop() {
         drawDashboard();
       }
     }
+    else if (currentMode == MODE_TOOLS_MENU) {
+      if (touchedReturnButton(x, y)) {
+        Serial.println("Tools menu: return to dashboard");
+        currentMode = MODE_DASHBOARD;
+        drawDashboard();
+      }
+      // Option 1: 壁紙 (y=200..310)
+      else if (x >= 40 && x <= 500 && y >= 200 && y <= 310) {
+        Serial.println("Tools: opening wallpaper list");
+        currentMode = MODE_WALLPAPER_LIST;
+        drawWallpaperList();
+      }
+      // Option 2: 吃藥提醒器 (y=330..440)
+      else if (x >= 40 && x <= 500 && y >= 330 && y <= 440) {
+        Serial.println("Tools: opening medication reminder");
+        currentMode = MODE_MED_REMINDER;
+        drawMedReminder();
+      }
+    }
+    else if (currentMode == MODE_MED_REMINDER) {
+      if (touchedReturnButton(x, y)) {
+        Serial.println("Med reminder: return to tools menu");
+        currentMode = MODE_TOOLS_MENU;
+        drawToolsMenu();
+      }
+      // Small reset button below big button (y=670..720) — only when taken
+      else if (medReminderPressTime != 0 && x >= 150 && x <= 390 && y >= 670 && y <= 720) {
+        medPasscodeInput = "";
+        medPasscodeFirst = "";
+        if (medPasscode.length() == 0) {
+          // No passcode set — prompt to create one
+          Serial.println("Med reminder: no passcode set, prompting to create");
+          medSettingNewPasscode = true;
+          currentMode = MODE_MED_PASSCODE;
+          drawMedPasscode();
+        } else {
+          Serial.println("Med reminder: opening passcode for reset");
+          medSettingNewPasscode = false;
+          currentMode = MODE_MED_PASSCODE;
+          drawMedPasscode();
+        }
+      }
+      // Big button area (centered, y=300..650) — only marks as taken
+      else if (x >= 70 && x <= 470 && y >= 300 && y <= 650) {
+        if (medReminderPressTime == 0) {
+          Serial.println("Med reminder: marked as taken");
+          medReminderPressTime = time(NULL);
+          if (medReminderPressTime == 0) medReminderPressTime = 1;  // avoid 0
+          prefs.begin("m5paper", false);
+          prefs.putLong("medTime", (long)medReminderPressTime);
+          prefs.end();
+        } else {
+          Serial.println("Med reminder: already taken, ignoring big button tap");
+          return;  // ignore tap on big button when already taken
+        }
+        drawMedReminder();
+      }
+    }
+    else if (currentMode == MODE_MED_PASSCODE) {
+      if (touchedReturnButton(x, y)) {
+        Serial.println("Passcode: cancel, return to med reminder");
+        currentMode = MODE_MED_REMINDER;
+        drawMedReminder();
+      }
+      // Numeric keypad: 3x4 grid + backspace + confirm
+      else {
+        int kx0 = 70, ky0 = 350, kw = 120, kh = 100, gap = 10;
+        int col = (x - kx0) / (kw + gap);
+        int row = (y - ky0) / (kh + gap);
+        if (col >= 0 && col < 3 && row >= 0 && row < 4 &&
+            x >= kx0 && x <= kx0 + 3 * (kw + gap) - gap &&
+            y >= ky0 && y <= ky0 + 4 * (kh + gap) - gap) {
+          int kxStart = kx0 + col * (kw + gap);
+          int kyStart = ky0 + row * (kh + gap);
+          if (x >= kxStart && x <= kxStart + kw && y >= kyStart && y <= kyStart + kh) {
+            if (row == 3 && col == 0) {
+              // Backspace
+              if (medPasscodeInput.length() > 0) {
+                medPasscodeInput.remove(medPasscodeInput.length() - 1);
+              }
+              updateMedPasscodeInput();
+            } else if (row == 3 && col == 2) {
+              // Confirm
+              if (medSettingNewPasscode) {
+                if (medPasscodeInput.length() < 1) return;  // need at least 1 digit
+                if (medPasscodeFirst.length() == 0) {
+                  // First entry — save and ask to confirm
+                  medPasscodeFirst = medPasscodeInput;
+                  medPasscodeInput = "";
+                  drawMedPasscode();  // full redraw to show "confirm" title
+                } else {
+                  // Second entry — check match
+                  if (medPasscodeInput == medPasscodeFirst) {
+                    Serial.println("New passcode set successfully");
+                    medPasscode = medPasscodeFirst;
+                    saveMedPasscode();
+                    // Now reset the med reminder
+                    medReminderPressTime = 0;
+                    prefs.begin("m5paper", false);
+                    prefs.putLong("medTime", 0);
+                    prefs.end();
+                    currentMode = MODE_MED_REMINDER;
+                    drawMedReminder();
+                  } else {
+                    Serial.println("Passcode mismatch, try again");
+                    medPasscodeFirst = "";
+                    medPasscodeInput = "";
+                    drawMedPasscode();  // full redraw back to "set new" title
+                  }
+                }
+              } else {
+                // Verify mode
+                if (medPasscodeInput == medPasscode) {
+                  Serial.println("Passcode correct: resetting med reminder");
+                  medReminderPressTime = 0;
+                  prefs.begin("m5paper", false);
+                  prefs.putLong("medTime", 0);
+                  prefs.end();
+                  currentMode = MODE_MED_REMINDER;
+                  drawMedReminder();
+                } else {
+                  Serial.println("Passcode incorrect");
+                  medPasscodeInput = "";
+                  updateMedPasscodeInput();
+                }
+              }
+            } else {
+              // Digit key
+              int digit;
+              if (row == 3 && col == 1) digit = 0;
+              else digit = row * 3 + col + 1;
+              if (medPasscodeInput.length() < 8) {
+                medPasscodeInput += String(digit);
+              }
+              updateMedPasscodeInput();
+            }
+          }
+        }
+      }
+    }
     else if (currentMode == MODE_WALLPAPER_LIST) {
       // View toggle button (top-right): x=380..520, y=30..70
       if (x >= 380 && x <= 520 && y >= 30 && y <= 70) {
@@ -2710,9 +2917,9 @@ void loop() {
       }
       // Universal nav: return button
       else if (touchedReturnButton(x, y)) {
-        Serial.println("Wallpaper list back button touched - returning to dashboard");
-        currentMode = MODE_DASHBOARD;
-        drawDashboard();
+        Serial.println("Wallpaper list back button touched - returning to tools menu");
+        currentMode = MODE_TOOLS_MENU;
+        drawToolsMenu();
       }
       // Random button (隨機): x=200..300, y=900..944
       else if (x >= 200 && x <= 300 && y >= 900 && y <= 944) {
@@ -2949,7 +3156,12 @@ void loop() {
                           currentBookIsEpub, epubFullText, epubZipEntries);
             
             if (loadBook(bookIndex)) {
-              Serial.printf("Book loaded OK - Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+              Serial.printf("Book loaded OK - Free heap: %u, Free PSRAM: %u, ofrFiles: %d\n",
+                            ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+              Serial.printf("About to drawReading: Silver=%d, bpp=%d, pages=%d, epubChapters=%d\n",
+                            (systemFontChoice == 1), bytesPerPage, totalPages, epubChapterCount);
+              yield();
+              esp_task_wdt_reset();
               currentMode = MODE_READING;
               drawReading();
             } else {
@@ -2959,12 +3171,21 @@ void loop() {
               Serial.printf("State: currentBookIsEpub=%d, epubFullText=%p, epubZipEntries=%p\n",
                             currentBookIsEpub, epubFullText, epubZipEntries);
               M5.Display.setEpdMode(epd_mode_t::epd_fastest);
-              M5.Display.fillRect(20, 700, 500, 160, TFT_WHITE);
+              M5.Display.fillRect(20, 680, 500, 200, TFT_WHITE);
               char errMsg1[80];
               snprintf(errMsg1, sizeof(errMsg1), "載入失敗 [%s]", lastLoadError.c_str());
-              drawSystemText(errMsg1, 20, 710, 28);
+              drawSystemText(errMsg1, 20, 690, 28);
+              // Show filename for identification
+              char errMsg2[80];
+              snprintf(errMsg2, sizeof(errMsg2), "%.60s", bookList[bookIndex].c_str());
+              drawSystemText(errMsg2, 20, 730, 20);
+              // Show memory info
+              char errMsg3[80];
+              snprintf(errMsg3, sizeof(errMsg3), "Heap:%uK PSRAM:%uK",
+                       ESP.getFreeHeap()/1024, ESP.getFreePsram()/1024);
+              drawSystemText(errMsg3, 20, 760, 20);
               M5.Display.display();
-              delay(3000);
+              delay(5000);
               drawBookList();
             }
           }

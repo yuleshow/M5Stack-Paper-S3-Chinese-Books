@@ -12,6 +12,7 @@
 #include "label_shopping.h"
 #include "label_weather.h"
 #include "label_wallpaper.h"
+#include "label_tools.h"
 #include "label_settings.h"
 #include "label_fortune_slips.h"
 #include "label_kuanyin_slips.h"
@@ -131,6 +132,18 @@
 #include "label_usb_fail.h"
 #include "label_not_found.h"
 #include "label_wallpaper_title.h"
+#include "label_tools_title.h"
+#include "label_tools_wallpaper.h"
+#include "label_med_reminder.h"
+#include "label_med_title.h"
+#include "label_med_taken.h"
+#include "label_med_not_taken.h"
+#include "label_med_press_hint.h"
+#include "label_med_manual_reset.h"
+#include "label_med_passcode_title.h"
+#include "label_med_passcode_wrong.h"
+#include "label_med_instr1.h"
+#include "label_med_instr2.h"
 #include "label_switch_thumbnail.h"
 #include "label_switch_list.h"
 #include "label_no_wallpaper.h"
@@ -1345,7 +1358,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1329;
+const int kLabelBitmapCount = 1342;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -1354,6 +1367,7 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"採辦", 32, label_shopping_w, label_shopping_h, label_shopping_bitmap},
   {"天氣", 32, label_weather_w, label_weather_h, label_weather_bitmap},
   {"壁紙", 32, label_wallpaper_w, label_wallpaper_h, label_wallpaper_bitmap},
+  {"工具", 32, label_tools_w, label_tools_h, label_tools_bitmap},
   {"設定", 32, label_settings_w, label_settings_h, label_settings_bitmap},
   {"求籖", 32, label_fortune_slips_w, label_fortune_slips_h, label_fortune_slips_bitmap},
   {"觀音靈籖", 36, label_kuanyin_slips_w, label_kuanyin_slips_h, label_kuanyin_slips_bitmap},
@@ -1473,6 +1487,18 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"✗ 啟動失敗 - 請查看序列輸出", 24, label_usb_fail_w, label_usb_fail_h, label_usb_fail_bitmap},
   {"找不到", 28, label_not_found_w, label_not_found_h, label_not_found_bitmap},
   {"壁紙選擇", 36, label_wallpaper_title_w, label_wallpaper_title_h, label_wallpaper_title_bitmap},
+  {"工具", 36, label_tools_title_w, label_tools_title_h, label_tools_title_bitmap},
+  {"壁紙", 36, label_tools_wallpaper_w, label_tools_wallpaper_h, label_tools_wallpaper_bitmap},
+  {"吃藥提醒器", 36, label_med_reminder_w, label_med_reminder_h, label_med_reminder_bitmap},
+  {"吃藥提醒器", 36, label_med_title_w, label_med_title_h, label_med_title_bitmap},
+  {"已吃藥", 48, label_med_taken_w, label_med_taken_h, label_med_taken_bitmap},
+  {"未吃藥", 48, label_med_not_taken_w, label_med_not_taken_h, label_med_not_taken_bitmap},
+  {"吃藥後請按此", 28, label_med_press_hint_w, label_med_press_hint_h, label_med_press_hint_bitmap},
+  {"點擊手動復位", 22, label_med_manual_reset_w, label_med_manual_reset_h, label_med_manual_reset_bitmap},
+  {"輸入密碼", 36, label_med_passcode_title_w, label_med_passcode_title_h, label_med_passcode_title_bitmap},
+  {"密碼錯誤", 22, label_med_passcode_wrong_w, label_med_passcode_wrong_h, label_med_passcode_wrong_bitmap},
+  {"吃藥時按一下按鈕", 24, label_med_instr1_w, label_med_instr1_h, label_med_instr1_bitmap},
+  {"忘了是否吃過，看一眼就知道", 22, label_med_instr2_w, label_med_instr2_h, label_med_instr2_bitmap},
   {"切換縮圖", 24, label_switch_thumbnail_w, label_switch_thumbnail_h, label_switch_thumbnail_bitmap},
   {"切換列表", 24, label_switch_list_w, label_switch_list_h, label_switch_list_bitmap},
   {"SD卡中沒有壁紙", 24, label_no_wallpaper_w, label_no_wallpaper_h, label_no_wallpaper_bitmap},

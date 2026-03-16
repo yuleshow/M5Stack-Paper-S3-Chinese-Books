@@ -1,6 +1,9 @@
 #include "globals.h"
+#include "esp_task_wdt.h"
 
 // ==================== OpenFontRender SD File I/O Overrides ====================
+
+static int ofrReadCounter = 0;  // Rate-limit yield() inside OFR_fread
 
 FT_FILE *OFR_fopen(const char *filename, const char *mode) {
   File f = SD.open(filename, mode);
@@ -20,6 +23,12 @@ void OFR_fclose(FT_FILE *stream) {
 }
 
 size_t OFR_fread(void *ptr, size_t size, size_t nmemb, FT_FILE *stream) {
+  // Feed watchdog every 64 reads to prevent timeout during font parsing
+  if (++ofrReadCounter >= 64) {
+    ofrReadCounter = 0;
+    yield();
+    esp_task_wdt_reset();
+  }
   return ((File *)stream)->read((uint8_t *)ptr, size * nmemb);
 }
 
@@ -664,7 +673,44 @@ int drawBinFontString(const String &text, int x, int y, int charSpacing) {
   return currentX;
 }
 
-// ==================== OFR Cached Glyph Drawing ====================
+int drawBinFontStringScaled(const String &text, int x, int y, float scale, bool noYOffset) {
+  if (!g_binFont.loaded) return x;
+
+  int fontSize = g_binFont.fontSize;
+  int currentX = x;
+  for (int i = 0; i < (int)text.length(); ) {
+    int charStart = i;
+    uint32_t unicode = utf8Decode(text, i);
+
+    GlyphIndex* glyph = findGlyph(unicode);
+    if (glyph && glyph->width > 0) {
+      int yOffset = 0;
+      if (noYOffset) {
+        // Preview mode: center small glyphs (punctuation) vertically
+        if (glyph->height < fontSize) {
+          yOffset = (fontSize - glyph->height) / 2;
+        }
+      } else {
+        yOffset = fontSize - glyph->height;
+        if (glyph->bearingY != 0) {
+          yOffset = fontSize - glyph->bearingY;
+        }
+        if (yOffset < 0) yOffset = 0;
+      }
+      drawBinFontChar(unicode, currentX, y + (int)(yOffset * scale), TFT_BLACK, scale);
+      currentX += (int)((glyph->width + 2) * scale);
+    } else {
+      M5.Display.setCursor(currentX, y);
+      String ch = text.substring(charStart, i);
+      M5.Display.print(ch);
+      currentX += (int)(fontSize * scale);
+    }
+  }
+
+  return currentX;
+}
+
+// ==================== OFR Cached Glyph Drawing ======================================
 // Renders a TTF character via OpenFontRender into a small sprite,
 // converts to 1-bit bitmap, and caches in PSRAM.
 // Subsequent draws of the same character skip FreeType entirely.
@@ -795,7 +841,18 @@ bool loadTTFFont(const char* fontPath, int size) {
     Serial.println("Unloaded previous OFR font");
   }
   
+  yield();
+  esp_task_wdt_reset();
+  ofrReadCounter = 0;  // Reset rate-limiter before font parse
+  Serial.printf("loadTTFFont: calling ofr.loadFont, heap=%u, psram=%u, ofrFiles=%d\n",
+               ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+  unsigned long fontLoadStart = millis();
   FT_Error error = ofr.loadFont(fullPath.c_str());
+  unsigned long fontLoadMs = millis() - fontLoadStart;
+  Serial.printf("loadTTFFont: ofr.loadFont returned 0x%02X in %lu ms, ofrFiles=%d\n",
+               error, fontLoadMs, (int)ofr_file_list.size());
+  yield();
+  esp_task_wdt_reset();
   if (error) {
     Serial.printf("✗ OpenFontRender loadFont error: 0x%02X\n", error);
     return false;

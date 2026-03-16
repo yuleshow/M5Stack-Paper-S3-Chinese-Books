@@ -81,6 +81,12 @@ void loadWiFiConfig() {
         } else if (key == "device_name") {
           bleUnlockConfig.deviceName = value;
         }
+      } else if (section == "medicine") {
+        if (key == "passcode") {
+          if (value.length() > 0 && value.length() <= 8) {
+            medPasscode = value;
+          }
+        }
       }
     }
   }
@@ -102,6 +108,11 @@ void loadWiFiConfig() {
   if (bleUnlockConfig.enabled && bleUnlockConfig.password.length() > 0) {
     Serial.printf("BLE Unlock config loaded: device=%s\n",
       bleUnlockConfig.deviceName.c_str());
+  }
+  
+  // Med passcode
+  if (medPasscode.length() > 0) {
+    Serial.printf("Med passcode loaded (%d digits)\n", medPasscode.length());
   }
   
   for (int i = 0; i < timezoneCount; i++) {
@@ -151,6 +162,16 @@ void saveWiFiConfig() {
   configFile.println("city=" + weatherConfig.city);
   configFile.println("units=" + weatherConfig.units);
   configFile.println();
+  configFile.println("[unlock]");
+  configFile.println("enabled=" + String(bleUnlockConfig.enabled ? "true" : "false"));
+  configFile.println("password=" + bleUnlockConfig.password);
+  configFile.println("device_name=" + bleUnlockConfig.deviceName);
+  configFile.println();
+  if (medPasscode.length() > 0) {
+    configFile.println("[medicine]");
+    configFile.println("passcode=" + medPasscode);
+    configFile.println();
+  }
   
   configFile.flush();
   configFile.close();

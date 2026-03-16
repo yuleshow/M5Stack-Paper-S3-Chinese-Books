@@ -28,8 +28,8 @@ void drawFontMenu() {
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_BLACK);
   
-  drawSystemText("選擇閱讀字型 Reading Font", 20, 30, 24);
-  M5.Display.drawLine(20, 60, 520, 60, TFT_BLACK);
+  drawSystemText("選擇閱讀字型", 20, 25, 36);
+  M5.Display.drawLine(20, 65, 520, 65, TFT_BLACK);
   
   // Pagination
   int totalPages = (fontFileCount + FONTS_PER_PAGE - 1) / FONTS_PER_PAGE;
@@ -38,66 +38,68 @@ void drawFontMenu() {
   int startIdx = fontMenuPage * FONTS_PER_PAGE;
   int endIdx = min(startIdx + FONTS_PER_PAGE, fontFileCount);
   
-  // Show dynamic font list for current page
+  // Layout: each item = [gap] [filename] [sample bottom-aligned at fixed baseline]
+  // Item layout (ITEM_HEIGHT = 105px):
+  //   0:      separator line
+  //   5..20:  filename (16px system text)
+  //   22..40: font name (18px system text, always aligned)
+  //   44..80: sample text (rendered in actual font, ~32px)
+  const int ITEM_HEIGHT = 105;
+  const int LIST_TOP = 70;
   for (int i = startIdx; i < endIdx; i++) {
-    // Check for nav touch between font items
     if (checkNavTouch()) {
       Serial.println("Nav touch during font menu render - aborting");
       return;
     }
     
-    int y = 100 + ((i - startIdx) * 75);
+    int y = LIST_TOP + ((i - startIdx) * ITEM_HEIGHT);
+
+    // Separator line at top
+    M5.Display.drawLine(30, y, 510, y, TFT_LIGHTGRAY);
     
     if (i == selectedFontIndex) {
-      M5.Display.fillRect(30, y - 5, 480, 55, TFT_LIGHTGRAY);
+      M5.Display.fillRect(30, y + 2, 480, ITEM_HEIGHT - 2, TFT_LIGHTGRAY);
     }
     
-    // Use display name instead of filename
     String displayName = fontDisplayNames[i];
     String fileName = fontFileList[i];
     
-    // Draw font type indicator + filename (small) on first line
-    String typeLabel;
-    if (fileName.endsWith(".bin") || fileName.endsWith(".BIN")) {
-      typeLabel = "▣ ";
-    } else {
-      typeLabel = "Ⓣ ";
-    }
-    
-    // Small filename line (using system font) — bottom-aligned just above sample text
+    // Line 1: Filename (system font, 16px)
+    String typeLabel = (fileName.endsWith(".bin") || fileName.endsWith(".BIN")) ? "▣ " : "Ⓣ ";
     String fileInfo = typeLabel + fileName;
-    if (i == selectedFontIndex) {
-      fileInfo += " ✓";
-    }
-    int fileInfoSize = (systemFontChoice == 1) ? 20 : 16;  // Larger for Silver font
-    drawSystemText(fileInfo.c_str(), 50, y + 2, fileInfoSize);
+    if (i == selectedFontIndex) fileInfo += " ✓";
+    drawSystemText(fileInfo.c_str(), 50, y + 5, 16);
     
-    // Render font display name using its own font face
-    int sampleY = y + 26;  // More space between filename and preview
+    // Line 2: Font name (system font, 18px — always aligned)
+    drawSystemText(displayName.c_str(), 50, y + 24, 18);
+    
+    // Line 3: Sample text (rendered in actual font)
+    // Use bottom-aligned position: sample bottom at y+95, rendered height ~32px
+    int sampleBottom = y + 95;
+    String sampleLine = "\xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
+
     if (fileName.endsWith(".bin") || fileName.endsWith(".BIN")) {
-      // Free previous bin font if loaded
       if (g_binFont.loaded) {
         if (g_binFont.index) { free(g_binFont.index); g_binFont.index = nullptr; }
         g_binFont.fontFile.close();
         g_binFont.loaded = false;
       }
       if (loadBinaryFont(fileName.c_str())) {
-        String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
-        drawBinFontString(sampleLine, 50, sampleY, g_binFont.fontSize);
+        float scale = 32.0f / g_binFont.fontSize;
+        int scaledH = (int)(g_binFont.fontSize * scale);
+        drawBinFontStringScaled(sampleLine, 50, sampleBottom - scaledH, scale);
       } else {
-        String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
-        drawSystemText(sampleLine.c_str(), 50, sampleY, 24);
+        drawSystemText(sampleLine.c_str(), 50, sampleBottom - 32, 24);
       }
     } else {
-      // TTF/TTC font: temporarily load and render the name in its own typeface
-      bool loaded = loadTTFFont(fileName.c_str(), 24);
+      bool isSilver = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
+      int previewSize = isSilver ? 33 : 24;
+      bool loaded = loadTTFFont(fileName.c_str(), previewSize);
       if (loaded && ofrFontLoaded) {
         ofr.setFontColor(TFT_BLACK, (i == selectedFontIndex) ? TFT_LIGHTGRAY : TFT_WHITE);
-        String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
-        ofr.drawString(sampleLine.c_str(), 50, sampleY);
+        ofr.drawString(sampleLine.c_str(), 50, sampleBottom - previewSize);
       } else {
-        String sampleLine = displayName + " \xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
-        drawSystemText(sampleLine.c_str(), 50, sampleY, 24);
+        drawSystemText(sampleLine.c_str(), 50, sampleBottom - 32, 24);
       }
     }
   }
@@ -112,12 +114,13 @@ void drawFontMenu() {
   // Restore system font after rendering font previews
   loadSystemFont();
   
-  // Status line at bottom - show system and reading font info
-  String statusLine = "系統：" + (systemFontFile.length() > 0 ? systemFontFile : String("內建"));
+  // Status at bottom — two lines, larger text
+  String sysLine = "系統：" + (systemFontFile.length() > 0 ? systemFontFile : String("內建"));
+  drawSystemText(sysLine.c_str(), 20, 810, 22);
   if (readingFontIndex >= 0 && readingFontIndex < fontFileCount) {
-    statusLine += " | 閱讀：" + fontDisplayNames[readingFontIndex];
+    String rdLine = "閱讀：" + fontDisplayNames[readingFontIndex];
+    drawSystemText(rdLine.c_str(), 20, 840, 22);
   }
-  drawSystemText(statusLine.c_str(), 20, 830, 18);
   
   // Page indicator next to right arrow, larger font
   if (totalPages > 1) {
@@ -645,7 +648,7 @@ void drawSetupMenu() {
   const int totalPages = 2;
 
   // Title
-  drawSystemText("設定", 20, 25, 40);
+  drawSystemText("設定", 20, 42, 40);
   {
     char pageBuf[8];
     snprintf(pageBuf, sizeof(pageBuf), "%d/%d", setupMenuPage + 1, totalPages);
@@ -655,7 +658,7 @@ void drawSetupMenu() {
   bool showNext = (setupMenuPage < totalPages - 1);
   drawNavBar(showPrev, showNext);
 
-  int y = 85;
+  int y = 92;
   int itemHeight = 100;
 
   if (setupMenuPage == 0) {

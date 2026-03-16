@@ -15,6 +15,9 @@ A feature-rich Chinese e-ink application for the **M5Stack Paper S3** (ESP32-S3,
 ## Features
 
 ### 📖 Book Reader ![Feature](https://img.shields.io/badge/Feature-Book_Reader-blue)
+
+![Reading Page](output/reading_page_screenshot.png)
+
 - **TXT and EPUB** support with vertical CJK text layout (right-to-left columns)
 - EPUB parsing with built-in ZIP/deflate decompression and HTML-to-text extraction
 - **Table of Contents (TOC)** — NCX-based chapter index for EPUB files; paginated list with tap-to-jump navigation; shows "此書無目錄" popup for TXT or EPUBs without TOC

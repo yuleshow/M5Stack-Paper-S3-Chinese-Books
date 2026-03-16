@@ -1,4 +1,5 @@
 #include "globals.h"
+#include "esp_task_wdt.h"
 
 // Save current reading position to SD card (.pos file)
 void saveReadingPosition() {
@@ -142,8 +143,8 @@ void scanBooks() {
           if (epubCheck) {
             size_t epubSize = epubCheck.size();
             epubCheck.close();
-            if (epubSize < 100 || epubSize > 500UL * 1024 * 1024) {
-              Serial.printf("  Skipping title extraction: file size %u suspicious\n", epubSize);
+            if (epubSize < 100 || epubSize > 100UL * 1024 * 1024) {
+              Serial.printf("  Skipping title extraction: file size %u too large/small\n", epubSize);
               skipTitle = true;
             }
           } else {
@@ -197,6 +198,7 @@ static bool isReadingFontSilver() {
 void updateBytesPerPage() {
   bool silverReading = isReadingFontSilver();
   int renderSize = silverReading ? silverScaledSize(readingFontSize) : readingFontSize;
+  if (renderSize < 1) renderSize = DEFAULT_READING_FONT_SIZE;  // safety
   int charH, colSp;
   int areaTop, areaLeft, areaRight, maxY;
   if (silverReading) {
@@ -210,11 +212,14 @@ void updateBytesPerPage() {
     areaTop = READING_AREA_TOP; areaLeft = READING_AREA_LEFT;
     areaRight = READING_AREA_RIGHT; maxY = VERTICAL_TEXT_MAX_Y;
   }
+  if (charH < 1) charH = 1;
+  if (colSp < 1) colSp = 1;
   int charsPerCol = (maxY - areaTop) / charH;
   int numCols = (areaRight - areaLeft) / colSp;
   int totalChars = charsPerCol * numCols;
   bytesPerPage = max(200, totalChars * 3 + 50);
-  Serial.printf("Font size %d -> bytesPerPage %d (chars %d)\n", readingFontSize, bytesPerPage, totalChars);
+  Serial.printf("Font size %d (render %d, silver=%d) -> bytesPerPage %d (chars %d = %d×%d)\n",
+                readingFontSize, renderSize, silverReading, bytesPerPage, totalChars, charsPerCol, numCols);
 }
 
 void recalculatePages() {
@@ -471,6 +476,13 @@ bool loadBook(int bookIndex) {
   Serial.printf("loadBook: cleanup - epubFullText=%p, epubZipEntries=%p, epubChapters=%p\n",
                 epubFullText, epubZipEntries, epubChapters);
   epubCleanup();
+  // Unload OFR font to free its SD file handle — prevents SD bus contention
+  // during heavy EPUB chapter loading. Will be reloaded after loading completes.
+  if (ofrFontLoaded) {
+    ofr.unloadFont();
+    ofrFontLoaded = false;
+    Serial.printf("loadBook: unloaded OFR font, ofr_file_list.size=%d\n", (int)ofr_file_list.size());
+  }
   currentBookIsEpub = false;
   currentPageContent = "";
   currentPage = 0;
@@ -486,6 +498,26 @@ bool loadBook(int bookIndex) {
   String filename = bookList[bookIndex];
   currentBookPath = "/books/" + filename;
   Serial.printf("Opening book: %s\n", currentBookPath.c_str());
+  
+  // Verify file exists and is readable before loading
+  {
+    ScopedSDLock lock;
+    File checkFile = SD.open(currentBookPath.c_str());
+    if (!checkFile) {
+      Serial.printf("loadBook: file not found on SD: %s\n", currentBookPath.c_str());
+      char detail[60];
+      snprintf(detail, sizeof(detail), "找不到: %.40s", filename.c_str());
+      lastLoadError = String(detail);
+      return false;
+    }
+    size_t fsize = checkFile.size();
+    checkFile.close();
+    Serial.printf("loadBook: file verified, size=%u bytes\n", fsize);
+    if (fsize < 100) {
+      lastLoadError = "file too small";
+      return false;
+    }
+  }
   
   // Check if EPUB
   String lowerName = filename;
@@ -532,7 +564,10 @@ bool loadBook(int bookIndex) {
                   currentPage, totalPages, epubIsImageBased, epubChapterCount);
     if (currentPage >= totalPages) currentPage = 0;
     loadBookmarks();
+    yield();
+    esp_task_wdt_reset();
     if (!loadCurrentPage()) { lastLoadError = "epub loadPage"; return false; }
+    Serial.println("EPUB: loadCurrentPage OK, ready to draw");
     return true;
   }
   
@@ -671,14 +706,18 @@ static epd_mode_t getReadingEpdMode() {
 }
 
 void drawReading() {
+  Serial.printf("\n=== drawReading() === heap=%u, psram=%u, ofrLoaded=%d, ofrFiles=%d\n",
+                ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofrFontLoaded, (int)ofr_file_list.size());
   Serial.println("Drawing reading mode...");
+  
+  // Common screen setup for all reading paths
+  M5.Display.setEpdMode(getReadingEpdMode());
+  M5.Display.startWrite();
+  M5.Display.fillScreen(TFT_WHITE);
+  drawStatusBar();
   
   // Comic zoom mode: draw zoomed quadrant fullscreen
   if (currentBookIsEpub && epubIsImageBased && comicZoomQuadrant >= 0) {
-    M5.Display.setEpdMode(getReadingEpdMode());
-    M5.Display.startWrite();
-    M5.Display.fillScreen(TFT_WHITE);
-    
     String displayText = currentPageContent;
     // Find the image marker in the page content
     int markerPos = displayText.indexOf(EPUB_IMG_MARKER);
@@ -693,6 +732,8 @@ void drawReading() {
       }
     }
     
+    // Redraw status bar on top of fullscreen image
+    drawStatusBar();
     M5.Display.endWrite();
     M5.Display.display();
     return;
@@ -701,11 +742,6 @@ void drawReading() {
   // Image-based EPUB full view: render image directly, skip text loop
   // This avoids showing stray text (e.g. filenames) that may precede image markers
   if (currentBookIsEpub && epubIsImageBased) {
-    M5.Display.setEpdMode(getReadingEpdMode());
-    M5.Display.startWrite();
-    M5.Display.fillScreen(TFT_WHITE);
-    
-    drawStatusBar();
     // Only draw arrows and return button (no progress bar / font buttons for comic)
     drawReturnButton();
     {
@@ -765,14 +801,17 @@ void drawReading() {
   }
   
   // Load the user-selected reading font (may differ from system font)
-  loadReadingFont();
+  Serial.printf("drawReading: before loadReadingFont, ofrFontLoaded=%d, currentFontFile=%s, heap=%u, psram=%u, ofrFiles=%d\n",
+               ofrFontLoaded, currentFontFile.c_str(), ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+  yield();
+  esp_task_wdt_reset();
+  bool fontOk = loadReadingFont();
+  Serial.printf("drawReading: after loadReadingFont, ok=%d, ofrFontLoaded=%d, currentFontFile=%s, ofrFiles=%d\n",
+               fontOk, ofrFontLoaded, currentFontFile.c_str(), (int)ofr_file_list.size());
+  yield();
+  esp_task_wdt_reset();
   
-  M5.Display.setEpdMode(getReadingEpdMode());
-  M5.Display.startWrite();
-  M5.Display.fillScreen(TFT_WHITE);
-  
-  // Status bar + nav bar first
-  drawStatusBar();
+  // Nav bar
   {
     bool hasPrev = (currentPage > 0);
     bool hasNext = (currentPage < totalPages - 1);
@@ -850,15 +889,23 @@ void drawReading() {
     rdLeft = READING_AREA_LEFT; rdRight = READING_AREA_RIGHT;
     rdTop = READING_AREA_TOP;   rdMaxY = VERTICAL_TEXT_MAX_Y;
   }
+  // Safety: guard against zero char dimensions (would cause div-by-zero or infinite loop)
+  if (charHeight < 1) charHeight = 1;
+  if (columnSpacing < 1) columnSpacing = 1;
   int charsPerColumn = (rdMaxY - rdTop) / charHeight - 2;
+  if (charsPerColumn < 1) charsPerColumn = 1;
   int columnX = rdRight - columnSpacing / 2;
   int startY = rdTop;
   
   int charIndex = 0;
   int currentY = startY;
   
-  Serial.printf("Font renderer: %d, fontSize: %d, charHeight: %d\n", renderer, fontSizePt, charHeight);
+  Serial.printf("Font renderer: %d, fontSize: %d, charHeight: %d, silverReading: %d\n", renderer, fontSizePt, charHeight, silverReading);
+  Serial.printf("Layout: rdLeft=%d rdRight=%d rdTop=%d rdMaxY=%d charsPerCol=%d columnX=%d\n",
+                rdLeft, rdRight, rdTop, rdMaxY, charsPerColumn, columnX);
   int charsDrawn = 0;
+  yield();
+  esp_task_wdt_reset();
   
   // BinFont scale factor: ratio of desired size to native bitmap size
   float binScale = (renderer == FONT_BINFONT && g_binFont.fontSize > 0) ?
@@ -869,6 +916,8 @@ void drawReading() {
   for (int i = 0; i < (int)sampleText.length(); ) {
     // Check for nav touch every 50 characters
     if (charsDrawn > 0 && charsDrawn % 50 == 0) {
+      yield();
+      esp_task_wdt_reset();
       if (checkNavTouch()) {
         Serial.println("Nav touch during reading render - aborting");
         return;
@@ -1102,81 +1151,30 @@ void drawReading() {
         uint32_t peekUnicode = utf8Decode(sampleText, peekI);
         uint32_t mappedPeek = toVerticalPunct(peekUnicode);
         if (isColumnStartProhibited(peekUnicode) || isColumnStartProhibited(mappedPeek)) {
-          // Check if the character AFTER this one is also start-prohibited (e.g. 。﹂)
-          int peek2I = peekI;
-          uint32_t peek2Unicode = 0;
-          uint32_t mapped2 = 0;
-          bool hasSecond = false;
-          if (peek2I < (int)sampleText.length()) {
-            peek2Unicode = utf8Decode(sampleText, peek2I);
-            mapped2 = toVerticalPunct(peek2Unicode);
-            hasSecond = isColumnStartProhibited(peek2Unicode) || isColumnStartProhibited(mapped2);
-          }
-
           String peekCh = sampleText.substring(i, peekI);
           applyVerticalPunct(peekCh, mappedPeek);
 
-          if (hasSecond) {
-            // Two consecutive prohibited chars — draw both in the reserved slot at half height
-            String peek2Ch = sampleText.substring(peekI, peek2I);
-            applyVerticalPunct(peek2Ch, mapped2);
-            int halfH = charHeight / 2;
-            int halfFont = fontSizePt / 2;
-            if (renderer == FONT_OFR) {
-              ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-              ofr.setFontSize(halfFont);
-              ofr.cdrawString(peekCh.c_str(), columnX, currentY, TFT_BLACK, TFT_WHITE);
-              ofr.cdrawString(peek2Ch.c_str(), columnX, currentY + halfH, TFT_BLACK, TFT_WHITE);
-              ofr.setFontSize(fontSizePt);  // Restore
-            } else if (renderer == FONT_BINFONT) {
-              // Binary font — draw at scaled size stacked tightly
-              GlyphIndex* g1 = findGlyph(mappedPeek);
-              if (g1 && g1->width > 0) {
-                int kx = (g1->bearingX != 0 || g1->bearingY != 0) ? columnX - fontSizePt/2 + (int)(g1->bearingX * binScale) : columnX - (int)(g1->width * binScale + 0.5f)/2;
-                int ky = (g1->bearingX != 0 || g1->bearingY != 0) ? currentY + (int)(g1->bearingY * binScale) : currentY;
-                drawBinFontChar(mappedPeek, kx, ky, TFT_BLACK, binScale);
-              }
-              GlyphIndex* g2 = findGlyph(mapped2);
-              if (g2 && g2->width > 0) {
-                int kx = (g2->bearingX != 0 || g2->bearingY != 0) ? columnX - fontSizePt/2 + (int)(g2->bearingX * binScale) : columnX - (int)(g2->width * binScale + 0.5f)/2;
-                int ky = (g2->bearingX != 0 || g2->bearingY != 0) ? currentY + halfH + (int)(g2->bearingY * binScale) : currentY + halfH;
-                drawBinFontChar(mapped2, kx, ky, TFT_BLACK, binScale);
-              }
-            } else {
-              M5.Display.setFont(&fonts::Font2);
-              M5.Display.setTextSize(1);
-              M5.Display.setCursor(columnX - 8, currentY);
-              M5.Display.print(peekCh);
-              M5.Display.setCursor(columnX - 8, currentY + halfH);
-              M5.Display.print(peek2Ch);
+          // Draw single prohibited char at normal size in reserved slot
+          int vOff = (charHeight - fontSizePt) / 2;
+          if (renderer == FONT_OFR) {
+            drawOFRCharCached(mappedPeek, columnX - fontSizePt / 2, currentY + vOff, TFT_BLACK, fontSizePt);
+          } else if (renderer == FONT_BINFONT) {
+            GlyphIndex* glyph = findGlyph(mappedPeek);
+            if (glyph && glyph->width > 0) {
+              int emX = columnX - fontSizePt / 2;
+              int emY = currentY + (charHeight - fontSizePt) / 2;
+              int kx = (glyph->bearingX != 0 || glyph->bearingY != 0) ? emX + (int)(glyph->bearingX * binScale) : columnX - (int)(glyph->width * binScale + 0.5f)/2;
+              int ky = (glyph->bearingX != 0 || glyph->bearingY != 0) ? emY + (int)(glyph->bearingY * binScale) : emY + (fontSizePt - (int)(glyph->height * binScale + 0.5f)) / 2;
+              drawBinFontChar(mappedPeek, kx, ky, TFT_BLACK, binScale);
             }
-            charsDrawn += 2;
-            i = peek2I;  // Consume both characters
           } else {
-            // Single prohibited char — draw at normal size
-            int vOff = (charHeight - fontSizePt) / 2;
-            if (renderer == FONT_OFR) {
-              ofr.setFontSize(fontSizePt);
-              ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-              ofr.cdrawString(peekCh.c_str(), columnX, currentY + vOff, TFT_BLACK, TFT_WHITE);
-            } else if (renderer == FONT_BINFONT) {
-              GlyphIndex* glyph = findGlyph(mappedPeek);
-              if (glyph && glyph->width > 0) {
-                int emX = columnX - fontSizePt / 2;
-                int emY = currentY + (charHeight - fontSizePt) / 2;
-                int kx = (glyph->bearingX != 0 || glyph->bearingY != 0) ? emX + (int)(glyph->bearingX * binScale) : columnX - (int)(glyph->width * binScale + 0.5f)/2;
-                int ky = (glyph->bearingX != 0 || glyph->bearingY != 0) ? emY + (int)(glyph->bearingY * binScale) : emY + (fontSizePt - (int)(glyph->height * binScale + 0.5f)) / 2;
-                drawBinFontChar(mappedPeek, kx, ky, TFT_BLACK, binScale);
-              }
-            } else {
-              M5.Display.setFont(&fonts::Font2);
-              M5.Display.setTextSize(1);
-              M5.Display.setCursor(columnX - 8, currentY + vOff);
-              M5.Display.print(peekCh);
-            }
-            charsDrawn++;
-            i = peekI;  // Consume the peeked character
+            M5.Display.setFont(&fonts::Font2);
+            M5.Display.setTextSize(1);
+            M5.Display.setCursor(columnX - 8, currentY + vOff);
+            M5.Display.print(peekCh);
           }
+          charsDrawn++;
+          i = peekI;  // Consume the peeked character
         }
       }
       columnX -= columnSpacing;
@@ -1317,6 +1315,7 @@ void drawTocList() {
   M5.Display.fillScreen(TFT_WHITE);
 
   drawStatusBar();
+  drawReturnButton();
 
   // Title
   drawSystemText("目錄", 20, 30, 36);
@@ -1363,6 +1362,7 @@ void drawTocList() {
       }
 
       drawSystemText(displayName.c_str(), 40, rowY, 28);
+      yield();  // prevent watchdog timeout during CJK font rendering
     }
 
     // Pagination

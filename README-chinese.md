@@ -15,6 +15,9 @@
 ## 功能特色
 
 ### 📖 電子書閱讀器 ![功能](https://img.shields.io/badge/功能-電子書閱讀器-blue)
+
+![閱讀頁面](output/reading_page_screenshot.png)
+
 - 支援 **TXT 與 EPUB** 格式，直排中文排版（由右至左分欄）
 - EPUB 解析內建 ZIP/Deflate 解壓縮及 HTML 轉純文字擷取
 - **目錄功能 (TOC)** — 透過 NCX 解析 EPUB 章節索引；分頁列表，點擊即可跳至對應章節；TXT 或無目錄的 EPUB 則顯示「此書無目錄」提示
