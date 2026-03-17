@@ -17,7 +17,7 @@ assets/fonts/*.ttc
 assets/fonts/*.otf
 assets/fonts/*.TTC
 assets/fonts/*.bin
-output/
+output/*.bin
 
 # Book files (copyrighted content)
 assets/books/*.txt
