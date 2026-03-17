@@ -211,9 +211,10 @@ void connectBLEDevice(int index) {
 int numFonts = 4;
 int selectedFontIndex = 0;
 int fontMenuPage = 0;
-const int FONTS_PER_PAGE = 7;  // (800-70)/105 = 6.95 → 7 items, last ends at y=805
+const int FONTS_PER_PAGE = 7;  // (790-90)/100 = 7 items, last ends at y=790
 String fontFileList[MAX_FONT_FILES];
 String fontDisplayNames[MAX_FONT_FILES];
+String fontBinFile[MAX_FONT_FILES];
 int fontFileCount = 0;
 
 // Mode
@@ -263,6 +264,7 @@ String pageJumpInput = "";
 
 // EPUB
 bool currentBookIsEpub = false;
+bool lastPageWasImage = false;
 char* epubFullText = nullptr;
 size_t epubFullTextLen = 0;
 
@@ -289,6 +291,7 @@ int comicZoomMode = 0;
 float comicZoomCX = 0.5f;
 float comicZoomCY = 0.5f;
 int pageRefreshMode = 0;       // 0=system default, 1=every page, 2=every 10 pages
+bool paragraphIndent = false;  // true=首行縮進(2 chars), false=首行不縮進
 int pagesSinceFullRefresh = 0; // Counter for mode 2
 
 // Todo

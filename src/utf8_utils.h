@@ -150,6 +150,31 @@ inline uint32_t toVerticalPunct(uint32_t cp) {
   }
 }
 
+// Convert half-width ASCII punctuation to full-width CJK equivalents.
+// Used in Chinese reading to ensure uniform character width.
+inline uint32_t halfToFullWidth(uint32_t cp) {
+  switch (cp) {
+    case ',':  return 0xFF0C; // ，
+    case '.':  return 0x3002; // 。
+    case '!':  return 0xFF01; // ！
+    case '?':  return 0xFF1F; // ？
+    case ':':  return 0xFF1A; // ：
+    case ';':  return 0xFF1B; // ；
+    case '(':  return 0xFF08; // （
+    case ')':  return 0xFF09; // ）
+    case '[':  return 0xFF3B; // ［
+    case ']':  return 0xFF3D; // ］
+    case '{':  return 0xFF5B; // ｛
+    case '}':  return 0xFF5D; // ｝
+    case '"':  return 0x300C; // 「
+    case '\'': return 0x300E; // 『
+    case '~':  return 0xFF5E; // ～
+    case ' ':  return 0x3000; // 　(ideographic space)
+    case 0x00A0: return 0x3000; // non-breaking space → ideographic space
+    default:   return cp;
+  }
+}
+
 // Apply vertical punctuation substitution to a UTF-8 String.
 // Decodes the first codepoint, maps it, and re-encodes if changed.
 // Also updates `unicode` in-place if provided.

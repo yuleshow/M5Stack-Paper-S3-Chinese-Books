@@ -120,6 +120,12 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   
+  // Initialize watchdog timer: auto-reboot if device hangs for 30 seconds
+  // This prevents USB from entering a bad state that interferes with
+  // Bluetooth peripherals on macOS (shared USB/BT controller)
+  esp_task_wdt_init(30, true);  // 30s timeout, panic (reboot) on expiry
+  esp_task_wdt_add(NULL);       // Add current task (loopTask) to watchdog
+  
   bootCount++;
   
   // Check wake-up reason
@@ -342,6 +348,8 @@ void setup() {
       readingFontIndex = defaultReadingIdx;
     }
     selectedFontIndex = readingFontIndex;
+    // Restore saved reading font file (may be paired BIN)
+    readingFontFile = loadPrefStr("ereader", "fontFile", fontFileList[readingFontIndex]);
     
     // If no system font found, try any TTF/OTF as system font
     if (!fontLoaded) {
@@ -437,10 +445,12 @@ void setup() {
   autoSleepEnabled = prefs.getBool("autoSleep", false);  // Default: disabled
   comicZoomMode = prefs.getInt("comicZoom", 0);  // Default: quadrant mode
   pageRefreshMode = prefs.getInt("pgRefresh", 0);  // Default: system
+  paragraphIndent = prefs.getBool("paraIndent", false);  // Default: no indent
   prefs.end();
   Serial.printf("Auto-sleep setting loaded: %s\n", autoSleepEnabled ? "ENABLED" : "DISABLED");
   Serial.printf("Comic zoom mode loaded: %d\n", comicZoomMode);
   Serial.printf("Page refresh mode loaded: %d\n", pageRefreshMode);
+  Serial.printf("Paragraph indent loaded: %s\n", paragraphIndent ? "YES" : "NO");
   
   // BLE Proximity Unlock — deferred start (not at boot to avoid memory issues)
   // Config is loaded but init is deferred to after display setup
@@ -550,6 +560,7 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
 
 void loop() {
   M5.update();
+  esp_task_wdt_reset();  // Feed watchdog every loop iteration
   
   // Poll IMU for fortune slip shake detection
   if (currentMode == MODE_FORTUNE_SHAKE) {
@@ -1035,6 +1046,7 @@ void loop() {
       if (touchedReturnButton(x, y)) {
         Serial.println("Font menu back button - returning to previous mode");
         savePrefInt("ereader", "fontIdx", selectedFontIndex);
+        savePrefStr("ereader", "fontFile", readingFontFile);
         fontMenuPage = 0;
         if (fontMenuReturnMode == MODE_READING) {
           currentMode = MODE_READING;
@@ -1064,16 +1076,57 @@ void loop() {
           drawFontMenu();
         }
       }
-      // Select font by touch Y position (75px per item, starting at y=100)
-      else if (y >= 70 && y <= 800) {
-        int fontIdx = fontMenuPage * FONTS_PER_PAGE + (y - 70) / 105;
-        Serial.printf("FONT_MENU: tap y=%d → fontIdx=%d (fontFileCount=%d)\n", y, fontIdx, fontFileCount);
+      // Select font by touch Y position
+      else if (y >= 90 && y <= 800) {
+        int fontIdx = fontMenuPage * FONTS_PER_PAGE + (y - 90) / 100;
+        Serial.printf("FONT_MENU: tap y=%d, x=%d → fontIdx=%d (fontFileCount=%d)\n", y, x, fontIdx, fontFileCount);
         if (fontIdx >= 0 && fontIdx < fontFileCount) {
+        // Check if tapping the [BIN] button area (right side)
+        bool tappedBin = false;
+        if (x >= 370 && x <= 510 && fontBinFile[fontIdx].length() > 0) {
+          tappedBin = true;
+          int itemY = 90 + (fontIdx - fontMenuPage * FONTS_PER_PAGE) * 100;
+          int btnRelY = y - itemY;
+          if (btnRelY >= 25 && btnRelY <= 61) {
+            // Toggle BIN selection for this font
+            selectedFontIndex = fontIdx;
+            readingFontIndex = fontIdx;
+            if (readingFontFile == fontBinFile[fontIdx]) {
+              // Already using BIN — switch back to TTF
+              readingFontFile = fontFileList[fontIdx];
+              Serial.printf("Switched to TTF: %s\n", readingFontFile.c_str());
+            } else {
+              // Switch to BIN
+              readingFontFile = fontBinFile[fontIdx];
+              Serial.printf("Switched to BIN: %s\n", readingFontFile.c_str());
+            }
+            savePrefInt("ereader", "fontIdx", readingFontIndex);
+            savePrefStr("ereader", "fontFile", readingFontFile);
+            
+            if (fontMenuReturnMode == MODE_READING) {
+              currentMode = MODE_READING;
+              fontMenuPage = 0;
+              loadReadingFont();
+              recalculatePages();
+              if (currentPage >= totalPages) currentPage = totalPages - 1;
+              loadCurrentPage();
+              drawReading();
+            } else {
+              loadSystemFont();
+              drawFontMenu();
+            }
+          } else {
+            tappedBin = false;  // Not in BIN button Y range
+          }
+        }
+        if (!tappedBin) {
+        // Normal font selection — use TTF (or standalone BIN)
         selectedFontIndex = fontIdx;
         readingFontIndex = fontIdx;
         readingFontFile = fontFileList[fontIdx];
         Serial.printf("Reading font selected: %d = '%s'\n", fontIdx, fontFileList[fontIdx].c_str());
         savePrefInt("ereader", "fontIdx", readingFontIndex);
+        savePrefStr("ereader", "fontFile", readingFontFile);
         
         if (fontMenuReturnMode == MODE_READING) {
           // Return directly to reading with the new font
@@ -1089,6 +1142,7 @@ void loop() {
           drawFontMenu();
         }
         }
+        }
       } else {
         Serial.printf("FONT_MENU: unhandled touch x=%d, y=%d\n", x, y);
       }
@@ -1098,16 +1152,19 @@ void loop() {
       if (hasSwipeEvent) {
         if (swipeDeltaX > 0 && currentPage < totalPages - 1) {
           // Swipe left→right: next page (forward in vertical CJK)
-          Serial.printf("Swipe right - next page %d -> %d\n", currentPage, currentPage + 1);
+          Serial.printf("Swipe right - next page %d -> %d (totalPages=%d, freePSRAM=%u)\n",
+                        currentPage, currentPage + 1, totalPages, ESP.getFreePsram());
           currentPage++;
           if (currentBookIsEpub && epubIsImageBased) comicZoomQuadrant = -1;
           if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+          else { Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage); currentPage--; }
         } else if (swipeDeltaX < 0 && currentPage > 0) {
           // Swipe right→left: previous page (backward in vertical CJK)
           Serial.printf("Swipe left - prev page %d -> %d\n", currentPage, currentPage - 1);
           currentPage--;
           if (currentBookIsEpub && epubIsImageBased) comicZoomQuadrant = -1;
           if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+          else { Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage); currentPage++; }
         }
       }
       else if (hasTouchEvent) {
@@ -1200,28 +1257,51 @@ void loop() {
       // Vertical CJK: left button = NEXT page (forward in book)
       // Only respond if the left arrow is visible (hasNext)
       else if (touchedPrevPage(x, y) && currentPage < totalPages - 1) {
-        DEBUG_LOG_THROTTLE(1000, "LEFT arrow - page %d -> %d", currentPage, currentPage + 1);
+        Serial.printf("LEFT arrow - page %d -> %d (totalPages=%d, freePSRAM=%u)\n",
+                      currentPage, currentPage + 1, totalPages, ESP.getFreePsram());
         currentPage++;
         if (loadCurrentPage()) {
           if (currentPage % 5 == 0) saveReadingPosition();
           drawReading();
+        } else {
+          Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage);
+          currentPage--;
         }
       }
       // Vertical CJK: right button = PREV page (backward in book)
       // Only respond if the right arrow is visible (hasPrev)
       else if (touchedNextPage(x, y) && currentPage > 0) {
-        DEBUG_LOG_THROTTLE(1000, "RIGHT arrow - page %d -> %d", currentPage, currentPage - 1);
+        Serial.printf("RIGHT arrow - page %d -> %d\n", currentPage, currentPage - 1);
         currentPage--;
         if (loadCurrentPage()) {
           if (currentPage % 5 == 0) saveReadingPosition();
           drawReading();
+        } else {
+          Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage);
+          currentPage++;
+        }
+      }
+      // Image page: tap reading area to advance to next page
+      // (cover images fill the screen — arrows may be hard to find)
+      else if (lastPageWasImage && currentPage < totalPages - 1 &&
+               x >= READING_AREA_LEFT && x <= READING_AREA_RIGHT &&
+               y >= READING_AREA_TOP && y <= READING_AREA_BOTTOM) {
+        Serial.printf("Image page tap - page %d -> %d\n", currentPage, currentPage + 1);
+        currentPage++;
+        if (loadCurrentPage()) {
+          saveReadingPosition();
+          drawReading();
+        } else {
+          Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage);
+          currentPage--;
         }
       }
       // Font size decrease (−A) — toolbar cell 0
       else if (y > 900 && x >= 150 && x <= 201) {
         if (readingFontSize > MIN_READING_FONT_SIZE) {
-          readingFontSize -= FONT_SIZE_STEP;
-          if (readingFontSize < MIN_READING_FONT_SIZE) readingFontSize = MIN_READING_FONT_SIZE;
+          // Snap down to nearest grid-aligned size (handles off-grid values like 46→44)
+          int grid = ((readingFontSize - MIN_READING_FONT_SIZE - 1) / FONT_SIZE_STEP) * FONT_SIZE_STEP + MIN_READING_FONT_SIZE;
+          readingFontSize = max(grid, MIN_READING_FONT_SIZE);
           clearGlyphCache();
           if (!(currentBookIsEpub && epubIsImageBased)) {
             size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
@@ -1241,8 +1321,9 @@ void loop() {
       else if (y > 900 && x >= 254 && x <= 305) {
         if (readingFontSize < MAX_READING_FONT_SIZE) {
           int savedPage = currentPage;  // Save for image-based EPUBs
-          readingFontSize += FONT_SIZE_STEP;
-          if (readingFontSize > MAX_READING_FONT_SIZE) readingFontSize = MAX_READING_FONT_SIZE;
+          // Snap up to nearest grid-aligned size (handles off-grid values like 46→48)
+          int grid = ((readingFontSize - MIN_READING_FONT_SIZE) / FONT_SIZE_STEP + 1) * FONT_SIZE_STEP + MIN_READING_FONT_SIZE;
+          readingFontSize = min(grid, MAX_READING_FONT_SIZE);
           clearGlyphCache();
           if (!(currentBookIsEpub && epubIsImageBased)) {
             size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
@@ -2033,7 +2114,7 @@ void loop() {
 
         // Menu paging
         // Left arrow (touchedPrevPage) = go forward/next page
-        if (touchedPrevPage(x, y) && setupMenuPage < 1) {
+        if (touchedPrevPage(x, y) && setupMenuPage < 2) {
           setupMenuPage++;
           drawSetupMenu();
           return;
@@ -2095,8 +2176,8 @@ void loop() {
             drawIconSetup();
             return;
           }
-        } else {
-          // Page 2: 3 items
+        } else if (setupMenuPage == 1) {
+          // Page 2: 5 items
           
           // Calendar Calculation Settings item
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
@@ -2155,12 +2236,28 @@ void loop() {
             return;
           }
 
+        } else if (setupMenuPage == 2) {
+          // Page 3: System Font + Paragraph Indent
+          y1 = 85;  // Reset y1 for page 3
+
           // System Font Settings item
-          y1 += itemHeight + 18;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("System font settings selected");
             setupSubmenu = 8;
             drawSystemFontSetup();
+            return;
+          }
+
+          // Paragraph Indent item
+          y1 += itemHeight + 18;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Paragraph indent selected - toggling");
+            paragraphIndent = !paragraphIndent;
+            prefs.begin("ereader", false);
+            prefs.putBool("paraIndent", paragraphIndent);
+            prefs.end();
+            Serial.printf("Paragraph indent toggled to: %s\n", paragraphIndent ? "YES" : "NO");
+            drawSetupMenu();
             return;
           }
         }
@@ -2667,7 +2764,7 @@ void loop() {
             M5.Display.startWrite();
             M5.Display.fillScreen(TFT_WHITE);
             drawStatusBar();
-            drawSystemText("藍牙", 20, 30, 40);
+            drawSystemText("藍牙", 20, 42, 40);
             drawSystemText("掃描中...", 20, 320, 22);
             M5.Display.endWrite();
             M5.Display.display();
@@ -2761,8 +2858,8 @@ void loop() {
         currentMode = MODE_TOOLS_MENU;
         drawToolsMenu();
       }
-      // Small reset button below big button (y=670..720) — only when taken
-      else if (medReminderPressTime != 0 && x >= 150 && x <= 390 && y >= 670 && y <= 720) {
+      // Manual reset button (y=640..690) — only when taken
+      else if (medReminderPressTime != 0 && x >= 170 && x <= 370 && y >= 640 && y <= 690) {
         medPasscodeInput = "";
         medPasscodeFirst = "";
         if (medPasscode.length() == 0) {
@@ -2778,8 +2875,8 @@ void loop() {
           drawMedPasscode();
         }
       }
-      // Big button area (centered, y=300..650) — only marks as taken
-      else if (x >= 70 && x <= 470 && y >= 300 && y <= 650) {
+      // Big button area (y=280..580) — only marks as taken
+      else if (x >= 70 && x <= 470 && y >= 280 && y <= 580) {
         if (medReminderPressTime == 0) {
           Serial.println("Med reminder: marked as taken");
           medReminderPressTime = time(NULL);
@@ -3134,30 +3231,47 @@ void loop() {
             currentBook = bookDisplayName[bookIndex];
             Serial.printf("Selected: %s (%s)\n", currentBook.c_str(), bookList[bookIndex].c_str());
             
-            // Show loading indicator (lightweight, no font swap)
+            Serial.println("Loading book...");
+            esp_task_wdt_reset();
+            pagesSinceFullRefresh = 1;  // Skip quality refresh on first page for speed
+
+            // Show loading indicator on screen immediately
             {
+              unsigned long busyStart = millis();
+              while (M5.Display.displayBusy()) {
+                delay(10);
+                esp_task_wdt_reset();
+                if (millis() - busyStart > 3000) break;
+              }
               M5.Display.setEpdMode(epd_mode_t::epd_fastest);
-              M5.Display.fillRect(20, 800, 500, 60, TFT_WHITE);
-              // Use built-in font to avoid triggering a system font load
-              // (drawSystemText may call loadSystemFont, which then requires
-              //  loadReadingFont again in drawReading — double font load from SD)
-              M5.Display.setFont(&fonts::Font2);
-              M5.Display.setTextSize(2);
-              M5.Display.setTextColor(TFT_BLACK);
-              M5.Display.setCursor(20, 810);
-              M5.Display.print("Loading...");
-              M5.Display.setTextSize(1);
+              M5.Display.startWrite();
+              M5.Display.fillScreen(TFT_WHITE);
+              drawStatusBar();
+              // Book name
+              drawSystemTextCentered(currentBook.c_str(), M5.Display.width() / 2,
+                                     M5.Display.height() / 2 - 100, 32);
+              // "載入中..."
+              drawSystemTextCentered("載入中...", M5.Display.width() / 2,
+                                     M5.Display.height() / 2 - 20, 36);
+              // Large progress bar outline (400x30, centered)
+              int barX = 70, barY = M5.Display.height() / 2 + 50;
+              int barW = 400, barH = 30;
+              M5.Display.drawRect(barX, barY, barW, barH, TFT_BLACK);
+              M5.Display.drawRect(barX + 1, barY + 1, barW - 2, barH - 2, TFT_BLACK);
+              M5.Display.endWrite();
               M5.Display.display();
             }
-            pagesSinceFullRefresh = 1;  // Skip quality refresh on first page for speed
+
             Serial.printf("\n=== Attempting to load book index %d ===\n", bookIndex);
             Serial.printf("Pre-loadBook: Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
             Serial.printf("Pre-loadBook state: currentBookIsEpub=%d, epubFullText=%p, epubZipEntries=%p\n",
                           currentBookIsEpub, epubFullText, epubZipEntries);
             
+            unsigned long loadStart = millis();
             if (loadBook(bookIndex)) {
-              Serial.printf("Book loaded OK - Free heap: %u, Free PSRAM: %u, ofrFiles: %d\n",
-                            ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+              unsigned long loadMs = millis() - loadStart;
+              Serial.printf("Book loaded OK in %lu ms - Free heap: %u, Free PSRAM: %u, ofrFiles: %d\n",
+                            loadMs, ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
               Serial.printf("About to drawReading: Silver=%d, bpp=%d, pages=%d, epubChapters=%d\n",
                             (systemFontChoice == 1), bytesPerPage, totalPages, epubChapterCount);
               yield();

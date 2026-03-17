@@ -390,3 +390,19 @@ void drawSystemTextCentered(const char* text, int centerX, int y, int size, uint
     M5.Display.setTextDatum(TL_DATUM);
   }
 }
+
+// Progress bar for book loading — call with 0..100
+void updateLoadProgress(int percent) {
+  if (percent < 0) percent = 0;
+  if (percent > 100) percent = 100;
+  const int barX = 70, barW = 400, barH = 30;
+  int barY = DISPLAY_HEIGHT / 2 + 50;
+  int border = 3;
+  int fillableW = barW - border * 2;
+  int fillW = (fillableW * percent) / 100;
+  M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+  M5.Display.fillRect(barX + border, barY + border,
+                      fillW, barH - border * 2, TFT_BLACK);
+  M5.Display.display();
+  yield();
+}

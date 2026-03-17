@@ -170,6 +170,19 @@ bool loadPrefBool(const char* ns, const char* key, bool defaultVal) {
   return val;
 }
 
+void savePrefStr(const char* ns, const char* key, const String& value) {
+  prefs.begin(ns, false);
+  prefs.putString(key, value);
+  prefs.end();
+}
+
+String loadPrefStr(const char* ns, const char* key, const String& defaultVal) {
+  prefs.begin(ns, true);
+  String val = prefs.getString(key, defaultVal);
+  prefs.end();
+  return val;
+}
+
 void stopUSBMSC() {
   if (!usbMSCActive) {
     Serial.println("USB MSC not active");
@@ -212,7 +225,7 @@ void drawUSBMSCSetup() {
   }
   
   // Title
-  drawSystemText("USB 外接磁碟", 20, 30, 40);
+  drawSystemText("USB 外接磁碟", 20, 42, 40);
   
   // Current status
   if (usbMSCActive) {

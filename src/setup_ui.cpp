@@ -28,8 +28,8 @@ void drawFontMenu() {
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_BLACK);
   
-  drawSystemText("選擇閱讀字型", 20, 25, 36);
-  M5.Display.drawLine(20, 65, 520, 65, TFT_BLACK);
+  drawSystemText("選擇閱讀字型", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Pagination
   int totalPages = (fontFileCount + FONTS_PER_PAGE - 1) / FONTS_PER_PAGE;
@@ -38,14 +38,17 @@ void drawFontMenu() {
   int startIdx = fontMenuPage * FONTS_PER_PAGE;
   int endIdx = min(startIdx + FONTS_PER_PAGE, fontFileCount);
   
-  // Layout: each item = [gap] [filename] [sample bottom-aligned at fixed baseline]
-  // Item layout (ITEM_HEIGHT = 105px):
+  // Layout: each item = [separator] [display name] [filename + BIN button] [sample text]
+  // Item layout (ITEM_HEIGHT = 100px):
   //   0:      separator line
-  //   5..20:  filename (16px system text)
-  //   22..40: font name (18px system text, always aligned)
-  //   44..80: sample text (rendered in actual font, ~32px)
-  const int ITEM_HEIGHT = 105;
-  const int LIST_TOP = 70;
+  //   5..27:  display name (22px, prominent) + ✓ if selected
+  //   30..44: filename (14px, secondary) + [BIN] button if paired bin exists
+  //   50..95: sample text (rendered in TTF, ~32px)
+  const int ITEM_HEIGHT = 100;
+  const int LIST_TOP = 90;
+  const int BIN_BTN_X = 370;
+  const int BIN_BTN_W = 140;
+  const int BIN_BTN_H = 36;
   for (int i = startIdx; i < endIdx; i++) {
     if (checkNavTouch()) {
       Serial.println("Nav touch during font menu render - aborting");
@@ -57,49 +60,69 @@ void drawFontMenu() {
     // Separator line at top
     M5.Display.drawLine(30, y, 510, y, TFT_LIGHTGRAY);
     
+    bool isBinSelected = (i == selectedFontIndex) &&
+      (readingFontFile == fontBinFile[i] && fontBinFile[i].length() > 0);
+    
     if (i == selectedFontIndex) {
       M5.Display.fillRect(30, y + 2, 480, ITEM_HEIGHT - 2, TFT_LIGHTGRAY);
     }
     
     String displayName = fontDisplayNames[i];
     String fileName = fontFileList[i];
+    bool hasBinPair = (fontBinFile[i].length() > 0);
     
-    // Line 1: Filename (system font, 16px)
-    String typeLabel = (fileName.endsWith(".bin") || fileName.endsWith(".BIN")) ? "▣ " : "Ⓣ ";
+    // Line 1: Display name (prominent, 22px) with selection indicator
+    String nameInfo = displayName;
+    if (i == selectedFontIndex) nameInfo += " \u2713";
+    drawSystemText(nameInfo.c_str(), 50, y + 5, 22);
+    
+    // Line 2: Filename (smaller, 14px, secondary) + BIN button
+    bool isStandaloneBin = (fileName.endsWith(".bin") || fileName.endsWith(".BIN"));
+    String typeLabel = isStandaloneBin ? "\u25A3 " : "\u24C9 ";
     String fileInfo = typeLabel + fileName;
-    if (i == selectedFontIndex) fileInfo += " ✓";
-    drawSystemText(fileInfo.c_str(), 50, y + 5, 16);
+    drawSystemText(fileInfo.c_str(), 50, y + 30, 14, TFT_DARKGRAY);
     
-    // Line 2: Font name (system font, 18px — always aligned)
-    drawSystemText(displayName.c_str(), 50, y + 24, 18);
+    // Draw [BIN] toggle button if a paired .bin file exists
+    if (hasBinPair) {
+      int btnY = y + 25;
+      if (isBinSelected) {
+        M5.Display.fillRoundRect(BIN_BTN_X, btnY, BIN_BTN_W, BIN_BTN_H, 6, TFT_BLACK);
+        drawSystemText("BIN \u2713", BIN_BTN_X + 25, btnY + 8, 20, TFT_WHITE, TFT_BLACK);
+      } else {
+        M5.Display.drawRoundRect(BIN_BTN_X, btnY, BIN_BTN_W, BIN_BTN_H, 6, TFT_DARKGRAY);
+        M5.Display.drawRoundRect(BIN_BTN_X + 1, btnY + 1, BIN_BTN_W - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
+        drawSystemText("BIN", BIN_BTN_X + 40, btnY + 8, 20, TFT_DARKGRAY);
+      }
+    }
     
-    // Line 3: Sample text (rendered in actual font)
-    // Use bottom-aligned position: sample bottom at y+95, rendered height ~32px
-    int sampleBottom = y + 95;
+    // Line 3: Sample text (rendered in actual font — use TTF for preview)
+    int sampleTop = y + 50;
+    int sampleH = 32;
     String sampleLine = "\xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
 
-    if (fileName.endsWith(".bin") || fileName.endsWith(".BIN")) {
+    if (isStandaloneBin) {
+      // Standalone BIN (no TTF pair) — render with bin font
       if (g_binFont.loaded) {
         if (g_binFont.index) { free(g_binFont.index); g_binFont.index = nullptr; }
         g_binFont.fontFile.close();
         g_binFont.loaded = false;
       }
       if (loadBinaryFont(fileName.c_str())) {
-        float scale = 32.0f / g_binFont.fontSize;
-        int scaledH = (int)(g_binFont.fontSize * scale);
-        drawBinFontStringScaled(sampleLine, 50, sampleBottom - scaledH, scale);
+        float scale = (float)sampleH / g_binFont.fontSize;
+        drawBinFontStringScaled(sampleLine, 50, sampleTop, scale, true);
       } else {
-        drawSystemText(sampleLine.c_str(), 50, sampleBottom - 32, 24);
+        drawSystemText(sampleLine.c_str(), 50, sampleTop, 24);
       }
     } else {
+      // TTF (with or without BIN pair) — always preview with TTF
       bool isSilver = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
       int previewSize = isSilver ? 33 : 24;
       bool loaded = loadTTFFont(fileName.c_str(), previewSize);
       if (loaded && ofrFontLoaded) {
         ofr.setFontColor(TFT_BLACK, (i == selectedFontIndex) ? TFT_LIGHTGRAY : TFT_WHITE);
-        ofr.drawString(sampleLine.c_str(), 50, sampleBottom - previewSize);
+        ofr.drawString(sampleLine.c_str(), 50, sampleTop);
       } else {
-        drawSystemText(sampleLine.c_str(), 50, sampleBottom - 32, 24);
+        drawSystemText(sampleLine.c_str(), 50, sampleTop, 24);
       }
     }
   }
@@ -449,7 +472,7 @@ void drawWebServerSetup() {
   drawReturnButton();
   
   // Title
-  drawSystemText("檔案上傳伺服器", 20, 30, 40);
+  drawSystemText("檔案上傳伺服器", 20, 42, 40);
   
   // Current status
   drawSystemText("狀態：", 20, 120, 32);
@@ -533,7 +556,7 @@ void drawIconSetup() {
   drawReturnButton();
   
   // Title
-  drawSystemText("圖標來源", 20, 30, 40);
+  drawSystemText("圖標來源", 20, 42, 40);
   
   // Current status
   drawSystemText("目前：", 20, 120, 32);
@@ -587,7 +610,7 @@ void drawCalendarSetup() {
   drawReturnButton();
   
   // Title
-  drawSystemText("曆法計算", 20, 30, 40);
+  drawSystemText("曆法計算", 20, 42, 40);
   
   // Current status
   drawSystemText("目前：", 20, 120, 32);
@@ -645,7 +668,7 @@ void drawSetupMenu() {
   drawReturnButton();
   
   // Menu items (paged)
-  const int totalPages = 2;
+  const int totalPages = 3;
 
   // Title
   drawSystemText("設定", 20, 42, 40);
@@ -738,8 +761,8 @@ void drawSetupMenu() {
     } else {
       drawSystemText("內建圖標（速度較快）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
     }
-  } else {
-    // Page 2: 3 items
+  } else if (setupMenuPage == 1) {
+    // Page 2: 5 items
     
     // Calendar Calculation Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
@@ -815,8 +838,8 @@ void drawSetupMenu() {
     } else {
       drawSystemText("系統預設", 40, y + 62, 22, TFT_BLACK, cardTextBg);
     }
-
-    y += itemHeight + 18;
+  } else if (setupMenuPage == 2) {
+    // Page 3: System Font + Paragraph Indent
 
     // System Font Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
@@ -829,6 +852,21 @@ void drawSetupMenu() {
       drawSystemText("源樣明體 GenYoMinTW", 40, y + 62, 22, TFT_BLACK, cardTextBg);
     } else {
       drawSystemText("Silver（像素風格字體）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + 18;
+
+    // Paragraph Indent Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("段落縮進", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+
+    if (paragraphIndent) {
+      drawSystemText("首行縮進（兩個全形空格）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("首行不縮進", 40, y + 62, 22, TFT_BLACK, cardTextBg);
     }
   }
   
@@ -1104,7 +1142,7 @@ void drawBluetoothSetup() {
   drawReturnButton();
   
   // Title
-  drawSystemText("藍牙", 20, 30, 40);
+  drawSystemText("藍牙", 20, 42, 40);
   
   // Current status
   drawSystemText("狀態：", 20, 120, 32);
@@ -1241,7 +1279,7 @@ void drawSystemFontSetup() {
   drawReturnButton();
   
   // Title
-  drawSystemText("系統字體", 20, 30, 40);
+  drawSystemText("系統字體", 20, 42, 40);
   
   // Current status
   drawSystemText("目前：", 20, 120, 32);

@@ -102,7 +102,7 @@ void drawFortuneSlipsMenu() {
   drawStatusBar();
 
   // Title
-  drawSystemText("求籖", 20, 30, 36);
+  drawSystemText("求籖", 20, 42, 40);
 
   // Option 1: 觀音靈籖
   int optY = 200;

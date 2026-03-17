@@ -11,7 +11,7 @@ void drawToolsMenu() {
   drawStatusBar();
 
   // Title
-  drawSystemText("工具", 20, 30, 36);
+  drawSystemText("工具", 20, 42, 40);
 
   // Option 1: 壁紙
   int optY = 200;
@@ -61,59 +61,83 @@ void drawMedReminder() {
   drawStatusBar();
 
   // Title
-  drawSystemText("吃藥提醒器", 20, 30, 36);
+  drawSystemText("吃藥提醒器", 20, 42, 40);
 
-  // Big button area
-  int btnX = 70, btnY = 300, btnW = 400, btnH = 350;
-  int btnCX = btnX + btnW / 2;
-  int radius = 20;
+  // Divider below title
+  M5.Display.drawLine(20, 90, 520, 90, TFT_BLACK);
+
+  // Center X for all centered content
+  int cx = 270;
 
   if (taken) {
-    // Taken state: filled dark button with white text
-    M5.Display.fillRoundRect(btnX, btnY, btnW, btnH, radius, TFT_BLACK);
-    M5.Display.setTextColor(TFT_WHITE);
-    drawSystemTextCentered("已吃藥", btnCX, btnY + btnH / 2 - 60, 48);
-    M5.Display.setTextColor(TFT_WHITE);
+    // === TAKEN STATE ===
+    // Large checkmark circle
+    int circleY = 300;
+    int circleR = 80;
+    M5.Display.fillCircle(cx, circleY, circleR, TFT_BLACK);
+    // Draw a white checkmark inside the circle
+    // Thick lines for e-ink visibility
+    for (int d = -2; d <= 2; d++) {
+      M5.Display.drawLine(cx - 35, circleY + d, cx - 10, circleY + 25 + d, TFT_WHITE);
+      M5.Display.drawLine(cx - 10, circleY + 25 + d, cx + 40, circleY - 20 + d, TFT_WHITE);
+      M5.Display.drawLine(cx - 35, circleY + 1 + d, cx - 10, circleY + 26 + d, TFT_WHITE);
+      M5.Display.drawLine(cx - 10, circleY + 26 + d, cx + 40, circleY - 19 + d, TFT_WHITE);
+    }
 
-    // Show elapsed time
+    // Status text
+    drawSystemTextCentered("已吃藥", cx, 420, 48);
+
+    // Elapsed time
     time_t now = time(NULL);
-    long elapsed = (long)(now - medReminderPressTime);  // seconds
+    long elapsed = (long)(now - medReminderPressTime);
     if (elapsed < 0) elapsed = 0;
     int hours = elapsed / 3600;
     int mins  = (elapsed % 3600) / 60;
     char timeStr[32];
-    snprintf(timeStr, sizeof(timeStr), "%d小時%d分鐘前", hours, mins);
-    drawSystemTextCentered(timeStr, btnCX, btnY + btnH / 2 + 20, 28);
+    snprintf(timeStr, sizeof(timeStr), "%d 小時 %d 分鐘前", hours, mins);
+    drawSystemTextCentered(timeStr, cx, 490, 28);
 
-    // Show remaining time until auto-reset
+    // Thin divider
+    M5.Display.drawLine(120, 540, 420, 540, EPD_LIGHT_GRAY);
+
+    // Auto-reset countdown
     long remaining = (long)MED_REMINDER_RESET_SEC - elapsed;
     if (remaining < 0) remaining = 0;
     int rHours = remaining / 3600;
     int rMins  = (remaining % 3600) / 60;
-    char resetStr[32];
-    snprintf(resetStr, sizeof(resetStr), "%d小時%d分後復位", rHours, rMins);
-    drawSystemTextCentered(resetStr, btnCX, btnY + btnH / 2 + 70, 22);
+    char resetStr[48];
+    snprintf(resetStr, sizeof(resetStr), "%d 小時 %d 分後自動復位", rHours, rMins);
+    drawSystemTextCentered(resetStr, cx, 560, 22);
 
-    // Small reset button below big button
-    M5.Display.setTextColor(TFT_BLACK);
-    int rstX = 150, rstY = 670, rstW = 240, rstH = 50;
+    // Manual reset button — simple outlined button
+    int rstW = 200, rstH = 50;
+    int rstX = cx - rstW / 2, rstY = 640;
     M5.Display.drawRoundRect(rstX, rstY, rstW, rstH, 8, TFT_BLACK);
-    drawSystemTextCentered("手動復位", rstX + rstW / 2, rstY + 10, 22);
+    drawSystemTextCentered("手動復位", cx, rstY + 12, 22);
   } else {
-    // Not taken state: outlined button, waiting
+    // === NOT TAKEN STATE ===
+    // Instructions
+    drawSystemTextCentered("吃藥時按一下按鈕", cx, 140, 24);
+    drawSystemTextCentered("忘了是否吃過，看一眼就知道", cx, 180, 22);
+
+    // Large tap target — outlined with thick border, inviting
+    int btnX = 70, btnY = 280, btnW = 400, btnH = 300;
+    int radius = 16;
+    // Triple border for visibility on e-ink
     M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, radius, TFT_BLACK);
     M5.Display.drawRoundRect(btnX + 1, btnY + 1, btnW - 2, btnH - 2, radius - 1, TFT_BLACK);
     M5.Display.drawRoundRect(btnX + 2, btnY + 2, btnW - 4, btnH - 4, radius - 2, TFT_BLACK);
 
-    drawSystemTextCentered("未吃藥", btnCX, btnY + btnH / 2 - 40, 48);
-    drawSystemTextCentered("吃藥後請按此", btnCX, btnY + btnH / 2 + 30, 28);
+    // Large pill icon (simple oval) centered in button
+    int pillCY = btnY + btnH / 2 - 30;
+    M5.Display.fillEllipse(cx, pillCY, 50, 25, EPD_DARK_GRAY);
+    // Dividing line on pill
+    M5.Display.drawLine(cx, pillCY - 25, cx, pillCY + 25, TFT_WHITE);
+    M5.Display.drawLine(cx + 1, pillCY - 25, cx + 1, pillCY + 25, TFT_WHITE);
+
+    // Button text
+    drawSystemTextCentered("按此記錄吃藥", cx, btnY + btnH / 2 + 30, 32);
   }
-
-  M5.Display.setTextColor(TFT_BLACK);
-
-  // Instructions at top
-  drawSystemTextCentered("吃藥時按一下按鈕", btnCX, 180, 24);
-  drawSystemTextCentered("忘了是否吃過，看一眼就知道", btnCX, 215, 22);
 
   drawReturnButton();
 
@@ -174,14 +198,14 @@ void drawMedPasscode() {
   // Title — different text depending on mode
   if (medSettingNewPasscode) {
     if (medPasscodeFirst.length() == 0) {
-      drawSystemText("設定新密碼", 20, 30, 36);
+      drawSystemText("設定新密碼", 20, 42, 40);
       drawSystemTextCentered("請輸入新的數字密碼", 270, KP_MSG_Y, 22);
     } else {
-      drawSystemText("確認密碼", 20, 30, 36);
+      drawSystemText("確認密碼", 20, 42, 40);
       drawSystemTextCentered("請再輸入一次", 270, KP_MSG_Y, 22);
     }
   } else {
-    drawSystemText("輸入密碼", 20, 30, 36);
+    drawSystemText("輸入密碼", 20, 42, 40);
   }
 
   // Input display box

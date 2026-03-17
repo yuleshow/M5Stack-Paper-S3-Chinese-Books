@@ -360,6 +360,7 @@ extern const int FONTS_PER_PAGE;
 #define MAX_FONT_FILES 100
 extern String fontFileList[MAX_FONT_FILES];
 extern String fontDisplayNames[MAX_FONT_FILES];
+extern String fontBinFile[MAX_FONT_FILES];    // Paired .bin file for each font (empty if none)
 extern int fontFileCount;
 
 // Mode
@@ -405,6 +406,7 @@ extern String pageJumpInput;
 
 // EPUB
 extern bool currentBookIsEpub;
+extern bool lastPageWasImage;  // True when last rendered page contained a cover/inline image
 extern char* epubFullText;
 extern size_t epubFullTextLen;
 
@@ -624,6 +626,7 @@ extern int comicZoomMode;      // 0 = quadrant zoom, 1 = free-point zoom
 extern float comicZoomCX;      // free-point center X (0.0-1.0)
 extern float comicZoomCY;      // free-point center Y (0.0-1.0)
 extern int pageRefreshMode;    // 0=system default, 1=every page, 2=every 10 pages
+extern bool paragraphIndent;   // true=首行縮進(2 chars), false=首行不縮進
 extern int pagesSinceFullRefresh;
 void scanBooks();
 void saveReadingPosition();
@@ -655,6 +658,7 @@ int drawSystemText(const char* text, int x, int y, int size = 28, uint16_t color
 int getSystemTextWidth(const char* text, int size = 28);
 int silverScaledSize(int size);
 void drawSystemTextCentered(const char* text, int centerX, int y, int size = 28, uint16_t color = TFT_BLACK, uint16_t bg = TFT_WHITE);
+void updateLoadProgress(int percent);
 int drawVerticalMixedText(String text, int x, int startY, int charSpacing = 30);
 
 // weather
@@ -727,8 +731,10 @@ void stopUSBMSC();
 // preferences_helper
 void savePrefInt(const char* ns, const char* key, int value);
 void savePrefBool(const char* ns, const char* key, bool value);
+void savePrefStr(const char* ns, const char* key, const String& value);
 int loadPrefInt(const char* ns, const char* key, int defaultVal);
 bool loadPrefBool(const char* ns, const char* key, bool defaultVal);
+String loadPrefStr(const char* ns, const char* key, const String& defaultVal);
 
 // cangjie input
 #include "cangjie.h"

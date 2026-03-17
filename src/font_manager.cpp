@@ -267,8 +267,14 @@ void scanFontFiles() {
   
   if (!fontsDir || !fontsDir.isDirectory()) return;
   
+  // First pass: collect all font files into temporary arrays
+  String tmpFiles[MAX_FONT_FILES];
+  String tmpNames[MAX_FONT_FILES];
+  bool   tmpIsBin[MAX_FONT_FILES];
+  int tmpCount = 0;
+  
   File entry = fontsDir.openNextFile();
-  while (entry && fontFileCount < MAX_FONT_FILES) {
+  while (entry && tmpCount < MAX_FONT_FILES) {
     String name = String(entry.name());
     if (!name.startsWith("._") && !name.startsWith(".")) {
       if (name.endsWith(".ttf") || name.endsWith(".TTF") ||
@@ -278,20 +284,22 @@ void scanFontFiles() {
           Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
         } else {
           String displayName = extractTTFName(entry);
-          fontFileList[fontFileCount] = name;
-          fontDisplayNames[fontFileCount] = (displayName.length() > 0) ? displayName : name;
-          Serial.printf("  Font found: %s → %s\n", name.c_str(), fontDisplayNames[fontFileCount].c_str());
-          fontFileCount++;
+          tmpFiles[tmpCount] = name;
+          tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
+          tmpIsBin[tmpCount] = false;
+          Serial.printf("  Font found: %s → %s\n", name.c_str(), tmpNames[tmpCount].c_str());
+          tmpCount++;
         }
       } else if (name.endsWith(".bin") || name.endsWith(".BIN")) {
         if (!binHasCJK(entry)) {
           Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
         } else {
           String displayName = extractBinFontName(entry);
-          fontFileList[fontFileCount] = name;
-          fontDisplayNames[fontFileCount] = (displayName.length() > 0) ? displayName : name;
-          Serial.printf("  Font found: %s → %s\n", name.c_str(), fontDisplayNames[fontFileCount].c_str());
-          fontFileCount++;
+          tmpFiles[tmpCount] = name;
+          tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
+          tmpIsBin[tmpCount] = true;
+          Serial.printf("  Font found: %s → %s\n", name.c_str(), tmpNames[tmpCount].c_str());
+          tmpCount++;
         }
       }
     }
@@ -299,6 +307,44 @@ void scanFontFiles() {
     entry = fontsDir.openNextFile();
   }
   fontsDir.close();
+  
+  // Second pass: pair TTF+BIN fonts with matching display names
+  // TTF entries take priority; matching BIN files become the paired counterpart
+  bool binPaired[MAX_FONT_FILES];
+  for (int i = 0; i < tmpCount; i++) binPaired[i] = false;
+  
+  // Add all TTF entries first
+  for (int i = 0; i < tmpCount && fontFileCount < MAX_FONT_FILES; i++) {
+    if (tmpIsBin[i]) continue;  // Skip BIN in this pass
+    fontFileList[fontFileCount] = tmpFiles[i];
+    fontDisplayNames[fontFileCount] = tmpNames[i];
+    fontBinFile[fontFileCount] = "";
+    
+    // Find matching BIN by display name
+    String ttfNameLow = tmpNames[i];
+    ttfNameLow.toLowerCase();
+    for (int j = 0; j < tmpCount; j++) {
+      if (!tmpIsBin[j] || binPaired[j]) continue;
+      String binNameLow = tmpNames[j];
+      binNameLow.toLowerCase();
+      if (ttfNameLow == binNameLow) {
+        fontBinFile[fontFileCount] = tmpFiles[j];
+        binPaired[j] = true;
+        Serial.printf("  Paired: %s + %s (%s)\n", tmpFiles[i].c_str(), tmpFiles[j].c_str(), tmpNames[i].c_str());
+        break;
+      }
+    }
+    fontFileCount++;
+  }
+  
+  // Add unpaired BIN entries (no matching TTF found)
+  for (int i = 0; i < tmpCount && fontFileCount < MAX_FONT_FILES; i++) {
+    if (!tmpIsBin[i] || binPaired[i]) continue;
+    fontFileList[fontFileCount] = tmpFiles[i];
+    fontDisplayNames[fontFileCount] = tmpNames[i];
+    fontBinFile[fontFileCount] = "";  // No pair — this IS the bin file
+    fontFileCount++;
+  }
   
   // Sort fonts by display name
   for (int i = 0; i < fontFileCount - 1; i++) {
@@ -308,13 +354,16 @@ void scanFontFiles() {
       a.toLowerCase();
       b.toLowerCase();
       if (a > b) {
-        // Swap both arrays
+        // Swap all three arrays
         String tmp = fontFileList[i];
         fontFileList[i] = fontFileList[j];
         fontFileList[j] = tmp;
         tmp = fontDisplayNames[i];
         fontDisplayNames[i] = fontDisplayNames[j];
         fontDisplayNames[j] = tmp;
+        tmp = fontBinFile[i];
+        fontBinFile[i] = fontBinFile[j];
+        fontBinFile[j] = tmp;
       }
     }
   }
@@ -330,6 +379,12 @@ bool loadBinaryFont(const char* fontPath) {
   
   // Clear glyph cache from previous font
   clearGlyphCache();
+
+  // Free old glyph index if reloading (prevents PSRAM leak)
+  if (g_binFont.index) {
+    free(g_binFont.index);
+    g_binFont.index = nullptr;
+  }
   
   if (!sdCardAvailable) {
     Serial.println("✗ SD card not available");
@@ -686,8 +741,10 @@ int drawBinFontStringScaled(const String &text, int x, int y, float scale, bool 
     if (glyph && glyph->width > 0) {
       int yOffset = 0;
       if (noYOffset) {
-        // Preview mode: center small glyphs (punctuation) vertically
-        if (glyph->height < fontSize) {
+        // Preview mode: use bearingY if available, else center small glyphs
+        if (glyph->bearingY != 0) {
+          yOffset = fontSize - glyph->bearingY;
+        } else if (glyph->height < fontSize) {
           yOffset = (fontSize - glyph->height) / 2;
         }
       } else {
@@ -882,9 +939,17 @@ bool loadReadingFont() {
   if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) {
     return loadSystemFont();
   }
-  String fname = fontFileList[readingFontIndex];
+  // Use readingFontFile if set (may be paired BIN), otherwise use primary font file
+  String fname = (readingFontFile.length() > 0) ? readingFontFile : fontFileList[readingFontIndex];
   if (ofrFontLoaded && currentFontFile == fname) return true;
   if (g_binFont.loaded && currentFontFile == fname) return true;
+  // BIN font is already in memory but currentFontFile was changed by loadSystemFont().
+  // Keep OFR loaded — drawReading() reuses it for Latin text (EBGaramond) across pages.
+  // Don't overwrite currentFontFile — it tracks the OFR font (e.g. EBGaramond)
+  // so the EBGaramond short-circuit in drawReading() keeps working.
+  if (g_binFont.loaded && (fname.endsWith(".bin") || fname.endsWith(".BIN"))) {
+    return true;
+  }
   if (fname.endsWith(".ttf") || fname.endsWith(".TTF") ||
       fname.endsWith(".ttc") || fname.endsWith(".TTC") ||
       fname.endsWith(".otf") || fname.endsWith(".OTF")) {

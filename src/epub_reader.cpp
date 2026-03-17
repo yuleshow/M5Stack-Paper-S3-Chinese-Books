@@ -7,17 +7,23 @@
 static uint16_t zipU16(const uint8_t* b) { return b[0] | (b[1] << 8); }
 static uint32_t zipU32(const uint8_t* b) { return b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24); }
 
-// Helper: log loading step (serial only, no on-screen display)
+// Helper: log loading step (serial + watchdog only, no e-ink display to avoid bus conflicts)
 static int _lastStepNum = -1;
 static unsigned long _lastStepMillis = 0;
+// epubLoad progress occupies 0-70% of the bar; post-load steps cover 70-100%
 static void showLoadStep(const char* step) {
-  Serial.printf("EPUB step: %s\n", step);
-  if (step[0] == 'S' && step[4] == ' ') {
-    int stepNum = step[5] - '0';
-    if (stepNum >= 0) _lastStepNum = stepNum;
-  }
+  Serial.printf("EPUB step: %s (heap=%u, psram=%u)\n", step, ESP.getFreeHeap(), ESP.getFreePsram());
+  _lastStepNum++;
   _lastStepMillis = millis();
-  esp_task_wdt_reset();  // explicitly feed watchdog
+  // Map step number to 0-70%: first 8 fixed steps are ~5% each = 40%,
+  // then per-chapter steps fill up to 70%
+  int pct;
+  if (_lastStepNum <= 8) {
+    pct = _lastStepNum * 5;  // 0..40%
+  } else {
+    pct = 40 + min((_lastStepNum - 8) * 3, 30);  // 40..70%
+  }
+  updateLoadProgress(pct);
 }
 
 #define MAX_ZIP_ENTRIES 3000
@@ -210,6 +216,7 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
   bool inScript = false;
   bool inHead = false;
   bool lastWasNewline = false;
+  bool lastWasSpace = false;
   size_t yieldCounter = 0;
 
   for (size_t i = 0; i < htmlLen && outPos < outBufSize - 200; i++) {
@@ -303,6 +310,7 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
           if (!lastWasNewline && outPos > 0) {
             outBuf[outPos++] = '\n';
             lastWasNewline = true;
+            lastWasSpace = true;  // Prevent space after block-tag newline
           }
         }
       }
@@ -332,7 +340,12 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
         else if (strcmp(entity, "&gt;") == 0) { outBuf[outPos++] = '>'; lastWasNewline = false; }
         else if (strcmp(entity, "&quot;") == 0) { outBuf[outPos++] = '"'; lastWasNewline = false; }
         else if (strcmp(entity, "&apos;") == 0) { outBuf[outPos++] = '\''; lastWasNewline = false; }
-        else if (strcmp(entity, "&nbsp;") == 0) { outBuf[outPos++] = ' '; lastWasNewline = false; }
+        else if (strcmp(entity, "&nbsp;") == 0) {
+          if (!lastWasSpace && !lastWasNewline && outPos < outBufSize - 10) {
+            outBuf[outPos++] = ' ';
+            lastWasSpace = true;
+          }
+        }
         else if (entity[1] == '#') {
           long code = 0;
           if (entity[2] == 'x' || entity[2] == 'X')
@@ -351,14 +364,21 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
       }
     }
 
-    // Normal character
-    if (c == '\n' || c == '\r') {
-      if (!lastWasNewline) { outBuf[outPos++] = '\n'; lastWasNewline = true; }
-    } else if (c == ' ' || c == '\t') {
-      if (outPos > 0 && outBuf[outPos-1] != ' ' && !lastWasNewline) outBuf[outPos++] = ' ';
+    // Normal character — convert half-width CJK punctuation to full-width
+    // In HTML, raw newlines/carriage returns are whitespace, equivalent to spaces.
+    // Only block-level tags (</p>, <br>, etc.) produce structural line breaks.
+    // All whitespace (space, tab, \n, \r, U+00A0) → collapse to one regular space
+    if (c == '\n' || c == '\r' || c == ' ' || c == '\t' ||
+        ((unsigned char)c == 0xC2 && i + 1 < htmlLen && (unsigned char)htmlBuf[i + 1] == 0xA0)) {
+      if ((unsigned char)c == 0xC2) i++;  // Skip second byte of U+00A0
+      if (!lastWasSpace && !lastWasNewline && outPos < outBufSize - 10) {
+        outBuf[outPos++] = ' ';
+        lastWasSpace = true;
+      }
     } else {
       outBuf[outPos++] = c;
       lastWasNewline = false;
+      lastWasSpace = false;
     }
   }
   return outPos;
@@ -477,7 +497,7 @@ bool epubLoad(const String& epubPath) {
   // Clean up previous EPUB data
   _lastStepNum = -1;  // Reset so all steps display fresh
   _lastStepMillis = 0;
-  showLoadStep("Step 0: cleanup...");
+  showLoadStep("cleanup");
   epubCleanup();
 
   epubFilePath = epubPath;
@@ -496,7 +516,7 @@ bool epubLoad(const String& epubPath) {
   Serial.printf("EPUB: File size = %u bytes, Free PSRAM = %u bytes\n", f.size(), ESP.getFreePsram());
 
   // Parse ZIP central directory — allocate based on actual entry count
-  showLoadStep("Step 1: parse ZIP...");
+  showLoadStep("parse ZIP");
   // Pre-scan EOCD to get actual entry count before allocating
   int actualZipCount = MAX_ZIP_ENTRIES;
   {
@@ -540,7 +560,7 @@ bool epubLoad(const String& epubPath) {
   }
 
   // Step 1: Find container.xml → get OPF path
-  showLoadStep("Step 2: find OPF...");
+  showLoadStep("find OPF");
   String opfPath = "";
   for (int i = 0; i < epubZipEntryCount; i++) {
     if (epubZipEntries[i].filename == "META-INF/container.xml") {
@@ -568,7 +588,7 @@ bool epubLoad(const String& epubPath) {
   epubBasePath = pathDir(opfPath);
 
   // Step 2: Read OPF → build manifest (id→href) and read spine order
-  showLoadStep("Step 3: parse manifest...");
+  showLoadStep("manifest");
   String opfContent = "";
   for (int i = 0; i < epubZipEntryCount; i++) {
     if (epubZipEntries[i].filename == opfPath) {
@@ -636,7 +656,7 @@ bool epubLoad(const String& epubPath) {
   Serial.printf("EPUB: Manifest has %d items\n", manifestCount);
 
   // Parse spine: <itemref idref="..."/>
-  showLoadStep("Step 4: parse spine...");
+  showLoadStep("spine");
   // First pass: count spine items
   int spineCount = 0;
   {
@@ -689,7 +709,7 @@ bool epubLoad(const String& epubPath) {
   // Step 3: Build chapter index with estimated text sizes
   // Optimization: resolve spine→manifest→zip in O(spine × manifest) instead of O(spine × manifest × zip)
   // by pre-building a lookup from filename→zipIndex
-  showLoadStep("Step 5: build chapters...");
+  showLoadStep("chapters");
   epubChapters = (EpubChapterInfo*)ps_malloc(sizeof(EpubChapterInfo) * spineCount);
   if (!epubChapters) {
     for (int i = 0; i < spineCount; i++) spineRefs[i].~String();
@@ -744,7 +764,7 @@ bool epubLoad(const String& epubPath) {
   }
 
   // Step 4: Load initial chapters into buffer
-  showLoadStep("Step 6: load chapters...");
+  showLoadStep("loading...");
   if (!epubLoadChapterRange(0)) {
     if (lastLoadError.isEmpty()) lastLoadError = "chapterRange";
     epubCleanup();
@@ -752,7 +772,7 @@ bool epubLoad(const String& epubPath) {
   }
 
   // Step 5: Detect image-based EPUB (manga/comics)
-  showLoadStep("Step 7: detect type...");
+  showLoadStep("detect type");
   yield();
   // If most chapters contain mainly image markers (little real text), treat as image-based
   // Only scan actually-loaded chapters (up to epubLoadedEndChapter), skip unloaded ones
@@ -831,7 +851,8 @@ bool epubLoad(const String& epubPath) {
     }
   }
 
-  showLoadStep("Step 8: ready");
+  // Loading complete — no showLoadStep here to avoid e-ink conflicts with drawReading
+  Serial.printf("EPUB: load complete (heap=%u, psram=%u)\n", ESP.getFreeHeap(), ESP.getFreePsram());
   return true;
 }
 
@@ -933,13 +954,14 @@ bool epubLoadChapterRange(int startChapter) {
 
     // Show progress for every chapter
     {
-      char stepMsg[48];
-      snprintf(stepMsg, sizeof(stepMsg), "Step 6: ch %d/%d ...", c + 1, epubChapterCount);
+      char stepMsg[32];
+      snprintf(stepMsg, sizeof(stepMsg), "ch %d/%d unzip", c + 1, epubChapterCount);
       showLoadStep(stepMsg);
     }
 
-    Serial.printf("  Chapter %d/%d: %s (%u bytes, free PSRAM: %u)\n",
-                  c + 1, epubChapterCount, entry.filename.c_str(), entry.uncompSize, ESP.getFreePsram());
+    Serial.printf("  Chapter %d/%d: %s (%u bytes comp=%u, free PSRAM: %u)\n",
+                  c + 1, epubChapterCount, entry.filename.c_str(),
+                  entry.uncompSize, entry.compSize, ESP.getFreePsram());
 
     // Check if we have enough buffer space (rough check)
     if (epubFullTextLen + 1024 >= bufferSize) {
@@ -948,8 +970,10 @@ bool epubLoadChapterRange(int startChapter) {
     }
 
     // Extract raw HTML
+    unsigned long extractStart = millis();
     size_t rawLen = 0;
     uint8_t* rawBuf = zipExtractFile(f, entry, rawLen);
+    Serial.printf("  Extract took %lu ms\n", millis() - extractStart);
     if (!rawBuf || rawLen == 0) {
       if (rawBuf) free(rawBuf);
       Serial.printf("  Skipping chapter %d (extraction failed)\n", c + 1);
@@ -971,11 +995,18 @@ bool epubLoadChapterRange(int startChapter) {
     // Strip HTML directly into buffer
     // Use the HTML file's own directory as basePath (not OPF directory)
     // so that relative image paths like "../images/cover.jpg" resolve correctly
+    {
+      char stepMsg[32];
+      snprintf(stepMsg, sizeof(stepMsg), "ch %d/%d strip", c + 1, epubChapterCount);
+      showLoadStep(stepMsg);
+    }
     String chapterDir = pathDir(entry.filename);
     size_t remaining = bufferSize - epubFullTextLen - 1;
+    unsigned long stripStart = millis();
     size_t written = htmlStripDirect((const char*)rawBuf, rawLen,
                                      epubFullText + epubFullTextLen, remaining,
                                      chapterDir);
+    Serial.printf("  Strip took %lu ms, wrote %u bytes\n", millis() - stripStart, written);
     free(rawBuf);
 
     if (written > 0) {
@@ -1436,16 +1467,21 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
   }
 
   if (isJpeg) {
+    Serial.printf("EPUB IMG: drawing JPEG %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
     drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   } else if (isPng) {
+    Serial.printf("EPUB IMG: drawing PNG %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
     drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   } else if (isBmp) {
+    Serial.printf("EPUB IMG: drawing BMP %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
     drawn = M5.Display.drawBmp(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   } else {
     // Try JPEG first (most common in EPUBs), then PNG
+    Serial.printf("EPUB IMG: drawing unknown format %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
     drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
     if (!drawn) drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
   }
+  esp_task_wdt_reset();
 
   free(imgBuf);
 
