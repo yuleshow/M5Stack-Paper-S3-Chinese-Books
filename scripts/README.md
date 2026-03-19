@@ -16,7 +16,8 @@ These scripts convert assets into C headers or binary formats for embedding in t
 | `convert_sleeping.py` | Converts `assets/sleeping.jpg` sleep screen image to a C header (`src/sleeping_jpg.h`) |
 | `convert_icons.py` | Converts PNG icons in `assets/icons/` to C headers in `src/icons/` |
 | `convert_cangjie.py` | Converts `data/cangjie5.dict.yaml` to binary lookup format (`assets/cangjie5.bin`) |
-| `convert_ttf_to_bin.py` | Converts TTF fonts to pre-rendered BIN format for faster loading |
+| `convert_ttf_to_bin.py` | Converts TTF fonts to pre-rendered BIN format for faster loading. Supports fallback font borrowing and render-size scaling (e.g. Silver at 61px → 44px grid). Auto-rotates horizontal bracket glyphs 90° CW to synthesize missing vertical forms. |
+| `compile_all_bins.sh` | Batch-compiles all TTF fonts to BIN using `convert_ttf_to_bin.py`. Handles Silver's render-size scaling automatically. |
 
 ## Analysis & Testing Scripts ![Testing](https://img.shields.io/badge/Category-Analysis-purple)
 
@@ -25,6 +26,7 @@ These scripts convert assets into C headers or binary formats for embedding in t
 | `analyze_labels.py` | Analyzes label image rendering for debugging |
 | `analyze_cangjie.py` | Analyzes the Cangjie dictionary (character count, code distribution) |
 | `check_missing_chars.py` | Checks for missing characters in font binary files |
+| `check_vert_punct.py` | Checks vertical punctuation glyph coverage across fonts |
 | `test_font_header.py` | Tests and validates generated font header files |
 | `verify_bazi.py` | Verifies 八字 (Four Pillars) calculations against reference data |
 

@@ -94,10 +94,76 @@ def bitmap_to_bytes(img):
     
     return bytes(bytes_data)
 
-def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
-    """Convert TTF to M5ReadPaper binary format"""
+# Reverse mapping: vertical bracket forms → horizontal source character
+# Only bracket-type paired punctuation should be rotated 90° CW.
+# Non-bracket forms (ellipsis, dashes, etc.) are NOT rotated — borrow from fallback only.
+VERT_BRACKETS_TO_HORIZ = {
+    0xFE41: 0x300C,  # ﹁ ← 「
+    0xFE42: 0x300D,  # ﹂ ← 」
+    0xFE43: 0x300E,  # ﹃ ← 『
+    0xFE44: 0x300F,  # ﹄ ← 』
+    0xFE3F: 0x3008,  # ︿ ← 〈
+    0xFE40: 0x3009,  # ﹀ ← 〉
+    0xFE3D: 0x300A,  # ︽ ← 《
+    0xFE3E: 0x300B,  # ︾ ← 》
+    0xFE3B: 0x3010,  # ︻ ← 【
+    0xFE3C: 0x3011,  # ︼ ← 】
+    0xFE35: 0xFF08,  # ︵ ← （
+    0xFE36: 0xFF09,  # ︶ ← ）
+    0xFE17: 0x3016,  # ︗ ← 〖
+    0xFE18: 0x3017,  # ︘ ← 〗
+    0xFE39: 0x3014,  # ︹ ← 〔
+    0xFE3A: 0x3015,  # ︺ ← 〕
+    0xFE37: 0xFF5B,  # ︷ ← ｛
+    0xFE38: 0xFF5D,  # ︸ ← ｝
+    0xFE47: 0xFF3B,  # ﹇ ← ［
+    0xFE48: 0xFF3D,  # ﹈ ← ］
+}
+# These vertical forms should NOT be rotated — only borrow from fallback font:
+# 0xFE19 ︙ (vertical ellipsis), 0xFE30 ︰ (two-dot leader),
+# 0xFE31 ︱ (em-dash), 0xFE34 ︴ (wavy low line)
+
+def render_rotated_glyph(font, horiz_char, font_size):
+    """Render a horizontal character and rotate 90° clockwise to create vertical form."""
+    canvas_size = font_size * 3
+    img = Image.new('L', (canvas_size, canvas_size), 255)  # Grayscale for better rotation
+    draw = ImageDraw.Draw(img)
+    
+    try:
+        bbox = draw.textbbox((0, 0), horiz_char, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        if text_width <= 0 or text_height <= 0:
+            return None, 0, 0, 0, 0
+        
+        draw.text((0, 0), horiz_char, font=font, fill=0)
+        img_crop = img.crop(bbox)
+        
+        # Rotate 90° clockwise
+        img_rot = img_crop.rotate(-90, expand=True)
+        
+        # Convert to 1-bit
+        img_1bit = img_rot.point(lambda p: 0 if p < 128 else 1, '1')
+        
+        rot_w, rot_h = img_1bit.size
+        # Bearing: center the rotated glyph in the em-square
+        bearing_x = (font_size - rot_w) // 2
+        bearing_y = (font_size - rot_h) // 2
+        
+        return img_1bit, rot_w, rot_h, bearing_x, bearing_y
+    except Exception as e:
+        return None, 0, 0, 0, 0
+
+def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, render_size=None):
+    """Convert TTF to M5ReadPaper binary format.
+    If fallback_path is given, borrow missing glyphs from the fallback font.
+    If render_size is given, render glyphs at that size but store font_size in header."""
+    if render_size is None:
+        render_size = font_size
     print(f"Loading font: {ttf_path}")
-    print(f"Font size: {font_size}pt")
+    print(f"Font size: {font_size}pt (render at {render_size}pt)")
+    if fallback_path:
+        print(f"Fallback font: {fallback_path}")
     
     # Extract real font family name from the TTF/TTC file
     # Prefer Chinese name: Traditional Chinese (langID=1028), Simplified Chinese (langID=2052)
@@ -134,10 +200,29 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
         font_family = os.path.splitext(os.path.basename(ttf_path))[0]
     
     try:
-        font = ImageFont.truetype(ttf_path, font_size)
+        font = ImageFont.truetype(ttf_path, render_size)
     except Exception as e:
         print(f"Error loading font: {e}")
         return False
+    
+    # Load fallback font if specified
+    # Fallback renders at font_size (not render_size) since it already has correct visual size
+    fallback_font = None
+    if fallback_path:
+        try:
+            fallback_font = ImageFont.truetype(fallback_path, font_size)
+        except Exception as e:
+            print(f"Warning: Could not load fallback font: {e}")
+    
+    # Auto-detect fallback if not specified: use GenYoMinTW if available
+    if not fallback_font:
+        auto_fallback = 'sd_card/fonts/GenYoMinTW-Regular.ttf'
+        if os.path.exists(auto_fallback) and os.path.abspath(auto_fallback) != os.path.abspath(ttf_path):
+            try:
+                fallback_font = ImageFont.truetype(auto_fallback, font_size)
+                print(f"Auto-detected fallback font: {auto_fallback}")
+            except:
+                pass
     
     # Get character set
     print("Building character set...")
@@ -150,11 +235,34 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
     
     # First pass: render all glyphs to get dimensions and bitmap data
     print("Rendering glyphs...")
+    fallback_count = 0
+    rotated_count = 0
     for i, char in enumerate(chars):
         if i % 100 == 0:
             print(f"  Progress: {i}/{len(chars)} ({100*i//len(chars)}%)")
         
-        img, width, height, bearing_x, bearing_y = render_glyph(font, char, font_size)
+        img, width, height, bearing_x, bearing_y = render_glyph(font, char, render_size)
+        
+        # When render_size != font_size (e.g. Silver), re-center bearing within font_size cell
+        if img is not None and render_size != font_size:
+            bearing_x = (font_size - width) // 2
+            bearing_y = (font_size - height) // 2
+        
+        # For missing vertical bracket forms: try rotating the horizontal counterpart
+        if img is None and ord(char) in VERT_BRACKETS_TO_HORIZ:
+            horiz_cp = VERT_BRACKETS_TO_HORIZ[ord(char)]
+            img, width, height, bearing_x, bearing_y = render_rotated_glyph(font, chr(horiz_cp), render_size)
+            if img is not None:
+                rotated_count += 1
+                if render_size != font_size:
+                    bearing_x = (font_size - width) // 2
+                    bearing_y = (font_size - height) // 2
+        
+        # Try fallback font if still missing (at font_size, not render_size)
+        if img is None and fallback_font:
+            img, width, height, bearing_x, bearing_y = render_glyph(fallback_font, char, font_size)
+            if img is not None:
+                fallback_count += 1
         
         if img is None:
             # Skip characters that can't be rendered
@@ -177,7 +285,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
             'bitmap': bitmap_bytes  # Store temporarily
         })
     
-    print(f"Successfully rendered {len(index_entries)} glyphs")
+    print(f"Successfully rendered {len(index_entries)} glyphs ({rotated_count} rotated, {fallback_count} from fallback)")
     
     # Second pass: calculate correct offsets and build bitmap data
     print("Calculating offsets...")
@@ -232,17 +340,21 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: python3 convert_ttf_to_bin.py <font.ttf> [output.bin] [font_size]")
+        print("Usage: python3 convert_ttf_to_bin.py <font.ttf> [output.bin] [font_size] [fallback.ttf] [render_size]")
         print("Example: python3 convert_ttf_to_bin.py MingLiU.ttf MingLiU_30pt.bin 30")
+        print("Fallback: Missing glyphs are borrowed from fallback font (auto-detects GenYoMinTW)")
+        print("render_size: Render at this size but store font_size in header (for small fonts like Silver)")
         sys.exit(1)
     
     ttf_path = sys.argv[1]
     output_path = sys.argv[2] if len(sys.argv) > 2 else ttf_path.replace('.ttf', '_30pt.bin')
     font_size = int(sys.argv[3]) if len(sys.argv) > 3 else 30
+    fallback_path = sys.argv[4] if len(sys.argv) > 4 else None
+    render_size = int(sys.argv[5]) if len(sys.argv) > 5 else None
     
     if not os.path.exists(ttf_path):
         print(f"Error: Font file not found: {ttf_path}")
         sys.exit(1)
     
-    success = convert_ttf_to_bin(ttf_path, output_path, font_size)
+    success = convert_ttf_to_bin(ttf_path, output_path, font_size, fallback_path, render_size)
     sys.exit(0 if success else 1)

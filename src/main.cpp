@@ -1050,8 +1050,13 @@ void loop() {
         fontMenuPage = 0;
         if (fontMenuReturnMode == MODE_READING) {
           currentMode = MODE_READING;
+          size_t savedOffset = currentPageByteOffset;
           loadReadingFont();
           recalculatePages();
+          // Restore reading position from byte offset
+          if (bytesPerPage > 0 && savedOffset > 0) {
+            currentPage = savedOffset / bytesPerPage;
+          }
           if (currentPage >= totalPages) currentPage = totalPages - 1;
           loadCurrentPage();
           drawReading();
@@ -1106,8 +1111,13 @@ void loop() {
             if (fontMenuReturnMode == MODE_READING) {
               currentMode = MODE_READING;
               fontMenuPage = 0;
+              size_t savedOffset = currentPageByteOffset;
               loadReadingFont();
               recalculatePages();
+              // Restore reading position from byte offset
+              if (bytesPerPage > 0 && savedOffset > 0) {
+                currentPage = savedOffset / bytesPerPage;
+              }
               if (currentPage >= totalPages) currentPage = totalPages - 1;
               loadCurrentPage();
               drawReading();
@@ -1132,8 +1142,13 @@ void loop() {
           // Return directly to reading with the new font
           currentMode = MODE_READING;
           fontMenuPage = 0;
+          size_t savedOffset = currentPageByteOffset;
           loadReadingFont();
           recalculatePages();
+          // Restore reading position from byte offset
+          if (bytesPerPage > 0 && savedOffset > 0) {
+            currentPage = savedOffset / bytesPerPage;
+          }
           if (currentPage >= totalPages) currentPage = totalPages - 1;
           loadCurrentPage();
           drawReading();
