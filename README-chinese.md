@@ -207,3 +207,24 @@ python3 scripts/ble_unlock.py --install-service
 | `--lock-delay` | `15` | 離開多少秒後鎖定 |
 | `--scan-interval` | `3` | BLE 掃描間隔秒數 |
 | `--debug` | — | 啟用詳細日誌 |
+
+## 字型轉換（TTF → BIN）
+
+預渲染 BIN 字型在 ESP32-S3 上載入速度遠快於 TTF。批次轉換所有內建字型：
+
+```bash
+bash scripts/compile_all_bins.sh
+```
+
+或轉換單一字型：
+
+```bash
+python3 scripts/convert_ttf_to_bin.py sd_card/fonts/MingLiU.ttf sd_card/fonts/MingLiU.bin 44
+```
+
+轉換器功能：
+- **備用字型借取** — 缺失的字形（如直排標點符號）會自動從 GenYoMinTW 借取
+- **直排括號旋轉** — 水平括號字形會順時針旋轉 90° 以合成缺失的直排形式
+- **渲染尺寸縮放** — Silver 等字型可以較大尺寸渲染（如 61px），同時在標頭中儲存較小的方格尺寸（44px），以達到視覺大小匹配
+
+詳見 [`scripts/README-chinese.md`](scripts/README-chinese.md) 了解所有可用腳本。

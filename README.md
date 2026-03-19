@@ -300,6 +300,27 @@ python3 scripts/convert_labels.py
 
 Requires Python 3 with `Pillow` and a TTF font (default: `assets/fonts/GenYoMinTW-Regular.ttf`).
 
+## Converting Fonts (TTF → BIN)
+
+Pre-rendered BIN fonts load much faster than TTF on the ESP32-S3. To convert all bundled fonts:
+
+```bash
+bash scripts/compile_all_bins.sh
+```
+
+Or convert a single font:
+
+```bash
+python3 scripts/convert_ttf_to_bin.py sd_card/fonts/MingLiU.ttf sd_card/fonts/MingLiU.bin 44
+```
+
+Features of the converter:
+- **Fallback font borrowing** — Missing glyphs (e.g. vertical punctuation) are automatically borrowed from GenYoMinTW if available
+- **Vertical bracket rotation** — Horizontal bracket characters are rotated 90° CW to synthesize missing vertical forms
+- **Render-size scaling** — Fonts like Silver can be rendered at a larger size (e.g. 61px) while storing a smaller grid size (44px) in the header for visual size matching
+
+See [`scripts/README.md`](scripts/README.md) for all available scripts.
+
 ## License
 
 This project is licensed under the [GNU General Public License v2.0](LICENSE).
