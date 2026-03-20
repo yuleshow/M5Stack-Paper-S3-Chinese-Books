@@ -63,17 +63,11 @@ static const uint16_t EPD_HIGHLIGHT   = 0x4208;  // dark gray - replaces TFT_RED
 static const int DISPLAY_WIDTH  = 540;
 static const int DISPLAY_HEIGHT = 960;
 
-// Reading area layout (vertical CJK text region)
-static const int READING_AREA_TOP    = 60;
-static const int READING_AREA_BOTTOM = 850;
-static const int READING_AREA_LEFT   = 50;
-static const int READING_AREA_RIGHT  = 520;
-
-// Silver font: tighter margins for pixel font
-static const int SILVER_AREA_TOP     = 40;
-static const int SILVER_AREA_LEFT    = 20;
-static const int SILVER_AREA_RIGHT   = 530;
-static const int SILVER_MAX_Y        = 910;
+// Reading area layout (vertical CJK text region) — universal for all fonts
+static const int READING_AREA_TOP    = 65;
+static const int READING_AREA_BOTTOM = 878;
+static const int READING_AREA_LEFT   = 20;
+static const int READING_AREA_RIGHT  = 530;
 
 // Vertical text layout (shopping list / todo list)
 static const int VERTICAL_TEXT_START_Y    = 60;
@@ -87,7 +81,7 @@ static const int PROGRESS_BAR_Y = 900;
 
 // Reading font size limits
 static const int MIN_READING_FONT_SIZE = 20;
-static const int MAX_READING_FONT_SIZE = 52;
+static const int MAX_READING_FONT_SIZE = 64;
 static const int FONT_SIZE_STEP        = 4;
 static const int DEFAULT_READING_FONT_SIZE = 30;
 
@@ -149,7 +143,8 @@ enum Mode {
   MODE_TOC,
   MODE_TOOLS_MENU,
   MODE_MED_REMINDER,
-  MODE_MED_PASSCODE
+  MODE_MED_PASSCODE,
+  MODE_ABOUT
 };
 
 // ==================== Struct Definitions ====================
@@ -293,6 +288,7 @@ struct BinFont {
   GlyphIndex* index;
   File fontFile;
   bool loaded;
+  String filePath;  // Path of the loaded BIN file
 };
 
 struct ScopedSDLock {
@@ -358,9 +354,12 @@ extern int selectedFontIndex;
 extern int fontMenuPage;
 extern const int FONTS_PER_PAGE;
 #define MAX_FONT_FILES 100
+#define MAX_BIN_PER_FONT 5
 extern String fontFileList[MAX_FONT_FILES];
 extern String fontDisplayNames[MAX_FONT_FILES];
-extern String fontBinFile[MAX_FONT_FILES];    // Paired .bin file for each font (empty if none)
+extern String fontBinFiles[MAX_FONT_FILES][MAX_BIN_PER_FONT];  // Paired .bin files per font
+extern uint8_t fontBinSizes[MAX_FONT_FILES][MAX_BIN_PER_FONT]; // Font size from each .bin header
+extern int fontBinCount[MAX_FONT_FILES];                       // Number of paired .bin files
 extern int fontFileCount;
 
 // Mode
@@ -443,6 +442,7 @@ struct TocEntry {
 extern TocEntry* epubTocEntries;
 extern int epubTocCount;
 extern int tocListPage;
+extern int tocTab;  // 0 = chapters, 1 = bookmarks
 
 // Todo
 static const int MAX_TODO = 50;
@@ -571,6 +571,7 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
 bool loadTTFFont(const char* fontPath, int size = 30);
 bool loadSystemFont();
 bool loadReadingFont();
+bool selectBestBinForSize(int targetSize);
 bool loadSDLabels();
 void freeSDLabels();
 
@@ -634,6 +635,8 @@ int loadReadingPosition();
 void saveBookmarks();
 void loadBookmarks();
 void addBookmark();
+void removeBookmark(int page);
+void toggleBookmark();
 void updateBytesPerPage();
 void recalculatePages();
 bool loadCurrentPage();
@@ -657,6 +660,7 @@ void drawStatusBar();
 int drawSystemText(const char* text, int x, int y, int size = 28, uint16_t color = TFT_BLACK, uint16_t bg = TFT_WHITE);
 int getSystemTextWidth(const char* text, int size = 28);
 int silverScaledSize(int size);
+int silverNominalSize(int scaledSize);
 void drawSystemTextCentered(const char* text, int centerX, int y, int size = 28, uint16_t color = TFT_BLACK, uint16_t bg = TFT_WHITE);
 void updateLoadProgress(int percent);
 int drawVerticalMixedText(String text, int x, int startY, int charSpacing = 30);
@@ -753,6 +757,7 @@ void drawCalendarSetup();
 void drawBluetoothSetup();
 void drawFontMenu();
 void drawSystemFontSetup();
+void drawAboutPage();
 
 // cleanup
 void deleteDotFiles(const String& path, int depth = 0);

@@ -31,6 +31,13 @@ void drawToolsMenu() {
   M5.Display.drawRoundRect(optX + 1, optY + 1, optW - 2, optH - 2, 11, TFT_BLACK);
   drawSystemTextCentered("吃藥提醒器", optX + optW / 2, optY + optH / 2 - 18, 36);
 
+  // Option 3: 醒世格言
+  optY = 460;
+  M5.Display.fillRoundRect(optX, optY, optW, optH, 12, TFT_WHITE);
+  M5.Display.drawRoundRect(optX, optY, optW, optH, 12, TFT_BLACK);
+  M5.Display.drawRoundRect(optX + 1, optY + 1, optW - 2, optH - 2, 11, TFT_BLACK);
+  drawSystemTextCentered("醒世格言", optX + optW / 2, optY + optH / 2 - 18, 36);
+
   drawReturnButton();
 
   M5.Display.endWrite();

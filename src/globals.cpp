@@ -214,7 +214,9 @@ int fontMenuPage = 0;
 const int FONTS_PER_PAGE = 7;  // (790-90)/100 = 7 items, last ends at y=790
 String fontFileList[MAX_FONT_FILES];
 String fontDisplayNames[MAX_FONT_FILES];
-String fontBinFile[MAX_FONT_FILES];
+String fontBinFiles[MAX_FONT_FILES][MAX_BIN_PER_FONT];
+uint8_t fontBinSizes[MAX_FONT_FILES][MAX_BIN_PER_FONT];
+int fontBinCount[MAX_FONT_FILES];
 int fontFileCount = 0;
 
 // Mode
@@ -286,6 +288,7 @@ bool epubHasMultiImageChapters = false;
 TocEntry* epubTocEntries = nullptr;
 int epubTocCount = 0;
 int tocListPage = 0;
+int tocTab = 0;
 int comicZoomQuadrant = -1;
 int comicZoomMode = 0;
 float comicZoomCX = 0.5f;

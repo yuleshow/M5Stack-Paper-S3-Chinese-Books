@@ -154,12 +154,17 @@ def render_rotated_glyph(font, horiz_char, font_size):
     except Exception as e:
         return None, 0, 0, 0, 0
 
-def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, render_size=None):
+def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, render_size=None, target_size=None):
     """Convert TTF to M5ReadPaper binary format.
     If fallback_path is given, borrow missing glyphs from the fallback font.
-    If render_size is given, render glyphs at that size but store font_size in header."""
+    If render_size is given, render glyphs at that size but store render_size in header.
+    target_size is the nominal/equivalent size (e.g. 36 for Silver) for fallback sizing."""
     if render_size is None:
         render_size = font_size
+    if target_size is None:
+        target_size = font_size
+    # Header stores render_size so binScale=1.0 on device
+    header_font_size = render_size
     print(f"Loading font: {ttf_path}")
     print(f"Font size: {font_size}pt (render at {render_size}pt)")
     if fallback_path:
@@ -205,12 +210,29 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
         print(f"Error loading font: {e}")
         return False
     
+    # Determine fallback render size: match primary font's actual glyph dimensions
+    fallback_render_size = font_size
+    if render_size != font_size:
+        # Silver mode: measure primary font's average glyph width to size fallback accordingly
+        sample_chars = '盡陀人心世郡第一大是國中不為'
+        sample_img = Image.new('1', (render_size * 3, render_size * 3), 1)
+        sample_draw = ImageDraw.Draw(sample_img)
+        sample_widths = []
+        for sc in sample_chars:
+            sb = sample_draw.textbbox((0, 0), sc, font=font)
+            sw = sb[2] - sb[0]
+            if sw > 0:
+                sample_widths.append(sw)
+        if sample_widths:
+            avg_glyph = sum(sample_widths) / len(sample_widths)
+            fallback_render_size = int(avg_glyph + 0.5)
+            print(f"Silver mode: primary avg glyph={avg_glyph:.1f}px, fallback will render at {fallback_render_size}pt")
+
     # Load fallback font if specified
-    # Fallback renders at font_size (not render_size) since it already has correct visual size
     fallback_font = None
     if fallback_path:
         try:
-            fallback_font = ImageFont.truetype(fallback_path, font_size)
+            fallback_font = ImageFont.truetype(fallback_path, fallback_render_size)
         except Exception as e:
             print(f"Warning: Could not load fallback font: {e}")
     
@@ -219,7 +241,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
         auto_fallback = 'sd_card/fonts/GenYoMinTW-Regular.ttf'
         if os.path.exists(auto_fallback) and os.path.abspath(auto_fallback) != os.path.abspath(ttf_path):
             try:
-                fallback_font = ImageFont.truetype(auto_fallback, font_size)
+                fallback_font = ImageFont.truetype(auto_fallback, fallback_render_size)
                 print(f"Auto-detected fallback font: {auto_fallback}")
             except:
                 pass
@@ -258,11 +280,15 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
                     bearing_x = (font_size - width) // 2
                     bearing_y = (font_size - height) // 2
         
-        # Try fallback font if still missing (at font_size, not render_size)
+        # Try fallback font if still missing
         if img is None and fallback_font:
-            img, width, height, bearing_x, bearing_y = render_glyph(fallback_font, char, font_size)
+            img, width, height, bearing_x, bearing_y = render_glyph(fallback_font, char, fallback_render_size)
             if img is not None:
                 fallback_count += 1
+                if render_size != font_size:
+                    # Silver mode: re-center fallback glyph within font_size cell
+                    bearing_x = (font_size - width) // 2
+                    bearing_y = (font_size - height) // 2
         
         if img is None:
             # Skip characters that can't be rendered
@@ -287,6 +313,24 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
     
     print(f"Successfully rendered {len(index_entries)} glyphs ({rotated_count} rotated, {fallback_count} from fallback)")
     
+    # Normalize bearingY: shift all glyphs so a reference CJK character's ink
+    # starts at the top of the em-square. This ensures all fonts at the same
+    # nominal size produce identical top-line alignment without runtime compensation.
+    ref_bearing_y = None
+    for entry in index_entries:
+        if entry['unicode'] == 0x7684:  # '的'
+            ref_bearing_y = entry['bearing_y']
+            break
+    if ref_bearing_y is None:
+        for entry in index_entries:
+            if entry['unicode'] == 0x4E00:  # '一'
+                ref_bearing_y = entry['bearing_y']
+                break
+    if ref_bearing_y is not None and ref_bearing_y != 0:
+        print(f"Normalizing bearingY: shifting all by -{ref_bearing_y} (ref '的' bearingY={ref_bearing_y})")
+        for entry in index_entries:
+            entry['bearing_y'] -= ref_bearing_y
+    
     # Second pass: calculate correct offsets and build bitmap data
     print("Calculating offsets...")
     header_size = 137
@@ -310,7 +354,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
         
         # Write header in correct order
         f.write(struct.pack('<I', char_count))  # char_count (4 bytes, offset 0-3)
-        f.write(struct.pack('<B', font_size))   # font_size (1 byte, offset 4)
+        f.write(struct.pack('<B', header_font_size))   # font_size (1 byte, offset 4)
         f.write(struct.pack('<I', version))     # version (4 bytes, offset 5-8)
         f.write(family_name)                    # family_name (64 bytes, offset 9-72)
         f.write(style_name)                     # style_name (64 bytes, offset 73-136)
@@ -338,23 +382,50 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
     
     return True
 
+# Silver font scale table (same as device-side silverScaleTable in ui_drawing.cpp)
+# Maps nominal readingFontSize → actual render size needed
+SILVER_SCALE_TABLE = {
+    16: 23, 18: 25, 20: 27, 22: 29, 24: 32, 26: 35,
+    28: 39, 32: 44, 34: 47, 36: 49, 38: 53, 40: 58, 64: 90
+}
+SILVER_SCALE_RATIO = 1.38
+
+def silver_scaled_size(nominal):
+    """Look up scaled render size for Silver font, matching device-side silverScaledSize()."""
+    if nominal in SILVER_SCALE_TABLE:
+        return SILVER_SCALE_TABLE[nominal]
+    return int(nominal * SILVER_SCALE_RATIO + 0.5)
+
+def is_silver_font(path):
+    return 'silver' in os.path.basename(path).lower()
+
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: python3 convert_ttf_to_bin.py <font.ttf> [output.bin] [font_size] [fallback.ttf] [render_size]")
-        print("Example: python3 convert_ttf_to_bin.py MingLiU.ttf MingLiU_30pt.bin 30")
-        print("Fallback: Missing glyphs are borrowed from fallback font (auto-detects GenYoMinTW)")
-        print("render_size: Render at this size but store font_size in header (for small fonts like Silver)")
-        sys.exit(1)
-    
-    ttf_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) > 2 else ttf_path.replace('.ttf', '_30pt.bin')
-    font_size = int(sys.argv[3]) if len(sys.argv) > 3 else 30
-    fallback_path = sys.argv[4] if len(sys.argv) > 4 else None
-    render_size = int(sys.argv[5]) if len(sys.argv) > 5 else None
+    import argparse
+    parser = argparse.ArgumentParser(description='Convert TTF font to M5ReadPaper binary format')
+    parser.add_argument('ttf', help='Input TTF/TTC/OTF font file')
+    parser.add_argument('-o', '--output', help='Output .bin file path (default: <font>_<size>pt.bin)')
+    parser.add_argument('-s', '--size', type=int, default=30, help='Target font size in pt (default: 30). For Silver fonts, this is the nominal readingFontSize; the script auto-computes the actual render size using the built-in ratio.')
+    parser.add_argument('-f', '--fallback', help='Fallback font for missing glyphs (auto-detects GenYoMinTW)')
+    parser.add_argument('-r', '--render-size', type=int, help='Override render size (normally auto-calculated for Silver)')
+    args = parser.parse_args()
+
+    ttf_path = args.ttf
+    font_size = args.size
+    fallback_path = args.fallback
+    render_size = args.render_size
+
+    # For Silver fonts, auto-compute render size from the scale table
+    target_size = font_size  # Keep original nominal size
+    if is_silver_font(ttf_path) and render_size is None:
+        render_size = silver_scaled_size(font_size)
+        print(f"Silver font detected: nominal {target_size}pt → render {render_size}pt (ratio {render_size/target_size:.2f})")
+
+    base = os.path.splitext(ttf_path)[0]
+    output_path = args.output if args.output else f"{base}_{target_size}pt.bin"
     
     if not os.path.exists(ttf_path):
         print(f"Error: Font file not found: {ttf_path}")
         sys.exit(1)
     
-    success = convert_ttf_to_bin(ttf_path, output_path, font_size, fallback_path, render_size)
+    success = convert_ttf_to_bin(ttf_path, output_path, font_size, fallback_path, render_size, target_size)
     sys.exit(0 if success else 1)

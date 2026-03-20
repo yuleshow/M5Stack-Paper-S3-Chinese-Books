@@ -136,33 +136,57 @@ void handleFileList() {
 }
 
 void handleFileUpload() {
-  ScopedSDLock lock;
   HTTPUpload& upload = webServer->upload();
   static File uploadFile;
-  static String uploadDir;
+  static String uploadPath;
   
   if (upload.status == UPLOAD_FILE_START) {
-    uploadDir = "/";
+    String uploadDir = "/";
     if (webServer->hasArg("dir")) {
       uploadDir = urlDecode(webServer->arg("dir"));
     }
     if (!uploadDir.endsWith("/")) uploadDir += "/";
     
-    String filename = uploadDir + upload.filename;
-    Serial.printf("Upload Start: %s\n", filename.c_str());
+    uploadPath = uploadDir + upload.filename;
+    Serial.printf("Upload Start: [%s] (%d chars)\n", uploadPath.c_str(), uploadPath.length());
     
-    uploadFile = SD.open(filename, FILE_WRITE);
+    {
+      ScopedSDLock lock;
+      // Remove existing file first to ensure clean write
+      if (SD.exists(uploadPath)) {
+        SD.remove(uploadPath);
+        Serial.printf("Removed existing file: %s\n", uploadPath.c_str());
+      }
+      uploadFile = SD.open(uploadPath, FILE_WRITE);
+    }
     if (!uploadFile) {
-      Serial.println("Failed to open file for writing");
+      Serial.printf("Failed to open file for writing: %s\n", uploadPath.c_str());
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (uploadFile) {
-      uploadFile.write(upload.buf, upload.currentSize);
+      size_t written = uploadFile.write(upload.buf, upload.currentSize);
+      if (written != upload.currentSize) {
+        Serial.printf("Upload write error: wanted %u, wrote %u\n", upload.currentSize, written);
+      }
     }
   } else if (upload.status == UPLOAD_FILE_END) {
     if (uploadFile) {
+      uploadFile.flush();
       uploadFile.close();
-      Serial.printf("Upload Complete: %s, %u bytes\n", upload.filename.c_str(), upload.totalSize);
+      Serial.printf("Upload Complete: %s, %u bytes\n", uploadPath.c_str(), upload.totalSize);
+      // Verify the file was written correctly
+      {
+        ScopedSDLock lock;
+        File verify = SD.open(uploadPath);
+        if (verify) {
+          Serial.printf("Upload verify: %s exists, %u bytes on SD\n", uploadPath.c_str(), verify.size());
+          verify.close();
+        } else {
+          Serial.printf("Upload verify FAILED: %s not found on SD!\n", uploadPath.c_str());
+        }
+      }
+    } else {
+      Serial.println("Upload END but file was not open");
     }
   }
 }
@@ -201,7 +225,6 @@ void handleFileDownload() {
 }
 
 void handleFileDelete() {
-  ScopedSDLock lock;
   if (!webServer->hasArg("file")) {
     webServer->send(400, "text/plain", "Missing file parameter");
     return;
@@ -213,32 +236,47 @@ void handleFileDelete() {
     returnDir = urlDecode(webServer->arg("dir"));
   }
   
-  Serial.println("Delete request: " + filepath);
+  Serial.printf("Delete request: [%s] (%d chars)\n", filepath.c_str(), filepath.length());
   
-  File file = SD.open(filepath);
-  if (!file) {
-    webServer->send(404, "text/plain", "File not found");
+  bool exists = false;
+  bool isDir = false;
+  {
+    ScopedSDLock lock;
+    exists = SD.exists(filepath);
+    if (exists) {
+      File file = SD.open(filepath);
+      if (file) {
+        isDir = file.isDirectory();
+        file.close();
+      }
+    }
+  }
+  
+  if (!exists) {
+    Serial.printf("Delete: file not found [%s]\n", filepath.c_str());
+    webServer->send(404, "text/plain", "File not found: " + filepath);
     return;
   }
   
-  bool isDir = file.isDirectory();
-  file.close();
-  
   bool success = false;
-  if (isDir) {
-    success = SD.rmdir(filepath);
-  } else {
-    success = SD.remove(filepath);
+  {
+    ScopedSDLock lock;
+    if (isDir) {
+      success = SD.rmdir(filepath);
+    } else {
+      success = SD.remove(filepath);
+    }
   }
   
+  Serial.printf("Delete %s: %s\n", filepath.c_str(), success ? "OK" : "FAILED");
+  
   if (success) {
-    Serial.println("Deleted successfully");
     String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>";
     html += "<meta http-equiv='refresh' content='1;url=/?dir=" + returnDir + "'>";
     html += "</head><body><h2>✅ Deleted!</h2><p>Redirecting...</p></body></html>";
     webServer->send(200, "text/html", html);
   } else {
-    webServer->send(500, "text/plain", "Delete failed");
+    webServer->send(500, "text/plain", "Delete failed: " + filepath);
   }
 }
 

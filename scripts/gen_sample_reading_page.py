@@ -11,21 +11,82 @@ Faithfully ports drawReading() from book_reader.cpp including:
 
 import os
 import sys
+import struct
 import zipfile
 import random
+from bisect import bisect_left
 from lxml import etree
 
 from PIL import Image, ImageDraw, ImageFont
 
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
+
+# ==================== BIN font reader ====================
+class BinFont:
+    """Read glyphs from a .bin font file (same format as device)."""
+
+    HEADER_SIZE = 137
+    ENTRY_SIZE = 20
+
+    def __init__(self, bin_path):
+        self.path = bin_path
+        with open(bin_path, 'rb') as f:
+            self.data = f.read()
+        # Parse header
+        self.char_count = struct.unpack_from('<I', self.data, 0)[0]
+        self.font_size = self.data[4]
+        self.version = struct.unpack_from('<I', self.data, 5)[0]
+        self.family_name = self.data[9:73].split(b'\x00')[0].decode('utf-8', errors='replace')
+        self.style_name = self.data[73:137].split(b'\x00')[0].decode('utf-8', errors='replace')
+        # Build sorted unicode list for binary search
+        self._unicodes = []
+        self._entries = {}
+        idx_start = self.HEADER_SIZE
+        for i in range(self.char_count):
+            off = idx_start + i * self.ENTRY_SIZE
+            uni = struct.unpack_from('<I', self.data, off)[0]
+            w = struct.unpack_from('<H', self.data, off + 4)[0]
+            h = struct.unpack_from('<H', self.data, off + 6)[0]
+            bmp_off = struct.unpack_from('<I', self.data, off + 8)[0]
+            bmp_sz = struct.unpack_from('<I', self.data, off + 12)[0]
+            bx = struct.unpack_from('<h', self.data, off + 16)[0]
+            by = struct.unpack_from('<h', self.data, off + 18)[0]
+            self._unicodes.append(uni)
+            self._entries[uni] = (w, h, bmp_off, bmp_sz, bx, by)
+
+    def has_glyph(self, codepoint):
+        return codepoint in self._entries
+
+    def get_glyph(self, codepoint):
+        """Return (width, height, bearingX, bearingY, PIL Image) or None."""
+        entry = self._entries.get(codepoint)
+        if entry is None:
+            return None
+        w, h, bmp_off, bmp_sz, bx, by = entry
+        if w == 0 or h == 0:
+            return None
+        # Decode 1-bit bitmap: flat bit stream, MSB-first, padded to byte at end
+        glyph_img = Image.new('1', (w, h), 1)  # white background
+        pixels = glyph_img.load()
+        bit_idx = 0
+        for row in range(h):
+            for col in range(w):
+                byte_pos = bmp_off + bit_idx // 8
+                bit_pos = 7 - (bit_idx % 8)
+                if byte_pos < len(self.data) and (self.data[byte_pos] >> bit_pos) & 1:
+                    pixels[col, row] = 0  # black
+                bit_idx += 1
+        return (w, h, bx, by, glyph_img)
+
+
 # ==================== Layout constants (globals.h) ====================
 SCREEN_W = 540
 SCREEN_H = 960
-READING_AREA_TOP    = 60
-READING_AREA_BOTTOM = 850
-READING_AREA_LEFT   = 50
-READING_AREA_RIGHT  = 520
+READING_AREA_TOP    = 65
+READING_AREA_BOTTOM = 878
+READING_AREA_LEFT   = 20
+READING_AREA_RIGHT  = 530
 VERTICAL_TEXT_MAX_Y = 900
 PROGRESS_BAR_X = 30
 NAV_Y = 886
@@ -151,31 +212,57 @@ def extract_epub_full_text(epub_path):
 
 
 # ==================== drawReading() port ====================
-def render_reading_page(text, font_path, font_size, output_path, page_num, total_pages):
+def render_reading_page(text, font_path, font_size, output_path, page_num, total_pages,
+                        silver_mode=False, render_size=None, fallback_path=None, fallback_size=None,
+                        bin_font=None, fallback_bin=None):
     """
     Faithfully port drawReading() from book_reader.cpp.
     Renders one page of vertical CJK text with full device UI.
+    When bin_font is provided, renders glyphs from BIN bitmaps.
     Returns (image, bytes_consumed) for pagination.
     """
     img = Image.new('L', (SCREEN_W, SCREEN_H), 255)
     draw = ImageDraw.Draw(img)
 
-    font = ImageFont.truetype(font_path, font_size)
+    # Silver/BIN mode: render at render_size, use fallback for missing glyphs
+    actual_render_size = render_size if render_size else font_size
+
+    # TTF fonts (used for Latin runs when in BIN mode, or all rendering in TTF mode)
+    font = None
+    fallback_font = None
+    if bin_font is None:
+        font = ImageFont.truetype(font_path, actual_render_size)
+        if fallback_path and fallback_size:
+            fallback_font = ImageFont.truetype(fallback_path, fallback_size)
+
+    # Latin run font: for BIN mode, use fallback TTF at fallback_size (like device ofrRenderSize)
+    latin_ttf_path = fallback_path if (bin_font and fallback_path) else font_path
+    latin_ttf_size = fallback_size if (bin_font and fallback_size) else font_size
     # Device uses &fonts::Font2 (M5Unified built-in bitmap font) at textSize(2)
     # for time, battery %, page numbers, reading %.
     # Approximate with Helvetica which is visually close.
     ui_font = ImageFont.truetype('Helvetica.ttc', 16)
     ui_font_small = ImageFont.truetype('Helvetica.ttc', 12)
 
-    # --- Layout (book_reader.cpp lines 880-900) ---
-    charHeight = font_size + font_size // 5       # ~1.2x
+    # --- Layout (book_reader.cpp) ---
+    # Use nominal font_size for layout so all fonts at same size have same grid
+    charHeight = font_size + font_size // 5       # ~1.2x nominal size
     columnSpacing = font_size + font_size // 5    # ~1.2x
-    rdLeft = READING_AREA_LEFT
-    rdRight = READING_AREA_RIGHT
-    rdTop = READING_AREA_TOP
-    rdMaxY = VERTICAL_TEXT_MAX_Y
+    rdLeft = READING_AREA_LEFT; rdRight = READING_AREA_RIGHT
+    rdTop = READING_AREA_TOP;   rdMaxY = VERTICAL_TEXT_MAX_Y
 
-    charsPerColumn = (rdMaxY - rdTop) // charHeight - 2
+    # Optimize: squeeze one more column if leftover space >= 40% of column width
+    availW = rdRight - rdLeft
+    numCols = availW // columnSpacing
+    leftover = availW - numCols * columnSpacing
+    if numCols > 0 and leftover * 5 >= columnSpacing * 2:
+        numCols += 1
+        columnSpacing = availW // numCols
+
+    charsPerColumn = (rdMaxY - rdTop) // charHeight - 1
+    # Ensure kinsoku overflow slot stays above progress bar / page numbers
+    if rdTop + (charsPerColumn + 1) * charHeight > READING_AREA_BOTTOM:
+        charsPerColumn -= 1
     if charsPerColumn < 1:
         charsPerColumn = 1
 
@@ -200,7 +287,10 @@ def render_reading_page(text, font_path, font_size, output_path, page_num, total
 
     # --- Vertical text rendering (main loop, book_reader.cpp lines 912-1200) ---
     columnX = rdRight - columnSpacing // 2
-    startY = rdTop
+    # Anchor first row's em-square top at rdTop regardless of font size
+    # Use int() for C++-style truncation (not // which floors negative values)
+    startY = rdTop - int((charHeight - actual_render_size) / 2)
+    bin_scale = actual_render_size / bin_font.font_size if (bin_font and bin_font.font_size > 0) else 1.0
     currentY = startY
     charIndex = 0
     charsDrawn = 0
@@ -266,11 +356,11 @@ def render_reading_page(text, font_path, font_size, output_path, page_num, total
                     continue
 
                 # Measure and render rotated 90° CW
-                latin_font = ImageFont.truetype(font_path, font_size)
+                latin_font = ImageFont.truetype(latin_ttf_path, latin_ttf_size)
                 lbbox = latin_font.getbbox(latin_run)
                 textW = lbbox[2] - lbbox[0]
                 spriteW = textW + 4
-                spriteH = font_size + 4
+                spriteH = latin_ttf_size + 4
                 rotatedH = spriteW  # After 90° rotation
 
                 # Check fit
@@ -320,11 +410,48 @@ def render_reading_page(text, font_path, font_size, output_path, page_num, total
             continue
 
         # --- draw_normal_char ---
-        vOffset = (charHeight - font_size) // 2
-        draw_char = chr(mapped)
-        drawX = columnX - font_size // 2
-        drawY = currentY + vOffset
-        draw.text((drawX, drawY), draw_char, font=font, fill=0)
+        vOffset = int((charHeight - actual_render_size) / 2)
+
+        if bin_font:
+            # BIN mode: look up glyph from BIN file
+            glyph = bin_font.get_glyph(mapped)
+            if glyph is None and fallback_bin:
+                glyph = fallback_bin.get_glyph(mapped)
+            if glyph is None:
+                glyph = bin_font.get_glyph(unicode_val)
+            if glyph is None and fallback_bin:
+                glyph = fallback_bin.get_glyph(unicode_val)
+
+            if glyph:
+                gw, gh, gbx, gby, glyph_img = glyph
+                emY = currentY + int((charHeight - actual_render_size) / 2)  # em-square top
+                emX = columnX - actual_render_size // 2                       # em-square left
+                # Use bearing offsets for v2 fonts, naive centering for v1
+                if bin_font and bin_font.version >= 2:
+                    drawX = emX + int(gbx * bin_scale + 0.5)
+                    drawY = emY + int(gby * bin_scale + 0.5)
+                else:
+                    drawX = columnX - gw // 2
+                    drawY = emY + (actual_render_size - gh) // 2
+                # Paste 1-bit glyph (black on white)
+                # Convert to mask: invert so black pixels become the mask
+                mask = glyph_img.point(lambda p: 255 if p == 0 else 0)
+                black = Image.new('L', (gw, gh), 0)
+                img.paste(black, (drawX, drawY), mask)
+        else:
+            # TTF mode
+            draw_char = chr(mapped)
+            use_font = font
+            if fallback_font:
+                tb = draw.textbbox((0, 0), draw_char, font=font)
+                if tb[2] - tb[0] <= 0 or tb[3] - tb[1] <= 0:
+                    use_font = fallback_font
+            tb = draw.textbbox((0, 0), draw_char, font=use_font)
+            glyphW = tb[2] - tb[0]
+            glyphH = tb[3] - tb[1]
+            drawX = columnX - glyphW // 2 - tb[0]
+            drawY = currentY + vOffset + (actual_render_size - glyphH) // 2 - tb[1]
+            draw.text((drawX, drawY), draw_char, font=use_font, fill=0)
         charsDrawn += 1
         currentY += charHeight
         charIndex += 1
@@ -336,11 +463,37 @@ def render_reading_page(text, font_path, font_size, output_path, page_num, total
                 peekUnicode = ord(text[i])
                 mappedPeek = toVerticalPunct(peekUnicode)
                 if isColumnStartProhibited(peekUnicode) or isColumnStartProhibited(mappedPeek):
-                    # Draw prohibited char in reserved slot at full size
-                    vOff = (charHeight - font_size) // 2
-                    kDrawX = columnX - font_size // 2
-                    kDrawY = currentY + vOff
-                    draw.text((kDrawX, kDrawY), chr(mappedPeek), font=font, fill=0)
+                    if bin_font:
+                        kg = bin_font.get_glyph(mappedPeek)
+                        if kg is None and fallback_bin:
+                            kg = fallback_bin.get_glyph(mappedPeek)
+                        if kg:
+                            kw, kh, kbx, kby, k_img = kg
+                            emY = currentY + int((charHeight - actual_render_size) / 2)
+                            emX = columnX - actual_render_size // 2
+                            if bin_font.version >= 2:
+                                kDrawX = emX + int(kbx * bin_scale + 0.5)
+                                kDrawY = emY + int(kby * bin_scale + 0.5)
+                            else:
+                                kDrawX = columnX - kw // 2
+                                kDrawY = emY + (actual_render_size - kh) // 2
+                            kmask = k_img.point(lambda p: 255 if p == 0 else 0)
+                            kblack = Image.new('L', (kw, kh), 0)
+                            img.paste(kblack, (kDrawX, kDrawY), kmask)
+                    else:
+                        k_char = chr(mappedPeek)
+                        k_font = font
+                        if fallback_font:
+                            kb = draw.textbbox((0, 0), k_char, font=font)
+                            if kb[2] - kb[0] <= 0 or kb[3] - kb[1] <= 0:
+                                k_font = fallback_font
+                        kb = draw.textbbox((0, 0), k_char, font=k_font)
+                        kW = kb[2] - kb[0]
+                        kH = kb[3] - kb[1]
+                        vOff = int((charHeight - actual_render_size) / 2)
+                        kDrawX = columnX - kW // 2 - kb[0]
+                        kDrawY = currentY + vOff + (actual_render_size - kH) // 2 - kb[1]
+                        draw.text((kDrawX, kDrawY), k_char, font=k_font, fill=0)
                     charsDrawn += 1
                     i += 1  # Consume peeked char
 
@@ -444,7 +597,9 @@ def paginate(text, font_path, font_size):
     rdRight = READING_AREA_RIGHT
     rdTop = READING_AREA_TOP
     rdMaxY = VERTICAL_TEXT_MAX_Y
-    charsPerColumn = (rdMaxY - rdTop) // charHeight - 2
+    charsPerColumn = (rdMaxY - rdTop) // charHeight - 1
+    if rdTop + (charsPerColumn + 1) * charHeight > READING_AREA_BOTTOM:
+        charsPerColumn -= 1
     if charsPerColumn < 1:
         charsPerColumn = 1
 
@@ -545,39 +700,126 @@ def paginate(text, font_path, font_size):
     return pages
 
 
-if __name__ == '__main__':
-    epub_path = 'sd_card/books/pg24113-images-3.epub'
-    font_path = 'sd_card/fonts/Huiwenmincho-improved.ttf'
-    output_path = 'output/sample_reading_page.png'
-    font_size = 44
+SAMPLE_TEXT = (
+    '酆跎謅天地玄黃，宇宙洪荒。日月盈昃，辰宿列張。'
+    '寒來暑往，秋收冬藏。閏餘成歲，律呂調陽。'
+    '雲騰致雨，露結為霜。金生麗水，玉出崑岡。'
+    '劍號巨闕，珠稱夜光。果珍李柰，菜重芥薑。'
+    '海鹹河淡，鱗潛羽翔。龍師火帝，鳥官人皇。'
+    '始制文字，乃服衣裳。'
+    '弔民伐罪，周發殷湯。坐朝問道，垂拱平章。'
+    '愛育黎首，臣伏戎羌。遐邇一體，率賓歸王。'
+    '鳴鳳在竹，白駒食場。化被草木，賴及萬方。'
+    '\n'
+    '蓋此身髮，四大五常。恭惟鞠養，豈敢毀傷。'
+    '女慕貞潔，男效才良。知過必改，得能莫忘。'
+    '罔談彼短，靡恃己長。信使可覆，器欲難量。'
+    '墨悲絲染，詩讚羔羊。景行維賢，克念作聖。'
+    '\n'
+    '「德建名立，形端表正。」空谷傳聲，虛堂習聽。'
+    '禍因惡積，福緣善慶。尺璧非寶，寸陰是競。'
+    '資父事君，曰嚴與敬。孝當竭力，忠則盡命。'
+    '\n'
+    '臨深履薄，夙興溫凊。似蘭斯馨，如松之盛。'
+    '川流不息，淵澄取映。容止若思，言辭安定。'
+    '篤初誠美，慎終宜令。榮業所基，籍甚無竟。'
+    '\n'
+    'He saw the boat on the river.'
+    '學優登仕，攝職從政。存以甘棠，去而益詠。'
+    '樂殊貴賤，禮別尊卑。上和下睦，夫唱婦隨。'
+    '外受傅訓，入奉母儀。諸姑伯叔，猶子比兒。'
+    '孔懷兄弟，同氣連枝。交友投分，切磨箴規。'
+)
 
-    if not os.path.exists(epub_path):
-        print(f"EPUB not found: {epub_path}")
-        sys.exit(1)
-    if not os.path.exists(font_path):
-        print(f"Font not found: {font_path}")
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Generate sample reading page image')
+    parser.add_argument('--bin', '-b', required=True,
+                        help='BIN font file path (e.g. sd_card/fonts/Silver_36pt.bin)')
+    parser.add_argument('--fallback-bin', default=None,
+                        help='Fallback BIN font file for missing glyphs')
+    parser.add_argument('--output', '-o', default=None,
+                        help='Output PNG path (default: output/sample_<font>_<size>.png)')
+    parser.add_argument('--text', '-t', default=None,
+                        help='Custom text to render (default: built-in sample)')
+    parser.add_argument('--fallback-ttf', default=None,
+                        help='Fallback TTF for Latin text runs (auto-detected if not set)')
+    args = parser.parse_args()
+
+    bin_path = args.bin
+    if not os.path.exists(bin_path):
+        print(f"BIN font not found: {bin_path}")
         sys.exit(1)
 
     os.makedirs('output', exist_ok=True)
 
-    # Extract full text from EPUB (spine order, like device)
-    print(f"Extracting text from {epub_path}...")
-    full_text = extract_epub_full_text(epub_path)
-    print(f"Total text: {len(full_text)} chars")
+    # Load primary BIN font
+    print(f"Loading BIN font: {bin_path}")
+    bin_font = BinFont(bin_path)
+    print(f"  {bin_font.family_name} {bin_font.style_name}, "
+          f"{bin_font.char_count} glyphs, fontSize={bin_font.font_size}")
 
-    # Find the exact text shown on the device screenshot
-    # The screenshot page starts with "得知，今日回家，遇了一件大喜"
-    search_str = '\u5f97\u77e5\uff0c\u4eca\u65e5\u56de\u5bb6'  # 得知，今日回家
-    page_start = full_text.find(search_str)
-    if page_start < 0:
-        print("ERROR: Could not find screenshot text in EPUB")
-        sys.exit(1)
-    print(f"Found screenshot text at offset {page_start}")
+    # Detect Silver mode from font name
+    font_base = os.path.splitext(os.path.basename(bin_path))[0]
+    silver_mode = 'silver' in font_base.lower()
+    font_size = bin_font.font_size  # render size from header
 
-    # Use the device's page numbers: 57/804 (page index 56)
-    device_page = 56
-    device_total = 804
-    page_text = full_text[page_start:]
+    # For Silver, derive nominal size from render size
+    if silver_mode:
+        silver_reverse = {44:32, 49:36, 55:40, 61:44, 66:48, 72:52, 77:56, 83:60, 88:64}
+        nominal_size = silver_reverse.get(font_size, font_size)
+        print(f"  Silver mode: render {font_size}pt → nominal {nominal_size}pt")
+    else:
+        nominal_size = font_size
 
-    render_reading_page(page_text, font_path, font_size, output_path,
-                        device_page, device_total)
+    # Load fallback BIN if specified
+    fallback_bin = None
+    if args.fallback_bin:
+        if os.path.exists(args.fallback_bin):
+            fallback_bin = BinFont(args.fallback_bin)
+            print(f"  Fallback BIN: {args.fallback_bin} ({fallback_bin.char_count} glyphs)")
+    else:
+        # Auto-detect: look for matching-size BIN from another font family
+        bin_dir = os.path.dirname(bin_path) or '.'
+        for fb_name in os.listdir(bin_dir):
+            if fb_name.endswith('.bin') and fb_name != os.path.basename(bin_path):
+                # Match by extracting pt size from filename
+                fb_path = os.path.join(bin_dir, fb_name)
+                try:
+                    fb = BinFont(fb_path)
+                    if fb.font_size == font_size:
+                        # Skip same family
+                        if fb.family_name != bin_font.family_name:
+                            fallback_bin = fb
+                            print(f"  Auto fallback BIN: {fb_name} ({fb.char_count} glyphs)")
+                            break
+                except Exception:
+                    pass
+
+    # Fallback TTF for Latin runs
+    fallback_ttf = args.fallback_ttf
+    fallback_ttf_size = nominal_size
+    if not fallback_ttf:
+        for fb in ['sd_card/fonts/GenYoMinTW-Regular.ttf',
+                    'sd_card/fonts/Huiwenmincho-improved.ttf']:
+            if os.path.exists(fb):
+                fallback_ttf = fb
+                break
+    if fallback_ttf:
+        # For Silver BIN, Latin fallback should match the glyph visual size, not render size
+        if silver_mode:
+            fallback_ttf_size = nominal_size
+        print(f"  Latin TTF: {fallback_ttf} @ {fallback_ttf_size}pt")
+
+    output_path = args.output or f'output/sample_{font_base}.png'
+    page_text = args.text if args.text else SAMPLE_TEXT
+
+    render_reading_page(page_text, fallback_ttf or '', nominal_size, output_path,
+                        page_num=3, total_pages=500,
+                        silver_mode=silver_mode,
+                        render_size=font_size if silver_mode else None,
+                        fallback_path=fallback_ttf,
+                        fallback_size=fallback_ttf_size if fallback_ttf else None,
+                        bin_font=bin_font,
+                        fallback_bin=fallback_bin)

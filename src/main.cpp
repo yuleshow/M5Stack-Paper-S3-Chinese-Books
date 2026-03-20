@@ -752,6 +752,10 @@ void loop() {
           else if (i == 3) {
             DEBUG_LOG("Opening shopping list...");
             currentMode = MODE_SHOPPING_LIST;
+            loadShoppingList();
+            loadCheckedItems();
+            calculateShoppingPages();
+            currentShoppingPage = 0;
             drawShoppingList();
           }
           // Icon 4 is Weather (天氣)
@@ -1058,6 +1062,18 @@ void loop() {
             currentPage = savedOffset / bytesPerPage;
           }
           if (currentPage >= totalPages) currentPage = totalPages - 1;
+          // Seed page offset array for accurate navigation
+          if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
+            while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
+              int gap = currentPage - pageOffsetsCount;
+              size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
+                           savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+              pageByteOffsets[pageOffsetsCount] = est;
+              pageOffsetsCount++;
+            }
+            if (currentPage < (int)pageOffsetsCount)
+              pageByteOffsets[currentPage] = savedOffset;
+          }
           loadCurrentPage();
           drawReading();
         } else {
@@ -1086,47 +1102,64 @@ void loop() {
         int fontIdx = fontMenuPage * FONTS_PER_PAGE + (y - 90) / 100;
         Serial.printf("FONT_MENU: tap y=%d, x=%d → fontIdx=%d (fontFileCount=%d)\n", y, x, fontIdx, fontFileCount);
         if (fontIdx >= 0 && fontIdx < fontFileCount) {
-        // Check if tapping the [BIN] button area (right side)
+        // Check if tapping a BIN button (right side, one per paired bin)
         bool tappedBin = false;
-        if (x >= 370 && x <= 510 && fontBinFile[fontIdx].length() > 0) {
-          tappedBin = true;
+        if (fontBinCount[fontIdx] > 0) {
           int itemY = 90 + (fontIdx - fontMenuPage * FONTS_PER_PAGE) * 100;
           int btnRelY = y - itemY;
           if (btnRelY >= 25 && btnRelY <= 61) {
-            // Toggle BIN selection for this font
-            selectedFontIndex = fontIdx;
-            readingFontIndex = fontIdx;
-            if (readingFontFile == fontBinFile[fontIdx]) {
-              // Already using BIN — switch back to TTF
-              readingFontFile = fontFileList[fontIdx];
-              Serial.printf("Switched to TTF: %s\n", readingFontFile.c_str());
-            } else {
-              // Switch to BIN
-              readingFontFile = fontBinFile[fontIdx];
-              Serial.printf("Switched to BIN: %s\n", readingFontFile.c_str());
-            }
-            savePrefInt("ereader", "fontIdx", readingFontIndex);
-            savePrefStr("ereader", "fontFile", readingFontFile);
-            
-            if (fontMenuReturnMode == MODE_READING) {
-              currentMode = MODE_READING;
-              fontMenuPage = 0;
-              size_t savedOffset = currentPageByteOffset;
-              loadReadingFont();
-              recalculatePages();
-              // Restore reading position from byte offset
-              if (bytesPerPage > 0 && savedOffset > 0) {
-                currentPage = savedOffset / bytesPerPage;
+            // Reconstruct button positions (same layout as drawFontMenu)
+            // For Silver, use nominal size for label width calculation
+            bool isSilverFont = (fontFileList[fontIdx].indexOf("Silver") >= 0 || fontFileList[fontIdx].indexOf("silver") >= 0);
+            int btnX = 510;
+            for (int b = fontBinCount[fontIdx] - 1; b >= 0; b--) {
+              int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[fontIdx][b]) : (int)fontBinSizes[fontIdx][b];
+              String label = String(displaySize) + "pt";
+              int btnW = label.length() * 12 + 16;
+              btnX -= (btnW + 4);
+              if (x >= btnX && x <= btnX + btnW) {
+                tappedBin = true;
+                selectedFontIndex = fontIdx;
+                readingFontIndex = fontIdx;
+                readingFontFile = fontBinFiles[fontIdx][b];
+                // Set readingFontSize to the BIN's embedded font size
+                // For Silver, use the equivalent nominal size so the device scaling works correctly
+                readingFontSize = isSilverFont ? silverNominalSize(fontBinSizes[fontIdx][b]) : (int)fontBinSizes[fontIdx][b];
+                Serial.printf("Switched to BIN: %s (size=%dpt)\n", readingFontFile.c_str(), readingFontSize);
+                savePrefInt("ereader", "fontIdx", readingFontIndex);
+                savePrefStr("ereader", "fontFile", readingFontFile);
+                savePrefInt("ereader", "rdFontSz", readingFontSize);
+                
+                if (fontMenuReturnMode == MODE_READING) {
+                  currentMode = MODE_READING;
+                  fontMenuPage = 0;
+                  size_t savedOffset = currentPageByteOffset;
+                  loadReadingFont();
+                  recalculatePages();
+                  if (bytesPerPage > 0 && savedOffset > 0) {
+                    currentPage = savedOffset / bytesPerPage;
+                  }
+                  if (currentPage >= totalPages) currentPage = totalPages - 1;
+                  if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
+                    while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
+                      int gap = currentPage - pageOffsetsCount;
+                      size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
+                                   savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+                      pageByteOffsets[pageOffsetsCount] = est;
+                      pageOffsetsCount++;
+                    }
+                    if (currentPage < (int)pageOffsetsCount)
+                      pageByteOffsets[currentPage] = savedOffset;
+                  }
+                  loadCurrentPage();
+                  drawReading();
+                } else {
+                  loadSystemFont();
+                  drawFontMenu();
+                }
+                break;
               }
-              if (currentPage >= totalPages) currentPage = totalPages - 1;
-              loadCurrentPage();
-              drawReading();
-            } else {
-              loadSystemFont();
-              drawFontMenu();
             }
-          } else {
-            tappedBin = false;  // Not in BIN button Y range
           }
         }
         if (!tappedBin) {
@@ -1150,6 +1183,17 @@ void loop() {
             currentPage = savedOffset / bytesPerPage;
           }
           if (currentPage >= totalPages) currentPage = totalPages - 1;
+          if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
+            while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
+              int gap = currentPage - pageOffsetsCount;
+              size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
+                           savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+              pageByteOffsets[pageOffsetsCount] = est;
+              pageOffsetsCount++;
+            }
+            if (currentPage < (int)pageOffsetsCount)
+              pageByteOffsets[currentPage] = savedOffset;
+          }
           loadCurrentPage();
           drawReading();
         } else {
@@ -1317,6 +1361,10 @@ void loop() {
           // Snap down to nearest grid-aligned size (handles off-grid values like 46→44)
           int grid = ((readingFontSize - MIN_READING_FONT_SIZE - 1) / FONT_SIZE_STEP) * FONT_SIZE_STEP + MIN_READING_FONT_SIZE;
           readingFontSize = max(grid, MIN_READING_FONT_SIZE);
+          // Auto-select best BIN for new size (reload if changed)
+          if (selectBestBinForSize(readingFontSize)) {
+            loadReadingFont();
+          }
           clearGlyphCache();
           if (!(currentBookIsEpub && epubIsImageBased)) {
             size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
@@ -1339,6 +1387,10 @@ void loop() {
           // Snap up to nearest grid-aligned size (handles off-grid values like 46→48)
           int grid = ((readingFontSize - MIN_READING_FONT_SIZE) / FONT_SIZE_STEP + 1) * FONT_SIZE_STEP + MIN_READING_FONT_SIZE;
           readingFontSize = min(grid, MAX_READING_FONT_SIZE);
+          // Auto-select best BIN for new size (reload if changed)
+          if (selectBestBinForSize(readingFontSize)) {
+            loadReadingFont();
+          }
           clearGlyphCache();
           if (!(currentBookIsEpub && epubIsImageBased)) {
             size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
@@ -1369,41 +1421,24 @@ void loop() {
           if (!epubTocEntries || epubTocCount == 0) {
             epubParseToc();
           }
-          if (epubTocCount > 0) {
-            loadSystemFont();  // Switch to system font for TOC UI
-            tocListPage = 0;
-            currentMode = MODE_TOC;
-            drawTocList();
-          } else {
-            Serial.println("No TOC available for this EPUB");
-            // Show "no TOC" popup
-            int pw = 300, ph = 60;
-            int px = (540 - pw) / 2, py = (960 - ph) / 2;
-            M5.Display.setEpdMode(epd_mode_t::epd_fastest);
-            M5.Display.fillRect(px, py, pw, ph, TFT_WHITE);
-            M5.Display.drawRect(px, py, pw, ph, TFT_BLACK);
-            drawSystemText("此書無目錄", px + pw / 2 - 60, py + 15, 24);
-            M5.Display.display();
-            delay(1500);
-            drawReading();
-          }
+          loadSystemFont();
+          tocListPage = 0;
+          tocTab = 0;
+          currentMode = MODE_TOC;
+          drawTocList();
         } else {
-          Serial.println("TXT file - no TOC");
-          int pw = 300, ph = 60;
-          int px = (540 - pw) / 2, py = (960 - ph) / 2;
-          M5.Display.setEpdMode(epd_mode_t::epd_fastest);
-          M5.Display.fillRect(px, py, pw, ph, TFT_WHITE);
-          M5.Display.drawRect(px, py, pw, ph, TFT_BLACK);
-          drawSystemText("此書無目錄", px + pw / 2 - 60, py + 15, 24);
-          M5.Display.display();
-          delay(1500);
-          drawReading();
+          // TXT: open bookmark tab directly
+          loadSystemFont();
+          tocListPage = 0;
+          tocTab = 1;
+          currentMode = MODE_TOC;
+          drawTocList();
         }
       }
       // Bookmark button (★) — toolbar cell 5
       else if (y > 900 && x >= 410 && x <= 461) {
-        addBookmark();
-        Serial.printf("Bookmark added: page %d\n", currentPage + 1);
+        toggleBookmark();
+        Serial.printf("Bookmark toggled: page %d\n", currentPage + 1);
         drawReading();
       }
       // Tap progress bar / page number area to open page jump popup
@@ -1445,58 +1480,93 @@ void loop() {
         currentMode = MODE_READING;
         drawReading();
       }
+      // Tab bar touch (y 35..85)
+      else if (y >= 35 && y <= 85) {
+        if (x >= 10 && x <= 270 && tocTab != 0) {
+          tocTab = 0;
+          tocListPage = 0;
+          drawTocList();
+        } else if (x >= 270 && x <= 530 && tocTab != 1) {
+          tocTab = 1;
+          drawTocList();
+        }
+      }
       // Pagination: next page (left arrow, CJK forward)
       else if (touchedPrevPage(x, y)) {
-        int totalTocPages = (epubTocCount + TOC_PER_PAGE - 1) / TOC_PER_PAGE;
-        if (tocListPage < totalTocPages - 1) {
-          tocListPage++;
-          drawTocList();
+        if (tocTab == 0) {
+          int totalTocPages = (epubTocCount + TOC_PER_PAGE - 1) / TOC_PER_PAGE;
+          if (tocListPage < totalTocPages - 1) {
+            tocListPage++;
+            drawTocList();
+          }
         }
       }
       // Pagination: prev page (right arrow, CJK backward)
       else if (touchedNextPage(x, y)) {
-        if (tocListPage > 0) {
-          tocListPage--;
-          drawTocList();
+        if (tocTab == 0) {
+          if (tocListPage > 0) {
+            tocListPage--;
+            drawTocList();
+          }
         }
       }
-      // Tap on a TOC entry to jump to that chapter
-      else if (y >= 120 && y <= 120 + TOC_PER_PAGE * BOOK_ROW_HEIGHT) {
-        int row = (y - 120) / BOOK_ROW_HEIGHT;
-        int tocIdx = tocListPage * TOC_PER_PAGE + row;
-        if (tocIdx >= 0 && tocIdx < epubTocCount) {
-          int chapterIdx = epubTocEntries[tocIdx].chapterIndex;
-          Serial.printf("TOC: jumping to chapter %d (%s)\n",
-                        chapterIdx, epubTocEntries[tocIdx].label.c_str());
-          if (chapterIdx >= 0 && chapterIdx < epubChapterCount) {
-            if (epubIsImageBased) {
-              // Image EPUB: chapter index = page number
-              currentPage = chapterIdx;
-            } else {
-              // Text EPUB: jump to chapter's cumulative byte offset
-              size_t targetOffset = epubChapters[chapterIdx].cumulativeOffset;
-              // Set page based on byte offset estimate
-              int estimatedPage = 0;
-              if (bytesPerPage > 0) {
-                estimatedPage = targetOffset / bytesPerPage;
-                if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
-              }
-              currentPage = estimatedPage;
-              // Store target offset at the correct page slot so loadCurrentPage uses it
-              if (pageByteOffsets) {
-                pageByteOffsets[currentPage] = targetOffset;
-                if (pageOffsetsCount <= currentPage) {
-                  pageOffsetsCount = currentPage + 1;
+      // Tap on list entries
+      else if (y >= 100 && y <= 100 + TOC_PER_PAGE * BOOK_ROW_HEIGHT) {
+        int row = (y - 100) / BOOK_ROW_HEIGHT;
+
+        if (tocTab == 0) {
+          // Chapter list tap
+          int tocIdx = tocListPage * TOC_PER_PAGE + row;
+          if (tocIdx >= 0 && tocIdx < epubTocCount) {
+            int chapterIdx = epubTocEntries[tocIdx].chapterIndex;
+            Serial.printf("TOC: jumping to chapter %d (%s)\n",
+                          chapterIdx, epubTocEntries[tocIdx].label.c_str());
+            if (chapterIdx >= 0 && chapterIdx < epubChapterCount) {
+              if (epubIsImageBased) {
+                currentPage = chapterIdx;
+              } else {
+                size_t targetOffset = epubChapters[chapterIdx].cumulativeOffset;
+                int estimatedPage = 0;
+                if (bytesPerPage > 0) {
+                  estimatedPage = targetOffset / bytesPerPage;
+                  if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
+                }
+                currentPage = estimatedPage;
+                if (pageByteOffsets) {
+                  pageByteOffsets[currentPage] = targetOffset;
+                  if (pageOffsetsCount <= currentPage) {
+                    pageOffsetsCount = currentPage + 1;
+                  }
                 }
               }
+              currentMode = MODE_READING;
+              if (loadCurrentPage()) {
+                saveReadingPosition();
+                drawReading();
+              } else {
+                drawReading();
+              }
             }
-            currentMode = MODE_READING;
-            if (loadCurrentPage()) {
-              saveReadingPosition();
-              drawReading();
+          }
+        } else {
+          // Bookmark list tap
+          if (row >= 0 && row < bookmarkCount) {
+            // Check if delete button was tapped (x >= 460)
+            if (x >= 460 && x <= 510) {
+              Serial.printf("Deleting bookmark at page %d\n", bookmarks[row].page + 1);
+              removeBookmark(bookmarks[row].page);
+              drawTocList();
             } else {
-              // Fallback: redraw reading even if load failed
-              drawReading();
+              // Jump to bookmarked page
+              Serial.printf("Jumping to bookmark page %d\n", bookmarks[row].page + 1);
+              currentPage = bookmarks[row].page;
+              currentMode = MODE_READING;
+              if (loadCurrentPage()) {
+                saveReadingPosition();
+                drawReading();
+              } else {
+                drawReading();
+              }
             }
           }
         }
@@ -2125,11 +2195,12 @@ void loop() {
       if (setupSubmenu == 0) {
         // Main setup menu
         int y1 = 85;
-        int itemHeight = 100;
+        int itemHeight = 78;
+        int itemGap = 8;
 
         // Menu paging
         // Left arrow (touchedPrevPage) = go forward/next page
-        if (touchedPrevPage(x, y) && setupMenuPage < 2) {
+        if (touchedPrevPage(x, y) && setupMenuPage < 1) {
           setupMenuPage++;
           drawSetupMenu();
           return;
@@ -2142,7 +2213,7 @@ void loop() {
         }
 
         if (setupMenuPage == 0) {
-          // Page 1: 5 items
+          // Page 1: 9 items
           
           // WiFi Settings item
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
@@ -2156,7 +2227,7 @@ void loop() {
           }
           
           // Timezone Settings item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Timezone settings selected");
             setupSubmenu = 2;
@@ -2166,7 +2237,7 @@ void loop() {
           }
           
           // Web Server Settings item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Web server settings selected");
             setupSubmenu = 3;
@@ -2175,7 +2246,7 @@ void loop() {
           }
           
           // USB MSC Settings item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("USB MSC settings selected");
             setupSubmenu = 4;
@@ -2184,35 +2255,34 @@ void loop() {
           }
           
           // Icon Source Settings item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Icon source settings selected");
             setupSubmenu = 5;
             drawIconSetup();
             return;
           }
-        } else if (setupMenuPage == 1) {
-          // Page 2: 5 items
-          
+
           // Calendar Calculation Settings item
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Calendar settings selected");
             setupSubmenu = 6;
             drawCalendarSetup();
             return;
           }
-          
+
           // Bluetooth Settings item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Bluetooth settings selected");
             setupSubmenu = 7;
             drawBluetoothSetup();
             return;
           }
-          
+
           // Auto-Sleep Settings item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Auto-sleep settings selected - toggling");
             autoSleepEnabled = !autoSleepEnabled;
@@ -2225,7 +2295,7 @@ void loop() {
           }
 
           // Comic Zoom Mode item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Comic zoom mode selected - toggling");
             comicZoomMode = (comicZoomMode == 0) ? 1 : 0;
@@ -2236,9 +2306,10 @@ void loop() {
             drawSetupMenu();
             return;
           }
+        } else if (setupMenuPage == 1) {
+          // Page 2: 4 items
 
           // Page Refresh Mode item
-          y1 += itemHeight + 18;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Page refresh mode selected - cycling");
             pageRefreshMode = (pageRefreshMode + 1) % 3;
@@ -2251,11 +2322,8 @@ void loop() {
             return;
           }
 
-        } else if (setupMenuPage == 2) {
-          // Page 3: System Font + Paragraph Indent
-          y1 = 85;  // Reset y1 for page 3
-
           // System Font Settings item
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("System font settings selected");
             setupSubmenu = 8;
@@ -2264,7 +2332,7 @@ void loop() {
           }
 
           // Paragraph Indent item
-          y1 += itemHeight + 18;
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Paragraph indent selected - toggling");
             paragraphIndent = !paragraphIndent;
@@ -2273,6 +2341,15 @@ void loop() {
             prefs.end();
             Serial.printf("Paragraph indent toggled to: %s\n", paragraphIndent ? "YES" : "NO");
             drawSetupMenu();
+            return;
+          }
+
+          // About item
+          y1 += itemHeight + itemGap;
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("About page selected");
+            setupSubmenu = 9;
+            drawAboutPage();
             return;
           }
         }
@@ -2839,6 +2916,15 @@ void loop() {
           return;
         }
       }
+      else if (setupSubmenu == 9) {
+        // About page - just return button
+        if (touchedReturnButton(x, y)) {
+          Serial.println("About page back button touched");
+          setupSubmenu = 0;
+          drawSetupMenu();
+          return;
+        }
+      }
     }
     else if (currentMode == MODE_CLOCK) {
       // Return button (lower-right)
@@ -2865,6 +2951,12 @@ void loop() {
         Serial.println("Tools: opening medication reminder");
         currentMode = MODE_MED_REMINDER;
         drawMedReminder();
+      }
+      // Option 3: 醒世格言 (y=460..570)
+      else if (x >= 40 && x <= 500 && y >= 460 && y <= 570) {
+        Serial.println("Tools: opening motto screen");
+        currentMode = MODE_MOTTO_TEST;
+        drawMottoScreen();
       }
     }
     else if (currentMode == MODE_MED_REMINDER) {
@@ -3000,9 +3092,9 @@ void loop() {
       else if (touchedPrevPage(x, y)) {
         int maxVisible;
         if (wallpaperViewMode == 0) {
-          maxVisible = 11;  // 12 - 1 (motto takes first slot)
+          maxVisible = 12;
         } else {
-          maxVisible = 8;  // 9 - 1 (motto takes top-right)
+          maxVisible = 9;
         }
         int endIdx = min(wallpaperScrollOffset + maxVisible, wallpaperCount);
         if (endIdx < wallpaperCount) {
@@ -3017,9 +3109,9 @@ void loop() {
         if (wallpaperScrollOffset > 0) {
           int maxVisible;
           if (wallpaperViewMode == 0) {
-            maxVisible = 11;
+            maxVisible = 12;
           } else {
-            maxVisible = 8;
+            maxVisible = 9;
           }
           Serial.println("Wallpaper list: prev page (scroll up)");
           wallpaperScrollOffset -= maxVisible;
@@ -3061,20 +3153,14 @@ void loop() {
       // Check if wallpaper item was touched (list or thumbnail)
       else if (y >= 80 && y <= 875) {
         if (wallpaperViewMode == 0) {
-          // Name list: first item is always "醒世格言" (motto)
+          // Name list view
           int itemHeight = 65;
-          int mottoY = 80;
-          if (y >= mottoY && y <= mottoY + 60 && x >= 20 && x <= 520) {
-            Serial.println("Motto entry selected from wallpaper list");
-            currentMode = MODE_MOTTO_TEST;
-            drawMottoScreen();
-          } else if (wallpaperCount > 0) {
-            // Wallpaper items start after motto entry
+          if (wallpaperCount > 0) {
             int startIdx = wallpaperScrollOffset;
-            int maxVisible = 11;  // 12 - 1 (motto takes first slot)
+            int maxVisible = 12;
             int endIdx = min(startIdx + maxVisible, wallpaperCount);
             for (int i = startIdx; i < endIdx; i++) {
-              int itemY = 80 + (1 + i - startIdx) * itemHeight;  // +1 to skip motto row
+              int itemY = 80 + (i - startIdx) * itemHeight;
               if (y >= itemY && y <= itemY + 60 && x >= 20 && x <= 520) {
                 Serial.printf("Wallpaper %d selected: %s\n", i, wallpaperFiles[i].c_str());
                 selectedWallpaper = i;
@@ -3085,38 +3171,26 @@ void loop() {
             }
           }
         } else {
-          // Thumbnail: top-right (col2 row0) is always motto
+          // Thumbnail view
           int cols = 3, rows = 3, thumbPad = 8;
           int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
           int thumbH = (875 - 80 - thumbPad * (rows + 1)) / rows;
-          // Motto thumbnail is at col=2, row=0
-          int mottoTx = thumbPad + 2 * (thumbW + thumbPad);
-          int mottoTy = 80 + thumbPad;
-          if (x >= mottoTx && x <= mottoTx + thumbW && y >= mottoTy && y <= mottoTy + thumbH) {
-            Serial.println("Motto thumbnail selected");
-            currentMode = MODE_MOTTO_TEST;
-            drawMottoScreen();
-          } else {
-            // Other thumbnails: 8 wallpaper slots per page (9 - 1 motto)
-            int maxVisible = cols * rows - 1;  // 8
-            int startIdx = wallpaperScrollOffset;
-            int endIdx = min(startIdx + maxVisible, wallpaperCount);
-            
-            for (int i = startIdx; i < endIdx; i++) {
-              int slot = i - startIdx;
-              // Slots 0..1 = row0 col0..1, slots 2..4 = row1 col0..2, slots 5..7 = row2 col0..2
-              int col, row;
-              if (slot < 2) { row = 0; col = slot; }
-              else { int adj = slot + 1; row = adj / cols; col = adj % cols; }
-              int tx = thumbPad + col * (thumbW + thumbPad);
-              int ty = 80 + thumbPad + row * (thumbH + thumbPad);
-              if (x >= tx && x <= tx + thumbW && y >= ty && y <= ty + thumbH) {
-                Serial.printf("Thumbnail %d selected: %s\n", i, wallpaperFiles[i].c_str());
-                selectedWallpaper = i;
-                currentMode = MODE_WALLPAPER;
-                drawWallpaper();
-                break;
-              }
+          int maxVisible = cols * rows;  // 9
+          int startIdx = wallpaperScrollOffset;
+          int endIdx = min(startIdx + maxVisible, wallpaperCount);
+          
+          for (int i = startIdx; i < endIdx; i++) {
+            int slot = i - startIdx;
+            int col = slot % cols;
+            int row = slot / cols;
+            int tx = thumbPad + col * (thumbW + thumbPad);
+            int ty = 80 + thumbPad + row * (thumbH + thumbPad);
+            if (x >= tx && x <= tx + thumbW && y >= ty && y <= ty + thumbH) {
+              Serial.printf("Thumbnail %d selected: %s\n", i, wallpaperFiles[i].c_str());
+              selectedWallpaper = i;
+              currentMode = MODE_WALLPAPER;
+              drawWallpaper();
+              break;
             }
           }
         }
@@ -3131,9 +3205,9 @@ void loop() {
     }
     else if (currentMode == MODE_MOTTO_TEST) {
       if (touchedReturnButton(x, y)) {
-        Serial.println("Motto test: return to wallpaper list");
-        currentMode = MODE_WALLPAPER_LIST;
-        drawWallpaperList();
+        Serial.println("Motto test: return to tools menu");
+        currentMode = MODE_TOOLS_MENU;
+        drawToolsMenu();
       } else {
         // Any other touch = show next random motto
         Serial.println("Motto test: showing next motto...");

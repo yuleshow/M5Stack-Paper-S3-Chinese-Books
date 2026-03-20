@@ -20,6 +20,16 @@ int silverScaledSize(int size) {
   return (int)(size * 1.38f + 0.5f);
 }
 
+// Reverse map: given an actual rendered size, find the equivalent nominal size.
+// e.g. 49→36, 61→44, 72→52. Falls back to ÷1.38 for unlisted sizes.
+int silverNominalSize(int scaledSize) {
+  for (int i = 0; i < silverScaleCount; i++) {
+    if (silverScaleTable[i].scaled == scaledSize)
+      return silverScaleTable[i].nominal;
+  }
+  return (int)(scaledSize / 1.38f + 0.5f);
+}
+
 // ==================== Mid-Render Touch Detection ====================
 // Poll touch hardware during long rendering operations.
 // If a nav button (return, prev, next) is touched, store coordinates

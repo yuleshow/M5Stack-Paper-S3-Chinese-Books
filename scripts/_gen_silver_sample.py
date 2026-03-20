@@ -6,7 +6,8 @@ os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from gen_sample_reading_page import (
     render_reading_page, extract_epub_full_text,
-    READING_AREA_TOP, READING_AREA_LEFT, READING_AREA_RIGHT, VERTICAL_TEXT_MAX_Y
+    READING_AREA_TOP, READING_AREA_LEFT, READING_AREA_RIGHT, VERTICAL_TEXT_MAX_Y,
+    READING_AREA_BOTTOM
 )
 
 SILVER_TTF = 'sd_card/fonts/Silver.ttf'
@@ -54,7 +55,9 @@ def render_silver_page(text, output_path, page_num, total_pages):
     rdTop = READING_AREA_TOP
     rdMaxY = VERTICAL_TEXT_MAX_Y
 
-    charsPerColumn = (rdMaxY - rdTop) // charHeight - 2
+    charsPerColumn = (rdMaxY - rdTop) // charHeight - 1
+    if rdTop + (charsPerColumn + 1) * charHeight > READING_AREA_BOTTOM:
+        charsPerColumn -= 1
 
     # Status bar
     draw.text((8, 4), "00:15", font=ui_font, fill=0)

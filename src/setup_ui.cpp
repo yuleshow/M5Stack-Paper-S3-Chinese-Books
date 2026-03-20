@@ -46,8 +46,6 @@ void drawFontMenu() {
   //   50..95: sample text (rendered in TTF, ~32px)
   const int ITEM_HEIGHT = 100;
   const int LIST_TOP = 90;
-  const int BIN_BTN_X = 370;
-  const int BIN_BTN_W = 140;
   const int BIN_BTN_H = 36;
   for (int i = startIdx; i < endIdx; i++) {
     if (checkNavTouch()) {
@@ -60,8 +58,14 @@ void drawFontMenu() {
     // Separator line at top
     M5.Display.drawLine(30, y, 510, y, TFT_LIGHTGRAY);
     
-    bool isBinSelected = (i == selectedFontIndex) &&
-      (readingFontFile == fontBinFile[i] && fontBinFile[i].length() > 0);
+    // Check if any paired bin is currently selected
+    int selectedBinIdx = -1;
+    for (int b = 0; b < fontBinCount[i]; b++) {
+      if (i == selectedFontIndex && readingFontFile == fontBinFiles[i][b]) {
+        selectedBinIdx = b;
+        break;
+      }
+    }
     
     if (i == selectedFontIndex) {
       M5.Display.fillRect(30, y + 2, 480, ITEM_HEIGHT - 2, TFT_LIGHTGRAY);
@@ -69,29 +73,38 @@ void drawFontMenu() {
     
     String displayName = fontDisplayNames[i];
     String fileName = fontFileList[i];
-    bool hasBinPair = (fontBinFile[i].length() > 0);
+    bool hasBinPair = (fontBinCount[i] > 0);
     
     // Line 1: Display name (prominent, 22px) with selection indicator
     String nameInfo = displayName;
     if (i == selectedFontIndex) nameInfo += " \u2713";
     drawSystemText(nameInfo.c_str(), 50, y + 5, 22);
     
-    // Line 2: Filename (smaller, 14px, secondary) + BIN button
+    // Line 2: Filename (smaller, 14px, secondary) + BIN buttons
     bool isStandaloneBin = (fileName.endsWith(".bin") || fileName.endsWith(".BIN"));
     String typeLabel = isStandaloneBin ? "\u25A3 " : "\u24C9 ";
     String fileInfo = typeLabel + fileName;
     drawSystemText(fileInfo.c_str(), 50, y + 30, 14, TFT_DARKGRAY);
     
-    // Draw [BIN] toggle button if a paired .bin file exists
+    // Draw BIN buttons (one per paired .bin file, showing font size)
+    // For Silver, show the equivalent nominal size (e.g. 36 not 49)
     if (hasBinPair) {
+      bool isSilverFont = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
       int btnY = y + 25;
-      if (isBinSelected) {
-        M5.Display.fillRoundRect(BIN_BTN_X, btnY, BIN_BTN_W, BIN_BTN_H, 6, TFT_BLACK);
-        drawSystemText("BIN \u2713", BIN_BTN_X + 25, btnY + 8, 20, TFT_WHITE, TFT_BLACK);
-      } else {
-        M5.Display.drawRoundRect(BIN_BTN_X, btnY, BIN_BTN_W, BIN_BTN_H, 6, TFT_DARKGRAY);
-        M5.Display.drawRoundRect(BIN_BTN_X + 1, btnY + 1, BIN_BTN_W - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
-        drawSystemText("BIN", BIN_BTN_X + 40, btnY + 8, 20, TFT_DARKGRAY);
+      int btnX = 510;  // Start from right edge, grow leftward
+      for (int b = fontBinCount[i] - 1; b >= 0; b--) {
+        int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[i][b]) : (int)fontBinSizes[i][b];
+        String label = String(displaySize) + "pt";
+        int btnW = label.length() * 12 + 16;  // Approximate width based on label
+        btnX -= (btnW + 4);  // 4px gap between buttons
+        if (b == selectedBinIdx) {
+          M5.Display.fillRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_BLACK);
+          drawSystemText(label.c_str(), btnX + 8, btnY + 8, 18, TFT_WHITE, TFT_BLACK);
+        } else {
+          M5.Display.drawRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_DARKGRAY);
+          M5.Display.drawRoundRect(btnX + 1, btnY + 1, btnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
+          drawSystemText(label.c_str(), btnX + 8, btnY + 8, 18, TFT_DARKGRAY);
+        }
       }
     }
     
@@ -668,7 +681,7 @@ void drawSetupMenu() {
   drawReturnButton();
   
   // Menu items (paged)
-  const int totalPages = 3;
+  const int totalPages = 2;
 
   // Title
   drawSystemText("設定", 20, 42, 40);
@@ -682,192 +695,205 @@ void drawSetupMenu() {
   drawNavBar(showPrev, showNext);
 
   int y = 92;
-  int itemHeight = 100;
+  int itemHeight = 78;
+  int itemGap = 8;
 
   if (setupMenuPage == 0) {
-    // Page 1: 5 items
+    // Page 1: 9 items
     
     // WiFi Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("WiFi 設定", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("WiFi 設定", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (WiFi.status() == WL_CONNECTED) {
-      drawSystemText("已連接", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      String wifiInfo = "已連接 - " + WiFi.SSID();
+      drawSystemText(wifiInfo.c_str(), 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else if (wifiConfig.configured) {
-      drawSystemText("已儲存", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("已儲存", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("未設定", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("未設定", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // Timezone Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("時區設定", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("時區設定", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
-    drawSystemText("已設定", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+    drawSystemText("已設定", 40, y + 50, 22, TFT_BLACK, cardTextBg);
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // Web Server Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("檔案上傳伺服器", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("檔案上傳伺服器", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (webServerRunning) {
-      drawSystemText("執行中", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      String serverInfo = "執行中 - " + WiFi.localIP().toString();
+      drawSystemText(serverInfo.c_str(), 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else if (webServerEnabled) {
-      drawSystemText("已啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("已啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("未啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("未啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // USB Mass Storage item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("USB 外接磁碟", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("USB 外接磁碟", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (!sdCardAvailable) {
-      drawSystemText("未插入 SD 卡", 40, y + 62, 22, EPD_DARK_GRAY, cardTextBg);
+      drawSystemText("未插入 SD 卡", 40, y + 50, 22, EPD_DARK_GRAY, cardTextBg);
     } else if (usbMSCActive) {
-      drawSystemText("執行中 - 裝置停用", 40, y + 62, 22, EPD_DARK_GRAY, cardTextBg);
+      drawSystemText("執行中 - 裝置停用", 40, y + 50, 22, EPD_DARK_GRAY, cardTextBg);
     } else {
-      drawSystemText("未啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("未啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // Icon Source Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("圖標來源", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("圖標來源", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (useSDCardIcons) {
-      drawSystemText("SD 卡優先（可自訂圖標）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("SD 卡優先（可自訂圖標）", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("內建圖標（速度較快）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("內建圖標（速度較快）", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
-  } else if (setupMenuPage == 1) {
-    // Page 2: 5 items
-    
+
+    y += itemHeight + itemGap;
+
     // Calendar Calculation Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("曆法計算", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("曆法計算", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (useSxwnlCalendar) {
-      drawSystemText("壽星天文曆（許劍偉）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("壽星天文曆（許劍偉）", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("Meeus 天文算法（精度較高）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("Meeus 天文算法（精度較高）", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // Bluetooth Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("藍牙", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("藍牙", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (bluetoothActive) {
-      drawSystemText("已啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("已啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("未啟用", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("未啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // Auto-Sleep Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("自動休眠", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("自動休眠", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (autoSleepEnabled) {
-      drawSystemText("已啟用 - 10分鐘無操作自動休眠", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("已啟用 - 10分鐘無操作自動休眠", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("未啟用 - 保持開啟", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("未啟用 - 保持開啟", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // Comic Zoom Mode item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("漫畫縮放模式", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("漫畫縮放模式", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (comicZoomMode == 1) {
-      drawSystemText("自由定位 - 點擊處為中心", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("自由定位 - 點擊處為中心", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("四分區 - 點擊顯示該象限", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("四分區 - 點擊顯示該象限", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
-
-    y += itemHeight + 18;
+  } else if (setupMenuPage == 1) {
+    // Page 2: 3 items
 
     // Page Refresh Mode item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("翻頁刷新模式", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("翻頁刷新模式", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (pageRefreshMode == 1) {
-      drawSystemText("每頁全刷新", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("每頁全刷新", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else if (pageRefreshMode == 2) {
-      drawSystemText("每10頁全刷新", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("每10頁全刷新", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("系統預設", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("系統預設", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
-  } else if (setupMenuPage == 2) {
-    // Page 3: System Font + Paragraph Indent
+
+    y += itemHeight + itemGap;
 
     // System Font Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("系統字體", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("系統字體", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (systemFontChoice == 0) {
-      drawSystemText("源樣明體 GenYoMinTW", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("源樣明體 GenYoMinTW", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("Silver（像素風格字體）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("Silver（像素風格字體）", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
 
-    y += itemHeight + 18;
+    y += itemHeight + itemGap;
 
     // Paragraph Indent Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
     M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
     M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
 
-    drawSystemText("段落縮進", 40, y + 18, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("段落縮進", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (paragraphIndent) {
-      drawSystemText("首行縮進（兩個全形空格）", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("首行縮進（兩個全形空格）", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
-      drawSystemText("首行不縮進", 40, y + 62, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("首行不縮進", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
+
+    y += itemHeight + itemGap;
+
+    // About item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("關於", 40, y + 12, 32, TFT_BLACK, cardTextBg);
+    drawSystemText("版本資訊與裝置狀態", 40, y + 50, 22, TFT_BLACK, cardTextBg);
   }
   
   // Universal return button (lower-right)
@@ -1319,4 +1345,90 @@ void drawSystemFontSetup() {
   M5.Display.endWrite();
   M5.Display.display();
   Serial.println("System font setup displayed");
+}
+
+void drawAboutPage() {
+  Serial.println("Drawing about page...");
+
+  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
+  M5.Display.fillScreen(TFT_WHITE);
+  M5.Display.setTextColor(TFT_BLACK);
+
+  drawStatusBar();
+  drawReturnButton();
+
+  // Title
+  drawSystemText("關於", 20, 42, 40);
+
+  int y = 120;
+  int lineH = 45;
+
+  // App name
+  drawSystemText("M5Stack Paper S3 中文電子書閱讀器", 20, y, 28);
+  y += lineH + 10;
+
+  // Build date
+  M5.Display.drawLine(20, y - 5, 520, y - 5, EPD_LIGHT_GRAY);
+  String buildInfo = String("編譯日期：") + __DATE__ + "  " + __TIME__;
+  drawSystemText(buildInfo.c_str(), 20, y, 22);
+  y += lineH;
+
+  // Hardware
+  drawSystemText("硬體：M5Stack Paper S3 (ESP32-S3)", 20, y, 22);
+  y += lineH;
+
+  // CPU frequency
+  String cpuInfo = "CPU：" + String(ESP.getCpuFreqMHz()) + " MHz";
+  drawSystemText(cpuInfo.c_str(), 20, y, 22);
+  y += lineH;
+
+  // Flash
+  String flashInfo = "Flash：" + String(ESP.getFlashChipSize() / 1024 / 1024) + " MB";
+  drawSystemText(flashInfo.c_str(), 20, y, 22);
+  y += lineH;
+
+  // PSRAM
+  String psramInfo = "PSRAM：" + String(ESP.getPsramSize() / 1024 / 1024) + " MB（剩餘 " + String(ESP.getFreePsram() / 1024) + " KB）";
+  drawSystemText(psramInfo.c_str(), 20, y, 22);
+  y += lineH;
+
+  // Heap
+  String heapInfo = "記憶體：剩餘 " + String(ESP.getFreeHeap() / 1024) + " KB";
+  drawSystemText(heapInfo.c_str(), 20, y, 22);
+  y += lineH;
+
+  // SD card
+  if (sdCardAvailable) {
+    uint64_t totalBytes = SD.totalBytes();
+    uint64_t usedBytes = SD.usedBytes();
+    String sdInfo = "SD 卡：" + String((uint32_t)(usedBytes / 1024 / 1024)) + " / " + String((uint32_t)(totalBytes / 1024 / 1024)) + " MB";
+    drawSystemText(sdInfo.c_str(), 20, y, 22);
+  } else {
+    drawSystemText("SD 卡：未插入", 20, y, 22);
+  }
+  y += lineH;
+
+  // Display
+  drawSystemText("螢幕：540 × 960  電子紙", 20, y, 22);
+  y += lineH;
+
+  // WiFi
+  if (WiFi.status() == WL_CONNECTED) {
+    String wifiInfo = "WiFi：" + WiFi.SSID() + "  " + WiFi.localIP().toString();
+    drawSystemText(wifiInfo.c_str(), 20, y, 22);
+  } else {
+    drawSystemText("WiFi：未連接", 20, y, 22);
+  }
+  y += lineH + 10;
+
+  // Separator
+  M5.Display.drawLine(20, y - 5, 520, y - 5, EPD_LIGHT_GRAY);
+
+  // Author / project
+  drawSystemText("GitHub: yuleshow", 20, y, 22, EPD_DARK_GRAY);
+
+  M5.Display.endWrite();
+  M5.Display.display();
+  Serial.println("About page displayed");
 }

@@ -1,5 +1,4 @@
 #include "globals.h"
-#include "sleeping_jpg.h"
 
 // Wallpaper functions
 void loadWallpaperFiles() {
@@ -174,8 +173,7 @@ void drawWallpaperList() {
     loadWallpaperFiles();
   }
   
-  if (wallpaperCount == 0 && false) {
-    // Only show "no wallpapers" if we truly have nothing (motto is always available)
+  if (wallpaperCount == 0) {
     drawSystemTextCentered("SD卡中沒有壁紙", M5.Display.width() / 2, M5.Display.height() / 2 - 30, 24);
     drawSystemTextCentered("請在 /wallpapers 資料夾中", M5.Display.width() / 2, M5.Display.height() / 2 + 10, 24);
     drawSystemTextCentered("添加圖片檔案", M5.Display.width() / 2, M5.Display.height() / 2 + 50, 24);
@@ -185,13 +183,7 @@ void drawWallpaperList() {
     // ===== NAME LIST VIEW =====
     int y = 92;
     int itemHeight = 60;
-    int maxVisible = 11;  // 12 - 1 (motto takes first slot)
-    
-    // Always draw motto entry first (pinned)
-    M5.Display.fillRoundRect(20, y, 500, itemHeight, 8, EPD_LIGHT_GRAY);
-    M5.Display.drawRoundRect(20, y, 500, itemHeight, 8, TFT_BLACK);
-    drawSystemText("醒世格言", 35, y + 12, 32);
-    y += itemHeight + 5;
+    int maxVisible = 12;
     
     int startIdx = wallpaperScrollOffset;
     int endIdx = min(startIdx + maxVisible, wallpaperCount);
@@ -243,7 +235,6 @@ void drawWallpaperList() {
   } else {
     // ===== THUMBNAIL VIEW =====
     // Grid: 3 columns x 3 rows = 9 slots per page
-    // Top-right slot (col2, row0) is always motto thumbnail
     int cols = 3;
     int rows = 3;
     int thumbPad = 8;
@@ -251,66 +242,15 @@ void drawWallpaperList() {
     int contentBot = 875;
     int thumbW = (DISPLAY_WIDTH - thumbPad * (cols + 1)) / cols;
     int thumbH = (contentBot - contentTop - thumbPad * (rows + 1)) / rows;
-    int maxVisible = cols * rows - 1;  // 8 wallpaper slots (1 reserved for motto)
-    
-    // Draw motto thumbnail at top-right (col2, row0)
-    {
-      int mottoTx = thumbPad + 2 * (thumbW + thumbPad);
-      int mottoTy = contentTop + thumbPad;
-      // Draw sleeping.jpg as motto thumbnail background
-      M5.Display.drawJpg(sleeping_jpg, sleeping_jpg_len, mottoTx, mottoTy, thumbW, thumbH);
-      M5.Display.drawRect(mottoTx, mottoTy, thumbW, thumbH, TFT_BLACK);
-      M5.Display.drawRect(mottoTx + 1, mottoTy + 1, thumbW - 2, thumbH - 2, TFT_BLACK);
-
-      // Small vertical card with "醒世格言" in Kai font
-      int charSize = 28;
-      int charSpacing = 34;
-      int padV = 14, padH = 10;
-      int cardW = charSize + padH * 2;
-      int cardH = 4 * charSpacing + padV * 2;
-      int cardX = mottoTx + (thumbW - cardW) / 2;
-      int cardY = mottoTy + (thumbH - cardH) / 2;
-
-      M5.Display.fillRoundRect(cardX, cardY, cardW, cardH, 6, TFT_WHITE);
-      M5.Display.drawRoundRect(cardX, cardY, cardW, cardH, 6, TFT_BLACK);
-      M5.Display.drawRoundRect(cardX + 2, cardY + 2, cardW - 4, cardH - 4, 4, EPD_DARK_GRAY);
-
-      // Load Kai font for vertical motto text
-      String prevFontFile = currentFontFile;
-      bool prevOfrLoaded = ofrFontLoaded;
-      bool kaiFontLoaded = false;
-      if (sdCardAvailable) {
-        kaiFontLoaded = loadTTFFont("/fonts/TW-Kai-98_1.ttf", charSize);
-      }
-
-      const char* chars[] = {"\u9192", "\u4e16", "\u683c", "\u8a00"};
-      int cx = cardX + cardW / 2;
-      for (int i = 0; i < 4; i++) {
-        int cy = cardY + padV + i * charSpacing + charSpacing / 2 - 13;
-        if (kaiFontLoaded) {
-          ofr.setFontSize(charSize);
-          ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-          ofr.cdrawString(chars[i], cx, cy, TFT_BLACK, TFT_WHITE);
-        } else {
-          drawSystemTextCentered(chars[i], cx, cy - charSize / 2, charSize);
-        }
-      }
-
-      // Restore previous font
-      if (kaiFontLoaded && prevOfrLoaded && prevFontFile.length() > 0) {
-        loadTTFFont(prevFontFile.c_str(), 30);
-      }
-    }
+    int maxVisible = cols * rows;  // 9 wallpaper slots per page
     
     int startIdx = wallpaperScrollOffset;
     int endIdx = min(startIdx + maxVisible, wallpaperCount);
     
     for (int i = startIdx; i < endIdx; i++) {
       int slot = i - startIdx;
-      // Slots 0..1 = row0 col0..1, slots 2..4 = row1 col0..2, slots 5..7 = row2 col0..2
-      int col, row;
-      if (slot < 2) { row = 0; col = slot; }
-      else { int adj = slot + 1; row = adj / cols; col = adj % cols; }
+      int col = slot % cols;
+      int row = slot / cols;
       int tx = thumbPad + col * (thumbW + thumbPad);
       int ty = contentTop + thumbPad + row * (thumbH + thumbPad);
       drawThumbnail(i, tx, ty, thumbW, thumbH);

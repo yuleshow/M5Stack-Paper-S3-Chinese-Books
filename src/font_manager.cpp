@@ -251,6 +251,14 @@ static String extractBinFontName(File &f) {
   return name;
 }
 
+// Extract font size from a .bin font file header (offset 4, 1 byte)
+static uint8_t extractBinFontSize(File &f) {
+  f.seek(4);
+  uint8_t sz = 0;
+  if (f.read(&sz, 1) != 1) return 0;
+  return sz;
+}
+
 void scanFontFiles() {
   fontFileCount = 0;
   
@@ -271,6 +279,7 @@ void scanFontFiles() {
   String tmpFiles[MAX_FONT_FILES];
   String tmpNames[MAX_FONT_FILES];
   bool   tmpIsBin[MAX_FONT_FILES];
+  uint8_t tmpBinSize[MAX_FONT_FILES];
   int tmpCount = 0;
   
   File entry = fontsDir.openNextFile();
@@ -287,6 +296,7 @@ void scanFontFiles() {
           tmpFiles[tmpCount] = name;
           tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
           tmpIsBin[tmpCount] = false;
+          tmpBinSize[tmpCount] = 0;
           Serial.printf("  Font found: %s → %s\n", name.c_str(), tmpNames[tmpCount].c_str());
           tmpCount++;
         }
@@ -298,7 +308,8 @@ void scanFontFiles() {
           tmpFiles[tmpCount] = name;
           tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
           tmpIsBin[tmpCount] = true;
-          Serial.printf("  Font found: %s → %s\n", name.c_str(), tmpNames[tmpCount].c_str());
+          tmpBinSize[tmpCount] = extractBinFontSize(entry);
+          Serial.printf("  Font found: %s → %s (%dpt)\n", name.c_str(), tmpNames[tmpCount].c_str(), tmpBinSize[tmpCount]);
           tmpCount++;
         }
       }
@@ -309,7 +320,8 @@ void scanFontFiles() {
   fontsDir.close();
   
   // Second pass: pair TTF+BIN fonts with matching display names
-  // TTF entries take priority; matching BIN files become the paired counterpart
+  // TTF entries take priority; matching BIN files become the paired counterparts
+  // A TTF can have multiple BIN files with different font sizes
   bool binPaired[MAX_FONT_FILES];
   for (int i = 0; i < tmpCount; i++) binPaired[i] = false;
   
@@ -318,20 +330,22 @@ void scanFontFiles() {
     if (tmpIsBin[i]) continue;  // Skip BIN in this pass
     fontFileList[fontFileCount] = tmpFiles[i];
     fontDisplayNames[fontFileCount] = tmpNames[i];
-    fontBinFile[fontFileCount] = "";
+    fontBinCount[fontFileCount] = 0;
     
-    // Find matching BIN by display name
+    // Find all matching BINs by display name
     String ttfNameLow = tmpNames[i];
     ttfNameLow.toLowerCase();
     for (int j = 0; j < tmpCount; j++) {
       if (!tmpIsBin[j] || binPaired[j]) continue;
       String binNameLow = tmpNames[j];
       binNameLow.toLowerCase();
-      if (ttfNameLow == binNameLow) {
-        fontBinFile[fontFileCount] = tmpFiles[j];
+      if (ttfNameLow == binNameLow && fontBinCount[fontFileCount] < MAX_BIN_PER_FONT) {
+        int idx = fontBinCount[fontFileCount];
+        fontBinFiles[fontFileCount][idx] = tmpFiles[j];
+        fontBinSizes[fontFileCount][idx] = tmpBinSize[j];
+        fontBinCount[fontFileCount]++;
         binPaired[j] = true;
-        Serial.printf("  Paired: %s + %s (%s)\n", tmpFiles[i].c_str(), tmpFiles[j].c_str(), tmpNames[i].c_str());
-        break;
+        Serial.printf("  Paired: %s + %s (%s, %dpt)\n", tmpFiles[i].c_str(), tmpFiles[j].c_str(), tmpNames[i].c_str(), tmpBinSize[j]);
       }
     }
     fontFileCount++;
@@ -342,7 +356,7 @@ void scanFontFiles() {
     if (!tmpIsBin[i] || binPaired[i]) continue;
     fontFileList[fontFileCount] = tmpFiles[i];
     fontDisplayNames[fontFileCount] = tmpNames[i];
-    fontBinFile[fontFileCount] = "";  // No pair — this IS the bin file
+    fontBinCount[fontFileCount] = 0;  // No pair — this IS the bin file
     fontFileCount++;
   }
   
@@ -354,16 +368,25 @@ void scanFontFiles() {
       a.toLowerCase();
       b.toLowerCase();
       if (a > b) {
-        // Swap all three arrays
+        // Swap all arrays
         String tmp = fontFileList[i];
         fontFileList[i] = fontFileList[j];
         fontFileList[j] = tmp;
         tmp = fontDisplayNames[i];
         fontDisplayNames[i] = fontDisplayNames[j];
         fontDisplayNames[j] = tmp;
-        tmp = fontBinFile[i];
-        fontBinFile[i] = fontBinFile[j];
-        fontBinFile[j] = tmp;
+        // Swap bin arrays
+        int tmpCnt = fontBinCount[i];
+        fontBinCount[i] = fontBinCount[j];
+        fontBinCount[j] = tmpCnt;
+        for (int k = 0; k < MAX_BIN_PER_FONT; k++) {
+          tmp = fontBinFiles[i][k];
+          fontBinFiles[i][k] = fontBinFiles[j][k];
+          fontBinFiles[j][k] = tmp;
+          uint8_t tmpSz = fontBinSizes[i][k];
+          fontBinSizes[i][k] = fontBinSizes[j][k];
+          fontBinSizes[j][k] = tmpSz;
+        }
       }
     }
   }
@@ -503,6 +526,7 @@ bool loadBinaryFont(const char* fontPath) {
   Serial.println("Glyph index sorted by unicode");
   
   g_binFont.loaded = true;
+  g_binFont.filePath = fullPath;
   Serial.printf("✓ Binary font loaded: %d glyphs in index\n", g_binFont.charCount);
   Serial.printf("Free PSRAM after index: %d bytes\n", ESP.getFreePsram());
   
@@ -935,6 +959,45 @@ bool loadSystemFont() {
   return loadTTFFont(systemFontFile.c_str(), 30);
 }
 
+// Select the best BIN file for a given target size from the current font's paired BINs.
+// Returns true if readingFontFile was changed (caller should reload). 
+// Strategy: pick the BIN whose native size is closest. Prefer larger (scale down) over
+// smaller (scale up) when distance is equal, for better rendering quality.
+bool selectBestBinForSize(int targetSize) {
+  if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) return false;
+  int count = fontBinCount[readingFontIndex];
+  if (count <= 0) return false;
+
+  // Check if current font is actually a BIN
+  String curFont = (readingFontFile.length() > 0) ? readingFontFile :
+      fontFileList[readingFontIndex];
+  if (!curFont.endsWith(".bin") && !curFont.endsWith(".BIN")) return false;
+
+  bool isSilver = (curFont.indexOf("Silver") >= 0 || curFont.indexOf("silver") >= 0);
+
+  int bestIdx = 0;
+  int bestDist = 9999;
+  for (int i = 0; i < count; i++) {
+    int nativeSize = isSilver ? silverNominalSize(fontBinSizes[readingFontIndex][i])
+                              : (int)fontBinSizes[readingFontIndex][i];
+    int dist = abs(nativeSize - targetSize);
+    // Prefer larger (or equal) BIN when distances are equal
+    if (dist < bestDist || (dist == bestDist && nativeSize >= targetSize)) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+
+  String bestFile = fontBinFiles[readingFontIndex][bestIdx];
+  if (bestFile == readingFontFile) return false;  // Already using the best one
+
+  Serial.printf("BIN auto-select: target=%dpt → %s (native=%dpt)\n",
+                targetSize, bestFile.c_str(), fontBinSizes[readingFontIndex][bestIdx]);
+  readingFontFile = bestFile;
+  savePrefStr("ereader", "fontFile", readingFontFile);
+  return true;  // Caller should reload
+}
+
 bool loadReadingFont() {
   if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) {
     return loadSystemFont();
@@ -947,8 +1010,11 @@ bool loadReadingFont() {
   // Keep OFR loaded — drawReading() reuses it for Latin text (EBGaramond) across pages.
   // Don't overwrite currentFontFile — it tracks the OFR font (e.g. EBGaramond)
   // so the EBGaramond short-circuit in drawReading() keeps working.
+  // Note: must check g_binFont.filePath matches — selectBestBinForSize() may have
+  // changed readingFontFile to a different BIN.
   if (g_binFont.loaded && (fname.endsWith(".bin") || fname.endsWith(".BIN"))) {
-    return true;
+    String expectedPath = fname.startsWith("/") ? fname : (String("/fonts/") + fname);
+    if (g_binFont.filePath == expectedPath) return true;
   }
   if (fname.endsWith(".ttf") || fname.endsWith(".TTF") ||
       fname.endsWith(".ttc") || fname.endsWith(".TTC") ||
