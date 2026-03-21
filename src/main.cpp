@@ -731,10 +731,50 @@ void loop() {
             y >= icon.y && y <= (icon.y + icon.h)) {
           DEBUG_LOG("Icon %d touched: %s", i, icon.label);
           
-          // Icon 0 is E-Book
+          // Icon 0 is E-Book — resume last book if available
           if (i == 0) {
-            currentMode = MODE_BOOK_LIST;
-            drawBookList();
+            String lastBook = loadPrefStr("ereader", "lastBook", "");
+            int lastIdx = -1;
+            if (lastBook.length() > 0 && bookCount > 0) {
+              for (int bi = 0; bi < bookCount; bi++) {
+                if (bookList[bi] == lastBook) { lastIdx = bi; break; }
+              }
+            }
+            if (lastIdx >= 0) {
+              // Resume last reading book directly
+              currentBook = bookDisplayName[lastIdx];
+              Serial.printf("Resuming last book: %s (%s)\n", currentBook.c_str(), bookList[lastIdx].c_str());
+              esp_task_wdt_reset();
+              pagesSinceFullRefresh = 1;
+              // Show loading indicator
+              {
+                unsigned long busyStart = millis();
+                while (M5.Display.displayBusy()) { delay(10); esp_task_wdt_reset(); if (millis() - busyStart > 3000) break; }
+                M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+                M5.Display.startWrite();
+                M5.Display.fillScreen(TFT_WHITE);
+                drawStatusBar();
+                drawSystemTextCentered(currentBook.c_str(), M5.Display.width() / 2, M5.Display.height() / 2 - 100, 32);
+                drawSystemTextCentered("\xE8\xBC\x89\xE5\x85\xA5\xE4\xB8\xAD...", M5.Display.width() / 2, M5.Display.height() / 2 - 20, 36);
+                int barX = 70, barY = M5.Display.height() / 2 + 50, barW = 400, barH = 30;
+                M5.Display.drawRect(barX, barY, barW, barH, TFT_BLACK);
+                M5.Display.drawRect(barX + 1, barY + 1, barW - 2, barH - 2, TFT_BLACK);
+                M5.Display.endWrite();
+                M5.Display.display();
+              }
+              if (loadBook(lastIdx)) {
+                yield(); esp_task_wdt_reset();
+                currentMode = MODE_READING;
+                drawReading();
+              } else {
+                Serial.printf("Failed to resume last book, showing book list\n");
+                currentMode = MODE_BOOK_LIST;
+                drawBookList();
+              }
+            } else {
+              currentMode = MODE_BOOK_LIST;
+              drawBookList();
+            }
           }
           // Icon 1 is Calendar (日曆/農民曆)
           else if (i == 1) {
@@ -1102,34 +1142,57 @@ void loop() {
         int fontIdx = fontMenuPage * FONTS_PER_PAGE + (y - 90) / 100;
         Serial.printf("FONT_MENU: tap y=%d, x=%d → fontIdx=%d (fontFileCount=%d)\n", y, x, fontIdx, fontFileCount);
         if (fontIdx >= 0 && fontIdx < fontFileCount) {
-        // Check if tapping a BIN button (right side, one per paired bin)
+        // Check if tapping a BIN button or TTF button (right side)
         bool tappedBin = false;
-        if (fontBinCount[fontIdx] > 0) {
+        bool tappedTTF = false;
+        bool isStandaloneBin = (fontFileList[fontIdx].endsWith(".bin") || fontFileList[fontIdx].endsWith(".BIN"));
+        {
           int itemY = 90 + (fontIdx - fontMenuPage * FONTS_PER_PAGE) * 100;
           int btnRelY = y - itemY;
           if (btnRelY >= 25 && btnRelY <= 61) {
-            // Reconstruct button positions (same layout as drawFontMenu)
-            // For Silver, use nominal size for label width calculation
             bool isSilverFont = (fontFileList[fontIdx].indexOf("Silver") >= 0 || fontFileList[fontIdx].indexOf("silver") >= 0);
             int btnX = 510;
-            for (int b = fontBinCount[fontIdx] - 1; b >= 0; b--) {
-              int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[fontIdx][b]) : (int)fontBinSizes[fontIdx][b];
-              String label = String(displaySize) + "pt";
-              int btnW = label.length() * 12 + 16;
-              btnX -= (btnW + 4);
-              if (x >= btnX && x <= btnX + btnW) {
-                tappedBin = true;
+            
+            // TTF button (rightmost, for any font that has a TTF)
+            if (!isStandaloneBin) {
+              String ttfLabel = "TTF";
+              int ttfBtnW = ttfLabel.length() * 12 + 16;
+              btnX -= (ttfBtnW + 4);
+              if (x >= btnX && x <= btnX + ttfBtnW) {
+                tappedTTF = true;
                 selectedFontIndex = fontIdx;
                 readingFontIndex = fontIdx;
-                readingFontFile = fontBinFiles[fontIdx][b];
-                // Set readingFontSize to the BIN's embedded font size
-                // For Silver, use the equivalent nominal size so the device scaling works correctly
-                readingFontSize = isSilverFont ? silverNominalSize(fontBinSizes[fontIdx][b]) : (int)fontBinSizes[fontIdx][b];
-                Serial.printf("Switched to BIN: %s (size=%dpt)\n", readingFontFile.c_str(), readingFontSize);
+                readingFontFile = fontFileList[fontIdx];
+                Serial.printf("Switched to TTF: %s\n", readingFontFile.c_str());
                 savePrefInt("ereader", "fontIdx", readingFontIndex);
                 savePrefStr("ereader", "fontFile", readingFontFile);
-                savePrefInt("ereader", "rdFontSz", readingFontSize);
-                
+              }
+            }
+            
+            // BIN size buttons (to the left of TTF button)
+            if (!tappedTTF && fontBinCount[fontIdx] > 0) {
+              for (int b = fontBinCount[fontIdx] - 1; b >= 0; b--) {
+                int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[fontIdx][b]) : (int)fontBinSizes[fontIdx][b];
+                String label = String(displaySize);
+                int btnW = label.length() * 12 + 16;
+                btnX -= (btnW + 4);
+                if (x >= btnX && x <= btnX + btnW) {
+                  tappedBin = true;
+                  selectedFontIndex = fontIdx;
+                  readingFontIndex = fontIdx;
+                  readingFontFile = fontBinFiles[fontIdx][b];
+                  readingFontSize = isSilverFont ? silverNominalSize(fontBinSizes[fontIdx][b]) : (int)fontBinSizes[fontIdx][b];
+                  Serial.printf("Switched to BIN: %s (size=%dpt)\n", readingFontFile.c_str(), readingFontSize);
+                  savePrefInt("ereader", "fontIdx", readingFontIndex);
+                  savePrefStr("ereader", "fontFile", readingFontFile);
+                  savePrefInt("ereader", "rdFontSz", readingFontSize);
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (tappedBin || tappedTTF) {
                 if (fontMenuReturnMode == MODE_READING) {
                   currentMode = MODE_READING;
                   fontMenuPage = 0;
@@ -1157,50 +1220,8 @@ void loop() {
                   loadSystemFont();
                   drawFontMenu();
                 }
-                break;
-              }
-            }
-          }
         }
-        if (!tappedBin) {
-        // Normal font selection — use TTF (or standalone BIN)
-        selectedFontIndex = fontIdx;
-        readingFontIndex = fontIdx;
-        readingFontFile = fontFileList[fontIdx];
-        Serial.printf("Reading font selected: %d = '%s'\n", fontIdx, fontFileList[fontIdx].c_str());
-        savePrefInt("ereader", "fontIdx", readingFontIndex);
-        savePrefStr("ereader", "fontFile", readingFontFile);
-        
-        if (fontMenuReturnMode == MODE_READING) {
-          // Return directly to reading with the new font
-          currentMode = MODE_READING;
-          fontMenuPage = 0;
-          size_t savedOffset = currentPageByteOffset;
-          loadReadingFont();
-          recalculatePages();
-          // Restore reading position from byte offset
-          if (bytesPerPage > 0 && savedOffset > 0) {
-            currentPage = savedOffset / bytesPerPage;
-          }
-          if (currentPage >= totalPages) currentPage = totalPages - 1;
-          if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
-            while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
-              int gap = currentPage - pageOffsetsCount;
-              size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                           savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
-              pageByteOffsets[pageOffsetsCount] = est;
-              pageOffsetsCount++;
-            }
-            if (currentPage < (int)pageOffsetsCount)
-              pageByteOffsets[currentPage] = savedOffset;
-          }
-          loadCurrentPage();
-          drawReading();
-        } else {
-          loadSystemFont();
-          drawFontMenu();
-        }
-        }
+        // Font name tap is disabled — selection only via BIN/TTF buttons
         }
       } else {
         Serial.printf("FONT_MENU: unhandled touch x=%d, y=%d\n", x, y);
@@ -1367,12 +1388,23 @@ void loop() {
           }
           clearGlyphCache();
           if (!(currentBookIsEpub && epubIsImageBased)) {
-            size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
-                                ? pageByteOffsets[currentPage]
-                                : (size_t)currentPage * bytesPerPage;
+            size_t savedOffset = currentPageByteOffset;
             recalculatePages();
-            currentPage = byteOffset / bytesPerPage;
+            if (bytesPerPage > 0 && savedOffset > 0) {
+              currentPage = savedOffset / bytesPerPage;
+            }
             if (currentPage >= totalPages) currentPage = totalPages - 1;
+            if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
+              while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
+                int gap = currentPage - pageOffsetsCount;
+                size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
+                             savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+                pageByteOffsets[pageOffsetsCount] = est;
+                pageOffsetsCount++;
+              }
+              if (currentPage < (int)pageOffsetsCount)
+                pageByteOffsets[currentPage] = savedOffset;
+            }
           }
           savePrefInt("ereader", "rdFontSz", readingFontSize);
           saveReadingPosition();
@@ -1383,7 +1415,6 @@ void loop() {
       // Font size increase (+A) — toolbar cell 2
       else if (y > 900 && x >= 254 && x <= 305) {
         if (readingFontSize < MAX_READING_FONT_SIZE) {
-          int savedPage = currentPage;  // Save for image-based EPUBs
           // Snap up to nearest grid-aligned size (handles off-grid values like 46→48)
           int grid = ((readingFontSize - MIN_READING_FONT_SIZE) / FONT_SIZE_STEP + 1) * FONT_SIZE_STEP + MIN_READING_FONT_SIZE;
           readingFontSize = min(grid, MAX_READING_FONT_SIZE);
@@ -1393,12 +1424,23 @@ void loop() {
           }
           clearGlyphCache();
           if (!(currentBookIsEpub && epubIsImageBased)) {
-            size_t byteOffset = (pageByteOffsets && currentPage < pageOffsetsCount)
-                                ? pageByteOffsets[savedPage]
-                                : (size_t)savedPage * bytesPerPage;
+            size_t savedOffset = currentPageByteOffset;
             recalculatePages();
-            currentPage = byteOffset / bytesPerPage;
+            if (bytesPerPage > 0 && savedOffset > 0) {
+              currentPage = savedOffset / bytesPerPage;
+            }
             if (currentPage >= totalPages) currentPage = totalPages - 1;
+            if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
+              while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
+                int gap = currentPage - pageOffsetsCount;
+                size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
+                             savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+                pageByteOffsets[pageOffsetsCount] = est;
+                pageOffsetsCount++;
+              }
+              if (currentPage < (int)pageOffsetsCount)
+                pageByteOffsets[currentPage] = savedOffset;
+            }
           }
           savePrefInt("ereader", "rdFontSz", readingFontSize);
           saveReadingPosition();
@@ -3361,6 +3403,7 @@ void loop() {
               unsigned long loadMs = millis() - loadStart;
               Serial.printf("Book loaded OK in %lu ms - Free heap: %u, Free PSRAM: %u, ofrFiles: %d\n",
                             loadMs, ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+              savePrefStr("ereader", "lastBook", bookList[bookIndex]);
               Serial.printf("About to drawReading: Silver=%d, bpp=%d, pages=%d, epubChapters=%d\n",
                             (systemFontChoice == 1), bytesPerPage, totalPages, epubChapterCount);
               yield();

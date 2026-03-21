@@ -12,6 +12,7 @@
 #include "slabel_shopping.h"
 #include "slabel_weather.h"
 #include "slabel_wallpaper.h"
+#include "slabel_tools.h"
 #include "slabel_settings.h"
 #include "slabel_fortune_slips.h"
 #include "slabel_kuanyin_slips.h"
@@ -131,6 +132,22 @@
 #include "slabel_usb_fail.h"
 #include "slabel_not_found.h"
 #include "slabel_wallpaper_title.h"
+#include "slabel_tools_title.h"
+#include "slabel_tools_wallpaper.h"
+#include "slabel_med_reminder.h"
+#include "slabel_med_title.h"
+#include "slabel_med_taken.h"
+#include "slabel_med_not_taken.h"
+#include "slabel_med_press_hint.h"
+#include "slabel_med_manual_reset.h"
+#include "slabel_med_passcode_title.h"
+#include "slabel_med_set_new.h"
+#include "slabel_med_confirm.h"
+#include "slabel_med_set_hint.h"
+#include "slabel_med_confirm_hint.h"
+#include "slabel_med_passcode_wrong.h"
+#include "slabel_med_instr1.h"
+#include "slabel_med_instr2.h"
 #include "slabel_switch_thumbnail.h"
 #include "slabel_switch_list.h"
 #include "slabel_no_wallpaper.h"
@@ -1337,7 +1354,7 @@
 #include "slabel_s24_insert_sd.h"
 
 // Reuse LabelBitmap struct from label_bitmaps.h
-const int kSilverLabelBitmapCount = 1329;
+const int kSilverLabelBitmapCount = 1346;
 
 const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"電子書", 32, slabel_ebook_w, slabel_ebook_h, slabel_ebook_bitmap},
@@ -1346,6 +1363,7 @@ const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"採辦", 32, slabel_shopping_w, slabel_shopping_h, slabel_shopping_bitmap},
   {"天氣", 32, slabel_weather_w, slabel_weather_h, slabel_weather_bitmap},
   {"壁紙", 32, slabel_wallpaper_w, slabel_wallpaper_h, slabel_wallpaper_bitmap},
+  {"工具", 32, slabel_tools_w, slabel_tools_h, slabel_tools_bitmap},
   {"設定", 32, slabel_settings_w, slabel_settings_h, slabel_settings_bitmap},
   {"求籖", 32, slabel_fortune_slips_w, slabel_fortune_slips_h, slabel_fortune_slips_bitmap},
   {"觀音靈籖", 36, slabel_kuanyin_slips_w, slabel_kuanyin_slips_h, slabel_kuanyin_slips_bitmap},
@@ -1465,6 +1483,22 @@ const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"✗ 啟動失敗 - 請查看序列輸出", 24, slabel_usb_fail_w, slabel_usb_fail_h, slabel_usb_fail_bitmap},
   {"找不到", 28, slabel_not_found_w, slabel_not_found_h, slabel_not_found_bitmap},
   {"壁紙選擇", 36, slabel_wallpaper_title_w, slabel_wallpaper_title_h, slabel_wallpaper_title_bitmap},
+  {"工具", 36, slabel_tools_title_w, slabel_tools_title_h, slabel_tools_title_bitmap},
+  {"壁紙", 36, slabel_tools_wallpaper_w, slabel_tools_wallpaper_h, slabel_tools_wallpaper_bitmap},
+  {"吃藥提醒器", 36, slabel_med_reminder_w, slabel_med_reminder_h, slabel_med_reminder_bitmap},
+  {"吃藥提醒器", 36, slabel_med_title_w, slabel_med_title_h, slabel_med_title_bitmap},
+  {"已吃藥", 48, slabel_med_taken_w, slabel_med_taken_h, slabel_med_taken_bitmap},
+  {"未吃藥", 48, slabel_med_not_taken_w, slabel_med_not_taken_h, slabel_med_not_taken_bitmap},
+  {"吃藥後請按此", 28, slabel_med_press_hint_w, slabel_med_press_hint_h, slabel_med_press_hint_bitmap},
+  {"點擊手動復位", 22, slabel_med_manual_reset_w, slabel_med_manual_reset_h, slabel_med_manual_reset_bitmap},
+  {"輸入密碼", 36, slabel_med_passcode_title_w, slabel_med_passcode_title_h, slabel_med_passcode_title_bitmap},
+  {"設定新密碼", 36, slabel_med_set_new_w, slabel_med_set_new_h, slabel_med_set_new_bitmap},
+  {"確認密碼", 36, slabel_med_confirm_w, slabel_med_confirm_h, slabel_med_confirm_bitmap},
+  {"請輸入新的數字密碼", 22, slabel_med_set_hint_w, slabel_med_set_hint_h, slabel_med_set_hint_bitmap},
+  {"請再輸入一次", 22, slabel_med_confirm_hint_w, slabel_med_confirm_hint_h, slabel_med_confirm_hint_bitmap},
+  {"密碼錯誤", 22, slabel_med_passcode_wrong_w, slabel_med_passcode_wrong_h, slabel_med_passcode_wrong_bitmap},
+  {"吃藥時按一下按鈕", 24, slabel_med_instr1_w, slabel_med_instr1_h, slabel_med_instr1_bitmap},
+  {"忘了是否吃過，看一眼就知道", 22, slabel_med_instr2_w, slabel_med_instr2_h, slabel_med_instr2_bitmap},
   {"切換縮圖", 24, slabel_switch_thumbnail_w, slabel_switch_thumbnail_h, slabel_switch_thumbnail_bitmap},
   {"切換列表", 24, slabel_switch_list_w, slabel_switch_list_h, slabel_switch_list_bitmap},
   {"SD卡中沒有壁紙", 24, slabel_no_wallpaper_w, slabel_no_wallpaper_h, slabel_no_wallpaper_bitmap},

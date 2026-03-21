@@ -16,7 +16,16 @@ These scripts convert assets into C headers or binary formats for embedding in t
 | `convert_sleeping.py` | Converts `assets/sleeping.jpg` sleep screen image to a C header (`src/sleeping_jpg.h`) |
 | `convert_icons.py` | Converts PNG icons in `assets/icons/` to C headers in `src/icons/` |
 | `convert_cangjie.py` | Converts `data/cangjie5.dict.yaml` to binary lookup format (`assets/cangjie5.bin`) |
-| `convert_ttf_to_bin.py` | Converts TTF fonts to pre-rendered BIN format for faster loading. Supports fallback font borrowing and render-size scaling (e.g. Silver at 61px → 44px grid). Auto-rotates horizontal bracket glyphs 90° CW to synthesize missing vertical forms. |
+| `convert_ttf_to_bin.py` | Converts TTF fonts to pre-rendered BIN format for faster loading. Supports fallback font borrowing and render-size scaling (e.g. Silver at 61px → 44px grid). Auto-rotates horizontal bracket glyphs 90° CW to synthesize missing vertical forms. Each glyph is centered both horizontally and vertically within its em-square cell. Run with `--gui` for a graphical interface. |
+
+### Font Converter GUI
+
+![Font Converter GUI](convert_ttf_to_bin-gui.png)
+
+Run `python3 convert_ttf_to_bin.py --gui` to launch the graphical converter. Supports EN/ZH language toggle, font preview, fallback font selection, and batch conversion.
+
+| Script | Description |
+|--------|-------------|
 | `compile_all_bins.sh` | Batch-compiles all TTF fonts to BIN using `convert_ttf_to_bin.py`. Handles Silver's render-size scaling automatically. |
 
 ## Analysis & Testing Scripts ![Testing](https://img.shields.io/badge/Category-Analysis-purple)

@@ -250,12 +250,13 @@ Books are displayed in **traditional vertical CJK layout** — text flows top-to
 | **◀ Left arrow** | Next page |
 | **▶ Right arrow** | Previous page |
 | **字-** | Decrease font size (min 20px) |
-| **字+** | Increase font size (max 52px) |
+| **字+** | Increase font size (max 64px) |
 | **字型** | Open font selection menu |
 | **BM** | Add/remove bookmark (filled = bookmarked) |
 | **◉ Return** | Back to book list |
 
 - Font size changes in steps of 4px and is saved across sessions
+- Reading position is preserved when changing font size or switching fonts
 - Reading position is **auto-saved** to a `.pos` file alongside the book
 - Up to **5 bookmarks** per book, saved to `.bm` files
 

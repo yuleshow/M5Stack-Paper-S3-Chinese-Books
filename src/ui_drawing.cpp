@@ -189,21 +189,18 @@ void drawStatusBar() {
   int fillW = (bw - 6) * batLevel / 100;
   if (fillW > 0) M5.Display.fillRect(bx + 3, by + 3, fillW, bh - 6, TFT_BLACK);
 
-  // Percentage text
-  char batStr[8];
-  snprintf(batStr, sizeof(batStr), "%d%%", batLevel);
+  // Percentage text (with charging "+" prefix)
+  char batStr[12];
+  if (charging) {
+    snprintf(batStr, sizeof(batStr), "+%d%%", batLevel);
+  } else {
+    snprintf(batStr, sizeof(batStr), "%d%%", batLevel);
+  }
   M5.Display.setTextSize(2);
   M5.Display.setTextDatum(TR_DATUM);
   M5.Display.drawString(batStr, bx - 8, 4);
   M5.Display.setTextSize(1);
   M5.Display.setTextDatum(TL_DATUM);
-
-  // Charging "+" indicator
-  if (charging) {
-    int cx = bx - 4, cy = by + bh / 2;
-    M5.Display.fillRect(cx - 4, cy - 1, 8, 3, TFT_BLACK);
-    M5.Display.fillRect(cx - 1, cy - 4, 3, 8, TFT_BLACK);
-  }
 }
 
 // Draw a pre-rendered label bitmap at (x, y) with color support.

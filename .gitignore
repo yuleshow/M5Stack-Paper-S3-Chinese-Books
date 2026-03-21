@@ -32,5 +32,11 @@ assets/*.png
 .DS_Store
 **/.DS_Store
 
+# PyInstaller build artifacts
+dist/
+build/
+*.spec
+.venv*/
+
 # Boot log
 boot_log.txt

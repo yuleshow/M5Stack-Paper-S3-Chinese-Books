@@ -16,7 +16,16 @@ Python 建置工具與資產轉換及分析公用程式。
 | `convert_sleeping.py` | 將 `assets/sleeping.jpg` 睡眠畫面圖片轉換為 C 標頭檔（`src/sleeping_jpg.h`） |
 | `convert_icons.py` | 將 `assets/icons/` 中的 PNG 圖標轉換為 `src/icons/` 中的 C 標頭檔 |
 | `convert_cangjie.py` | 將 `data/cangjie5.dict.yaml` 轉換為二進位查詢格式（`assets/cangjie5.bin`） |
-| `convert_ttf_to_bin.py` | 將 TTF 字型轉換為預渲染 BIN 格式以加速載入。支援備用字型借取缺失字形，以及渲染尺寸縮放（如 Silver 以 61px 渲染 → 44px 方格）。自動將水平括號字形順時針旋轉 90° 以合成缺失的直排形式。 |
+| `convert_ttf_to_bin.py` | 將 TTF 字型轉換為預渲染 BIN 格式以加速載入。支援備用字型借取缺失字形，以及渲染尺寸縮放（如 Silver 以 61px 渲染 → 44px 方格）。自動將水平括號字形順時針旋轉 90° 以合成缺失的直排形式。每個字形均在字面框內水平及垂直置中。使用 `--gui` 啟動圖形介面。 |
+
+### 字型轉換器 GUI
+
+![字型轉換器 GUI](convert_ttf_to_bin-gui.png)
+
+執行 `python3 convert_ttf_to_bin.py --gui` 啟動圖形化轉換器。支援中英語言切換、字型預覽、備用字型選擇及批次轉換。
+
+| 腳本 | 說明 |
+|------|------|
 | `compile_all_bins.sh` | 批次編譯所有 TTF 字型為 BIN 格式，使用 `convert_ttf_to_bin.py`。自動處理 Silver 的渲染尺寸縮放。 |
 
 ## 分析與測試腳本 ![測試](https://img.shields.io/badge/分類-分析-purple)

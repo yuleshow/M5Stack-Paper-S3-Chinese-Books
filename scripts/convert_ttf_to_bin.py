@@ -10,7 +10,9 @@ import sys
 import os
 from fontTools.ttLib import TTFont
 
-os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+# When running as a bundled .app, __file__ points inside the bundle — skip chdir
+if not getattr(sys, 'frozen', False):
+    os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 def get_common_chinese_chars():
     """Get common Traditional Chinese characters for e-books"""
@@ -31,6 +33,14 @@ def get_common_chinese_chars():
         # Vertical presentation forms (used for vertical CJK text)
         (0xFE10, 0xFE1F),  # Vertical Forms
         (0xFE30, 0xFE4F),  # CJK Compatibility Forms (vertical brackets etc.)
+        # General punctuation: smart quotes "" '', em/en dash —–, ellipsis …, bullet •
+        (0x2000, 0x206F),  # General Punctuation
+        # Latin-1 Supplement: non-breaking space, accented chars, ×, ·, etc.
+        (0x00A0, 0x00FF),  # Latin-1 Supplement
+        # Letterlike symbols: ™ etc.
+        (0x2100, 0x214F),  # Letterlike Symbols
+        # Geometric shapes: ○ □ ● ■ △ etc. (common in Chinese texts)
+        (0x25A0, 0x25FF),  # Geometric Shapes
     ]
     
     for start, end in common_ranges:
@@ -45,9 +55,15 @@ def render_glyph(font, char, font_size):
     img = Image.new('1', (canvas_size, canvas_size), 1)  # 1-bit, white background
     draw = ImageDraw.Draw(img)
     
+    # Draw at a safe offset so the entire glyph (including parts above the
+    # ascender) stays within the image.  Without this margin, textbbox can
+    # return negative top values and img.crop() fills out-of-bounds rows
+    # with black, producing a spurious top bar on every glyph.
+    origin = font_size
+    
     try:
         # Get text bounding box
-        bbox = draw.textbbox((0, 0), char, font=font)
+        bbox = draw.textbbox((origin, origin), char, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
@@ -55,14 +71,14 @@ def render_glyph(font, char, font_size):
             return None, 0, 0, 0, 0
         
         # Draw text
-        draw.text((0, 0), char, font=font, fill=0)  # Black text
+        draw.text((origin, origin), char, font=font, fill=0)  # Black text
         
         # Crop to actual content
         img_crop = img.crop(bbox)
         
-        # Return bearing offsets (position of tight crop within the em-square)
-        bearing_x = bbox[0]  # X offset from origin to glyph left edge
-        bearing_y = bbox[1]  # Y offset from origin to glyph top edge
+        # Return bearing offsets relative to the drawing origin
+        bearing_x = bbox[0] - origin
+        bearing_y = bbox[1] - origin
         
         return img_crop, text_width, text_height, bearing_x, bearing_y
     except Exception as e:
@@ -154,11 +170,68 @@ def render_rotated_glyph(font, horiz_char, font_size):
     except Exception as e:
         return None, 0, 0, 0, 0
 
-def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, render_size=None, target_size=None):
+# Unicode ranges considered "punctuation" for the force-fallback-punct option
+PUNCT_RANGES = [
+    (0x2000, 0x206F),   # General Punctuation
+    (0x3000, 0x303F),   # CJK Symbols and Punctuation
+    (0xFE10, 0xFE1F),   # Vertical Forms
+    (0xFE30, 0xFE4F),   # CJK Compatibility Forms
+    (0xFF00, 0xFFEF),   # Halfwidth and Fullwidth Forms
+    (0x00A0, 0x00BF),   # Latin-1 punctuation subset
+]
+
+def _is_punct(cp):
+    """Return True if codepoint falls in a punctuation range."""
+    return any(s <= cp < e for s, e in PUNCT_RANGES)
+
+def get_font_display_name(font_path):
+    """Extract display name from a font file, preferring Traditional Chinese."""
+    try:
+        tt = TTFont(font_path, fontNumber=0)
+        name_table = tt['name']
+        font_family = None
+        font_family_en = None
+        # Prefer: Traditional Chinese (1028), then zh-HK (3076), zh-CN (2052), ja (1041), ko (1042)
+        tc_lang_ids = {1028, 3076}  # Traditional Chinese
+        cjk_lang_ids = {1028, 2052, 3076, 1041, 1042}
+        for record in name_table.names:
+            if record.nameID == 1:
+                try:
+                    decoded = record.toUnicode()
+                    if decoded:
+                        if record.platformID == 3 and record.langID in tc_lang_ids:
+                            font_family = decoded
+                            break  # Traditional Chinese — best match
+                        elif record.platformID == 3 and record.langID in cjk_lang_ids:
+                            if not font_family:
+                                font_family = decoded
+                        elif record.platformID == 1 and record.platEncID == 2:
+                            if not font_family:
+                                font_family = decoded
+                        elif font_family_en is None:
+                            font_family_en = decoded
+                except:
+                    pass
+        tt.close()
+        if font_family:
+            return font_family
+        if font_family_en:
+            # Map well-known English names to Traditional Chinese
+            _NAME_OVERRIDES = {
+                'Noto Sans TC': '思源黑體',
+                'Noto Serif TC': '思源宋體',
+            }
+            return _NAME_OVERRIDES.get(font_family_en, font_family_en)
+    except:
+        pass
+    return os.path.splitext(os.path.basename(font_path))[0]
+
+def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, render_size=None, target_size=None, force_fallback_punct=False):
     """Convert TTF to M5ReadPaper binary format.
     If fallback_path is given, borrow missing glyphs from the fallback font.
     If render_size is given, render glyphs at that size but store render_size in header.
-    target_size is the nominal/equivalent size (e.g. 36 for Silver) for fallback sizing."""
+    target_size is the nominal/equivalent size (e.g. 36 for Silver) for fallback sizing.
+    If force_fallback_punct is True, all punctuation glyphs are taken from the fallback font."""
     if render_size is None:
         render_size = font_size
     if target_size is None:
@@ -170,39 +243,18 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
     if fallback_path:
         print(f"Fallback font: {fallback_path}")
     
-    # Extract real font family name from the TTF/TTC file
-    # Prefer Chinese name: Traditional Chinese (langID=1028), Simplified Chinese (langID=2052)
+    # Extract font family name (prefer Traditional Chinese) and cmap
+    font_family = get_font_display_name(ttf_path)
+    primary_cmap = set()
     try:
         tt = TTFont(ttf_path)
-        name_table = tt['name']
-        font_family = None
-        font_family_en = None
-        # Collect all nameID=1 records, prefer CJK languages
-        cjk_lang_ids = {1028, 2052, 3076, 1041, 1042}  # zh-TW, zh-CN, zh-HK, ja, ko
-        for record in name_table.names:
-            if record.nameID == 1:
-                try:
-                    decoded = record.toUnicode()
-                    if decoded:
-                        if record.platformID == 3 and record.langID in cjk_lang_ids:
-                            font_family = decoded
-                            break  # Found CJK name, use it
-                        elif record.platformID == 1 and record.platEncID == 2:
-                            # Mac platform with CJK encoding
-                            font_family = decoded
-                        elif font_family_en is None:
-                            font_family_en = decoded
-                except:
-                    pass
+        for table in tt['cmap'].tables:
+            primary_cmap.update(table.cmap.keys())
         tt.close()
-        if not font_family:
-            font_family = font_family_en
-        if not font_family:
-            font_family = os.path.splitext(os.path.basename(ttf_path))[0]
         print(f"Font family: {font_family}")
+        print(f"Primary font cmap: {len(primary_cmap)} codepoints")
     except Exception as e:
-        print(f"Warning: Could not extract font name: {e}")
-        font_family = os.path.splitext(os.path.basename(ttf_path))[0]
+        print(f"Warning: Could not read cmap: {e}")
     
     try:
         font = ImageFont.truetype(ttf_path, render_size)
@@ -237,14 +289,29 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
             print(f"Warning: Could not load fallback font: {e}")
     
     # Auto-detect fallback if not specified: use GenYoMinTW if available
+    auto_fallback_path = None
     if not fallback_font:
         auto_fallback = 'sd_card/fonts/GenYoMinTW-Regular.ttf'
         if os.path.exists(auto_fallback) and os.path.abspath(auto_fallback) != os.path.abspath(ttf_path):
             try:
                 fallback_font = ImageFont.truetype(auto_fallback, fallback_render_size)
+                auto_fallback_path = auto_fallback
                 print(f"Auto-detected fallback font: {auto_fallback}")
             except:
                 pass
+    
+    # Build fallback cmap so we can skip chars the fallback also lacks
+    fallback_cmap = set()
+    fb_cmap_path = fallback_path or auto_fallback_path
+    if fallback_font and fb_cmap_path:
+        try:
+            tt_fb = TTFont(fb_cmap_path)
+            for table in tt_fb['cmap'].tables:
+                fallback_cmap.update(table.cmap.keys())
+            tt_fb.close()
+            print(f"Fallback font cmap: {len(fallback_cmap)} codepoints")
+        except:
+            pass
     
     # Get character set
     print("Building character set...")
@@ -263,36 +330,42 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
         if i % 100 == 0:
             print(f"  Progress: {i}/{len(chars)} ({100*i//len(chars)}%)")
         
-        img, width, height, bearing_x, bearing_y = render_glyph(font, char, render_size)
-        
-        # When render_size != font_size (e.g. Silver), re-center bearing within font_size cell
-        if img is not None and render_size != font_size:
-            bearing_x = (font_size - width) // 2
-            bearing_y = (font_size - height) // 2
-        
-        # For missing vertical bracket forms: try rotating the horizontal counterpart
-        if img is None and ord(char) in VERT_BRACKETS_TO_HORIZ:
-            horiz_cp = VERT_BRACKETS_TO_HORIZ[ord(char)]
-            img, width, height, bearing_x, bearing_y = render_rotated_glyph(font, chr(horiz_cp), render_size)
-            if img is not None:
-                rotated_count += 1
-                if render_size != font_size:
-                    bearing_x = (font_size - width) // 2
-                    bearing_y = (font_size - height) // 2
-        
-        # Try fallback font if still missing
-        if img is None and fallback_font:
+        cp = ord(char)
+        use_fallback_first = force_fallback_punct and fallback_font and _is_punct(cp)
+        in_primary = cp in primary_cmap
+        in_fallback = cp in fallback_cmap
+
+        img = None
+        if use_fallback_first and in_fallback:
             img, width, height, bearing_x, bearing_y = render_glyph(fallback_font, char, fallback_render_size)
             if img is not None:
                 fallback_count += 1
-                if render_size != font_size:
-                    # Silver mode: re-center fallback glyph within font_size cell
-                    bearing_x = (font_size - width) // 2
-                    bearing_y = (font_size - height) // 2
+
+        if img is None and in_primary:
+            img, width, height, bearing_x, bearing_y = render_glyph(font, char, render_size)
+        
+        # For missing vertical bracket forms: try rotating the horizontal counterpart
+        if img is None and cp in VERT_BRACKETS_TO_HORIZ:
+            horiz_cp = VERT_BRACKETS_TO_HORIZ[cp]
+            if horiz_cp in primary_cmap:
+                img, width, height, bearing_x, bearing_y = render_rotated_glyph(font, chr(horiz_cp), render_size)
+                if img is not None:
+                    rotated_count += 1
+        
+        # Try fallback font if still missing (skip if already tried above)
+        if img is None and fallback_font and not use_fallback_first and in_fallback:
+            img, width, height, bearing_x, bearing_y = render_glyph(fallback_font, char, fallback_render_size)
+            if img is not None:
+                fallback_count += 1
         
         if img is None:
             # Skip characters that can't be rendered
             continue
+        
+        # Always center glyph within the em-square cell.
+        # This ensures proper alignment in vertical CJK text rendering.
+        bearing_x = (font_size - width) // 2
+        bearing_y = (font_size - height) // 2
         
         # Convert to bitmap bytes
         bitmap_bytes = bitmap_to_bytes(img)
@@ -312,24 +385,6 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
         })
     
     print(f"Successfully rendered {len(index_entries)} glyphs ({rotated_count} rotated, {fallback_count} from fallback)")
-    
-    # Normalize bearingY: shift all glyphs so a reference CJK character's ink
-    # starts at the top of the em-square. This ensures all fonts at the same
-    # nominal size produce identical top-line alignment without runtime compensation.
-    ref_bearing_y = None
-    for entry in index_entries:
-        if entry['unicode'] == 0x7684:  # '的'
-            ref_bearing_y = entry['bearing_y']
-            break
-    if ref_bearing_y is None:
-        for entry in index_entries:
-            if entry['unicode'] == 0x4E00:  # '一'
-                ref_bearing_y = entry['bearing_y']
-                break
-    if ref_bearing_y is not None and ref_bearing_y != 0:
-        print(f"Normalizing bearingY: shifting all by -{ref_bearing_y} (ref '的' bearingY={ref_bearing_y})")
-        for entry in index_entries:
-            entry['bearing_y'] -= ref_bearing_y
     
     # Second pass: calculate correct offsets and build bitmap data
     print("Calculating offsets...")
@@ -402,30 +457,341 @@ def is_silver_font(path):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Convert TTF font to M5ReadPaper binary format')
-    parser.add_argument('ttf', help='Input TTF/TTC/OTF font file')
+    parser.add_argument('ttf', nargs='?', help='Input TTF/TTC/OTF font file')
     parser.add_argument('-o', '--output', help='Output .bin file path (default: <font>_<size>pt.bin)')
     parser.add_argument('-s', '--size', type=int, default=30, help='Target font size in pt (default: 30). For Silver fonts, this is the nominal readingFontSize; the script auto-computes the actual render size using the built-in ratio.')
     parser.add_argument('-f', '--fallback', help='Fallback font for missing glyphs (auto-detects GenYoMinTW)')
     parser.add_argument('-r', '--render-size', type=int, help='Override render size (normally auto-calculated for Silver)')
+    parser.add_argument('--gui', action='store_true', help='Launch graphical interface')
     args = parser.parse_args()
 
-    ttf_path = args.ttf
-    font_size = args.size
-    fallback_path = args.fallback
-    render_size = args.render_size
+    if args.gui or args.ttf is None:
+        # ---- GUI mode ----
+        import threading
+        import tkinter as tk
+        from tkinter import ttk, filedialog, messagebox
 
-    # For Silver fonts, auto-compute render size from the scale table
-    target_size = font_size  # Keep original nominal size
-    if is_silver_font(ttf_path) and render_size is None:
-        render_size = silver_scaled_size(font_size)
-        print(f"Silver font detected: nominal {target_size}pt → render {render_size}pt (ratio {render_size/target_size:.2f})")
+        FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'sd_card', 'fonts') if not getattr(sys, 'frozen', False) else os.path.expanduser('~/Desktop')
+        GUI_SIZES = [36, 44, 52]
 
-    base = os.path.splitext(ttf_path)[0]
-    output_path = args.output if args.output else f"{base}_{target_size}pt.bin"
-    
-    if not os.path.exists(ttf_path):
-        print(f"Error: Font file not found: {ttf_path}")
-        sys.exit(1)
-    
-    success = convert_ttf_to_bin(ttf_path, output_path, font_size, fallback_path, render_size, target_size)
-    sys.exit(0 if success else 1)
+        _STRINGS = {
+            'en': {
+                'title': 'Convert TTF → BIN',
+                'folders': 'Folders',
+                'source': 'Source:',
+                'target': 'Target:',
+                'fallback': 'Fallback:',
+                'browse': 'Browse…',
+                'options': 'Options',
+                'force_punct': 'Replace all punctuation from fallback font',
+                'fonts': 'Fonts',
+                'sizes': 'Sizes (pt)',
+                'select_all': 'Select All',
+                'deselect_all': 'Deselect All',
+                'add_font': 'Add Font…',
+                'convert': 'Convert',
+                'log': 'Log',
+                'lang_switch': '中文',
+                'browse_source': 'Select source fonts folder',
+                'browse_target': 'Select target folder',
+                'browse_fallback': 'Select fallback font',
+                'browse_add': 'Select a font file',
+                'warn_no_fonts': 'No fonts',
+                'warn_no_fonts_msg': 'Select at least one font.',
+                'warn_no_sizes': 'No sizes',
+                'warn_no_sizes_msg': 'Select at least one size.',
+                'done': 'Done: {success} succeeded, {failed} failed out of {total} jobs.',
+            },
+            'zh': {
+                'title': '轉換 TTF → BIN',
+                'folders': '資料夾',
+                'source': '來源：',
+                'target': '目標：',
+                'fallback': '備用字型：',
+                'browse': '瀏覽…',
+                'options': '選項',
+                'force_punct': '以備用字型取代所有標點',
+                'fonts': '字型',
+                'sizes': '字級 (pt)',
+                'select_all': '全選',
+                'deselect_all': '取消全選',
+                'add_font': '新增字型…',
+                'convert': '轉換',
+                'log': '紀錄',
+                'lang_switch': 'English',
+                'browse_source': '選擇來源字型資料夾',
+                'browse_target': '選擇目標資料夾',
+                'browse_fallback': '選擇備用字型',
+                'browse_add': '選擇字型檔案',
+                'warn_no_fonts': '未選字型',
+                'warn_no_fonts_msg': '請至少選擇一個字型。',
+                'warn_no_sizes': '未選字級',
+                'warn_no_sizes_msg': '請至少選擇一個字級。',
+                'done': '完成：{success} 成功、{failed} 失敗，共 {total} 個任務。',
+            },
+        }
+
+        class _LogRedirector:
+            """Redirects print() to the GUI log."""
+            def __init__(self, callback):
+                self.callback = callback
+                self._buf = ""
+            def write(self, text):
+                self._buf += text
+                while "\n" in self._buf:
+                    line, self._buf = self._buf.split("\n", 1)
+                    if line:
+                        self.callback(line)
+            def flush(self):
+                if self._buf:
+                    self.callback(self._buf)
+                    self._buf = ""
+
+        class ConvertGUI:
+            def __init__(self, root):
+                self.root = root
+                self.lang = 'en'
+                root.resizable(False, False)
+
+                self.input_dir = tk.StringVar(value=FONTS_DIR)
+                self.input_dir.trace_add('write', self._on_input_dir_changed)
+                self.output_dir = tk.StringVar(value=FONTS_DIR)
+                default_fallback = os.path.join(FONTS_DIR, 'GenYoMinTW-Regular.ttf')
+                self.fallback_path = tk.StringVar(value=default_fallback if os.path.exists(default_fallback) else '')
+                self.force_fallback_punct = tk.BooleanVar(value=False)
+                self.font_vars = {}
+                self.size_vars = {}
+
+                self._build_ui()
+
+            def _t(self, key):
+                return _STRINGS[self.lang][key]
+
+            def _build_ui(self):
+                # Clear all widgets
+                for w in self.root.winfo_children():
+                    w.destroy()
+
+                self.root.title(self._t('title'))
+
+                # --- Language switch ---
+                frame_lang = ttk.Frame(self.root, padding=2)
+                frame_lang.pack(fill="x", padx=10, pady=(4, 0))
+                ttk.Button(frame_lang, text=self._t('lang_switch'), command=self._toggle_lang).pack(side="right")
+
+                # --- Folders ---
+                frame_dirs = ttk.LabelFrame(self.root, text=self._t('folders'), padding=8)
+                frame_dirs.pack(fill="x", padx=10, pady=(4, 4))
+                frame_dirs.columnconfigure(1, weight=1)
+
+                ttk.Label(frame_dirs, text=self._t('source')).grid(row=0, column=0, sticky="w", padx=(0, 4))
+                ttk.Entry(frame_dirs, textvariable=self.input_dir, width=50).grid(row=0, column=1, sticky="ew", padx=2)
+                ttk.Button(frame_dirs, text=self._t('browse'), command=self._browse_input).grid(row=0, column=2, padx=(4, 0))
+
+                ttk.Label(frame_dirs, text=self._t('target')).grid(row=1, column=0, sticky="w", padx=(0, 4), pady=(4, 0))
+                ttk.Entry(frame_dirs, textvariable=self.output_dir, width=50).grid(row=1, column=1, sticky="ew", padx=2, pady=(4, 0))
+                ttk.Button(frame_dirs, text=self._t('browse'), command=self._browse_output).grid(row=1, column=2, padx=(4, 0), pady=(4, 0))
+
+                # --- Fallback font ---
+                ttk.Label(frame_dirs, text=self._t('fallback')).grid(row=2, column=0, sticky="w", padx=(0, 4), pady=(4, 0))
+                ttk.Entry(frame_dirs, textvariable=self.fallback_path, width=50).grid(row=2, column=1, sticky="ew", padx=2, pady=(4, 0))
+                ttk.Button(frame_dirs, text=self._t('browse'), command=self._browse_fallback).grid(row=2, column=2, padx=(4, 0), pady=(4, 0))
+
+                # --- Options ---
+                frame_opts = ttk.LabelFrame(self.root, text=self._t('options'), padding=8)
+                frame_opts.pack(fill="x", padx=10, pady=4)
+                ttk.Checkbutton(frame_opts, text=self._t('force_punct'),
+                                variable=self.force_fallback_punct).pack(anchor="w")
+
+                # --- Font list ---
+                self.frame_fonts = ttk.LabelFrame(self.root, text=self._t('fonts'), padding=8)
+                self.frame_fonts.pack(fill="x", padx=10, pady=4)
+                self._build_font_list(self.frame_fonts)
+
+                # --- Sizes ---
+                frame_sizes = ttk.LabelFrame(self.root, text=self._t('sizes'), padding=8)
+                frame_sizes.pack(fill="x", padx=10, pady=4)
+                old_selections = {s: v.get() for s, v in self.size_vars.items()}
+                self.size_vars = {}
+                for i, s in enumerate(GUI_SIZES):
+                    var = tk.BooleanVar(value=old_selections.get(s, True))
+                    ttk.Checkbutton(frame_sizes, text=str(s), variable=var).grid(row=0, column=i, padx=8)
+                    self.size_vars[s] = var
+
+                # --- Buttons ---
+                frame_btns = ttk.Frame(self.root, padding=4)
+                frame_btns.pack(fill="x", padx=10, pady=4)
+                ttk.Button(frame_btns, text=self._t('select_all'), command=self._select_all).pack(side="left", padx=4)
+                ttk.Button(frame_btns, text=self._t('deselect_all'), command=self._deselect_all).pack(side="left", padx=4)
+                ttk.Button(frame_btns, text=self._t('add_font'), command=self._add_font).pack(side="left", padx=4)
+                self.btn_convert = ttk.Button(frame_btns, text=self._t('convert'), command=self._start_convert)
+                self.btn_convert.pack(side="right", padx=4)
+
+                # --- Progress ---
+                self.progress = ttk.Progressbar(self.root, mode="determinate")
+                self.progress.pack(fill="x", padx=10, pady=4)
+
+                # --- Log ---
+                frame_log = ttk.LabelFrame(self.root, text=self._t('log'), padding=4)
+                frame_log.pack(fill="both", expand=True, padx=10, pady=(4, 10))
+                self.log_text = tk.Text(frame_log, height=14, width=80, state="disabled",
+                                        font=("Menlo", 11) if sys.platform == "darwin" else ("Consolas", 10))
+                scrollbar = ttk.Scrollbar(frame_log, orient="vertical", command=self.log_text.yview)
+                self.log_text.configure(yscrollcommand=scrollbar.set)
+                self.log_text.pack(side="left", fill="both", expand=True)
+                scrollbar.pack(side="right", fill="y")
+
+            def _toggle_lang(self):
+                self.lang = 'zh' if self.lang == 'en' else 'en'
+                self._build_ui()
+
+            def _on_input_dir_changed(self, *_args):
+                self.output_dir.set(self.input_dir.get())
+
+            def _browse_input(self):
+                d = filedialog.askdirectory(title=self._t('browse_source'), initialdir=self.input_dir.get())
+                if d:
+                    self.input_dir.set(d)
+                    self._build_font_list(self.frame_fonts)
+
+            def _browse_output(self):
+                d = filedialog.askdirectory(title=self._t('browse_target'), initialdir=self.output_dir.get())
+                if d:
+                    self.output_dir.set(d)
+
+            def _browse_fallback(self):
+                path = filedialog.askopenfilename(
+                    title=self._t('browse_fallback'),
+                    initialdir=os.path.dirname(self.fallback_path.get()) or FONTS_DIR,
+                    filetypes=[("Font files", "*.ttf *.ttc *.otf"), ("All files", "*.*")])
+                if path:
+                    self.fallback_path.set(path)
+
+            def _build_font_list(self, parent):
+                for widget in parent.winfo_children():
+                    widget.destroy()
+                self.font_vars.clear()
+                fonts_dir = self.input_dir.get()
+                if not os.path.isdir(fonts_dir):
+                    return
+                ttf_files = sorted(
+                    f for f in os.listdir(fonts_dir)
+                    if f.lower().endswith(('.ttf', '.ttc', '.otf'))
+                    and f.lower() != 'ebgaramond-regular.ttf'
+                )
+                for i, fname in enumerate(ttf_files):
+                    var = tk.BooleanVar(value=False)
+                    path = os.path.join(fonts_dir, fname)
+                    display = get_font_display_name(path)
+                    label = f"{display}  ({fname})"
+                    ttk.Checkbutton(parent, text=label, variable=var).grid(
+                        row=i, column=0, sticky="w", padx=4, pady=1)
+                    self.font_vars[path] = var
+
+            def _select_all(self):
+                for v in self.font_vars.values(): v.set(True)
+
+            def _deselect_all(self):
+                for v in self.font_vars.values(): v.set(False)
+
+            def _add_font(self):
+                path = filedialog.askopenfilename(
+                    title=self._t('browse_add'),
+                    filetypes=[("Font files", "*.ttf *.ttc *.otf"), ("All files", "*.*")])
+                if not path:
+                    return
+                var = tk.BooleanVar(value=True)
+                self.font_vars[path] = var
+                row = len(self.font_vars) // 2
+                col = (len(self.font_vars) - 1) % 2
+                display = get_font_display_name(path)
+                label = f"{display}  ({os.path.basename(path)})"
+                ttk.Checkbutton(self.frame_fonts, text=label, variable=var).grid(
+                    row=row, column=col, sticky="w", padx=4, pady=1)
+
+            def _log(self, msg):
+                self.log_text.configure(state="normal")
+                self.log_text.insert("end", msg + "\n")
+                self.log_text.see("end")
+                self.log_text.configure(state="disabled")
+                self.root.update_idletasks()
+
+            def _log_from_thread(self, msg):
+                self.root.after(0, self._log, msg)
+
+            def _update_progress(self, value):
+                self.progress["value"] = value
+
+            def _start_convert(self):
+                selected_fonts = [p for p, v in self.font_vars.items() if v.get()]
+                selected_sizes = [s for s, v in self.size_vars.items() if v.get()]
+                if not selected_fonts:
+                    messagebox.showwarning(self._t('warn_no_fonts'), self._t('warn_no_fonts_msg'))
+                    return
+                if not selected_sizes:
+                    messagebox.showwarning(self._t('warn_no_sizes'), self._t('warn_no_sizes_msg'))
+                    return
+                fallback = self.fallback_path.get().strip() or None
+                punct_opt = self.force_fallback_punct.get()
+                self.btn_convert.configure(state="disabled")
+                self.log_text.configure(state="normal")
+                self.log_text.delete("1.0", "end")
+                self.log_text.configure(state="disabled")
+                threading.Thread(target=self._run_convert, args=(selected_fonts, selected_sizes, fallback, punct_opt), daemon=True).start()
+
+            def _run_convert(self, fonts, sizes, fallback, force_punct):
+                jobs = [(f, s) for f in fonts for s in sizes]
+                total = len(jobs)
+                self.progress["maximum"] = total
+                self.progress["value"] = 0
+                success = failed = 0
+                old_stdout = sys.stdout
+                sys.stdout = _LogRedirector(self._log_from_thread)
+                for i, (font_path, size) in enumerate(jobs, 1):
+                    base = os.path.splitext(os.path.basename(font_path))[0]
+                    target_size = size
+                    render_size = silver_scaled_size(size) if is_silver_font(font_path) else None
+                    output_path = os.path.join(self.output_dir.get(), f"{base}_{target_size}pt.bin")
+                    self._log_from_thread(f"\n{'='*60}")
+                    self._log_from_thread(f"[{i}/{total}] {os.path.basename(font_path)} @ {size}pt → {os.path.basename(output_path)}")
+                    self._log_from_thread(f"{'='*60}")
+                    try:
+                        ok = convert_ttf_to_bin(font_path, output_path, size, fallback, render_size, target_size, force_fallback_punct=force_punct)
+                        if ok:
+                            success += 1
+                        else:
+                            failed += 1
+                            self._log_from_thread(f"✗ Failed: {os.path.basename(font_path)} @ {size}pt")
+                    except Exception as e:
+                        failed += 1
+                        self._log_from_thread(f"✗ Error: {e}")
+                    self.root.after(0, self._update_progress, i)
+                sys.stdout = old_stdout
+                self._log_from_thread('\n' + self._t('done').format(success=success, failed=failed, total=total))
+                self.root.after(0, lambda: self.btn_convert.configure(state="normal"))
+
+        root = tk.Tk()
+        ConvertGUI(root)
+        root.mainloop()
+    else:
+        # ---- CLI mode ----
+        ttf_path = args.ttf
+        font_size = args.size
+        fallback_path = args.fallback
+        render_size = args.render_size
+
+        # For Silver fonts, auto-compute render size from the scale table
+        target_size = font_size  # Keep original nominal size
+        if is_silver_font(ttf_path) and render_size is None:
+            render_size = silver_scaled_size(font_size)
+            print(f"Silver font detected: nominal {target_size}pt → render {render_size}pt (ratio {render_size/target_size:.2f})")
+
+        base = os.path.splitext(ttf_path)[0]
+        output_path = args.output if args.output else f"{base}_{target_size}pt.bin"
+        
+        if not os.path.exists(ttf_path):
+            print(f"Error: Font file not found: {ttf_path}")
+            sys.exit(1)
+        
+        success = convert_ttf_to_bin(ttf_path, output_path, font_size, fallback_path, render_size, target_size)
+        sys.exit(0 if success else 1)

@@ -141,6 +141,10 @@
 #include "label_med_press_hint.h"
 #include "label_med_manual_reset.h"
 #include "label_med_passcode_title.h"
+#include "label_med_set_new.h"
+#include "label_med_confirm.h"
+#include "label_med_set_hint.h"
+#include "label_med_confirm_hint.h"
 #include "label_med_passcode_wrong.h"
 #include "label_med_instr1.h"
 #include "label_med_instr2.h"
@@ -1358,7 +1362,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1342;
+const int kLabelBitmapCount = 1346;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -1496,6 +1500,10 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"吃藥後請按此", 28, label_med_press_hint_w, label_med_press_hint_h, label_med_press_hint_bitmap},
   {"點擊手動復位", 22, label_med_manual_reset_w, label_med_manual_reset_h, label_med_manual_reset_bitmap},
   {"輸入密碼", 36, label_med_passcode_title_w, label_med_passcode_title_h, label_med_passcode_title_bitmap},
+  {"設定新密碼", 36, label_med_set_new_w, label_med_set_new_h, label_med_set_new_bitmap},
+  {"確認密碼", 36, label_med_confirm_w, label_med_confirm_h, label_med_confirm_bitmap},
+  {"請輸入新的數字密碼", 22, label_med_set_hint_w, label_med_set_hint_h, label_med_set_hint_bitmap},
+  {"請再輸入一次", 22, label_med_confirm_hint_w, label_med_confirm_hint_h, label_med_confirm_hint_bitmap},
   {"密碼錯誤", 22, label_med_passcode_wrong_w, label_med_passcode_wrong_h, label_med_passcode_wrong_bitmap},
   {"吃藥時按一下按鈕", 24, label_med_instr1_w, label_med_instr1_h, label_med_instr1_bitmap},
   {"忘了是否吃過，看一眼就知道", 22, label_med_instr2_w, label_med_instr2_h, label_med_instr2_bitmap},

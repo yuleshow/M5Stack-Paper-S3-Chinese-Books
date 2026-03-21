@@ -86,41 +86,67 @@ void drawFontMenu() {
     String fileInfo = typeLabel + fileName;
     drawSystemText(fileInfo.c_str(), 50, y + 30, 14, TFT_DARKGRAY);
     
-    // Draw BIN buttons (one per paired .bin file, showing font size)
+    // Draw buttons: BIN size buttons + TTF button
     // For Silver, show the equivalent nominal size (e.g. 36 not 49)
-    if (hasBinPair) {
-      bool isSilverFont = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
+    bool selectedIsTTF = (i == selectedFontIndex && !isStandaloneBin &&
+                          readingFontFile == fontFileList[i]);
+    if (hasBinPair || !isStandaloneBin) {
       int btnY = y + 25;
       int btnX = 510;  // Start from right edge, grow leftward
-      for (int b = fontBinCount[i] - 1; b >= 0; b--) {
-        int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[i][b]) : (int)fontBinSizes[i][b];
-        String label = String(displaySize) + "pt";
-        int btnW = label.length() * 12 + 16;  // Approximate width based on label
-        btnX -= (btnW + 4);  // 4px gap between buttons
-        if (b == selectedBinIdx) {
-          M5.Display.fillRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_BLACK);
-          drawSystemText(label.c_str(), btnX + 8, btnY + 8, 18, TFT_WHITE, TFT_BLACK);
+      
+      // TTF button (for any font that has a TTF file)
+      if (!isStandaloneBin) {
+        String ttfLabel = "TTF";
+        int ttfBtnW = ttfLabel.length() * 12 + 16;
+        btnX -= (ttfBtnW + 4);
+        if (selectedIsTTF) {
+          M5.Display.fillRoundRect(btnX, btnY, ttfBtnW, BIN_BTN_H, 6, TFT_BLACK);
+          drawSystemText(ttfLabel.c_str(), btnX + 8, btnY + 8, 18, TFT_WHITE, TFT_BLACK);
         } else {
-          M5.Display.drawRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_DARKGRAY);
-          M5.Display.drawRoundRect(btnX + 1, btnY + 1, btnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
-          drawSystemText(label.c_str(), btnX + 8, btnY + 8, 18, TFT_DARKGRAY);
+          M5.Display.drawRoundRect(btnX, btnY, ttfBtnW, BIN_BTN_H, 6, TFT_DARKGRAY);
+          M5.Display.drawRoundRect(btnX + 1, btnY + 1, ttfBtnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
+          drawSystemText(ttfLabel.c_str(), btnX + 8, btnY + 8, 18, TFT_DARKGRAY);
+        }
+      }
+      
+      // BIN size buttons (only if there are paired bins)
+      if (hasBinPair) {
+        bool isSilverFont = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
+        for (int b = fontBinCount[i] - 1; b >= 0; b--) {
+          int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[i][b]) : (int)fontBinSizes[i][b];
+          String label = String(displaySize);
+          int btnW = label.length() * 12 + 16;
+          btnX -= (btnW + 4);
+          if (b == selectedBinIdx) {
+            M5.Display.fillRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_BLACK);
+            drawSystemTextCentered(label.c_str(), btnX + btnW / 2, btnY + (BIN_BTN_H - 18) / 2, 18, TFT_WHITE, TFT_BLACK);
+          } else {
+            M5.Display.drawRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_DARKGRAY);
+            M5.Display.drawRoundRect(btnX + 1, btnY + 1, btnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
+            drawSystemTextCentered(label.c_str(), btnX + btnW / 2, btnY + (BIN_BTN_H - 18) / 2, 18, TFT_DARKGRAY);
+          }
         }
       }
     }
     
     // Line 3: Sample text (rendered in actual font — use TTF for preview)
     int sampleTop = y + 50;
-    int sampleH = 32;
+    int sampleH = 40;
     String sampleLine = "\xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
 
     if (isStandaloneBin) {
-      // Standalone BIN (no TTF pair) — render with bin font
+      // Standalone BIN (no TTF pair) — render sample with the selected bin
+      // Use the selected bin if this font is currently selected, otherwise use primary
+      String sampleBinFile = fileName;
+      if (i == selectedFontIndex && selectedBinIdx >= 0) {
+        sampleBinFile = fontBinFiles[i][selectedBinIdx];
+      }
       if (g_binFont.loaded) {
         if (g_binFont.index) { free(g_binFont.index); g_binFont.index = nullptr; }
         g_binFont.fontFile.close();
         g_binFont.loaded = false;
       }
-      if (loadBinaryFont(fileName.c_str())) {
+      if (loadBinaryFont(sampleBinFile.c_str())) {
         float scale = (float)sampleH / g_binFont.fontSize;
         drawBinFontStringScaled(sampleLine, 50, sampleTop, scale, true);
       } else {
@@ -128,8 +154,7 @@ void drawFontMenu() {
       }
     } else {
       // TTF (with or without BIN pair) — always preview with TTF
-      bool isSilver = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
-      int previewSize = isSilver ? 33 : 24;
+      int previewSize = 40;
       bool loaded = loadTTFFont(fileName.c_str(), previewSize);
       if (loaded && ofrFontLoaded) {
         ofr.setFontColor(TFT_BLACK, (i == selectedFontIndex) ? TFT_LIGHTGRAY : TFT_WHITE);

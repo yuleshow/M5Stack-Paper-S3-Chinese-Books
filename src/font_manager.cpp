@@ -293,6 +293,9 @@ void scanFontFiles() {
           Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
         } else {
           String displayName = extractTTFName(entry);
+          // Map well-known English names to Traditional Chinese
+          if (displayName == "Noto Sans TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE9\xBB\x91\xE9\xAB\x94";  // 思源黑體
+          else if (displayName == "Noto Serif TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE5\xAE\x8B\xE9\xAB\x94";  // 思源宋體
           tmpFiles[tmpCount] = name;
           tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
           tmpIsBin[tmpCount] = false;
@@ -305,6 +308,9 @@ void scanFontFiles() {
           Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
         } else {
           String displayName = extractBinFontName(entry);
+          // Map well-known English names to Traditional Chinese
+          if (displayName == "Noto Sans TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE9\xBB\x91\xE9\xAB\x94";  // 思源黑體
+          else if (displayName == "Noto Serif TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE5\xAE\x8B\xE9\xAB\x94";  // 思源宋體
           tmpFiles[tmpCount] = name;
           tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
           tmpIsBin[tmpCount] = true;
@@ -352,12 +358,57 @@ void scanFontFiles() {
   }
   
   // Add unpaired BIN entries (no matching TTF found)
+  // Group by display name so multiple sizes appear as size buttons
   for (int i = 0; i < tmpCount && fontFileCount < MAX_FONT_FILES; i++) {
     if (!tmpIsBin[i] || binPaired[i]) continue;
-    fontFileList[fontFileCount] = tmpFiles[i];
-    fontDisplayNames[fontFileCount] = tmpNames[i];
-    fontBinCount[fontFileCount] = 0;  // No pair — this IS the bin file
-    fontFileCount++;
+    
+    // Check if we already created a group for this display name
+    String thisNameLow = tmpNames[i];
+    thisNameLow.toLowerCase();
+    int existingIdx = -1;
+    for (int f = 0; f < fontFileCount; f++) {
+      String existNameLow = fontDisplayNames[f];
+      existNameLow.toLowerCase();
+      if (existNameLow == thisNameLow) {
+        existingIdx = f;
+        break;
+      }
+    }
+    
+    if (existingIdx >= 0 && fontBinCount[existingIdx] < MAX_BIN_PER_FONT) {
+      // Add to existing group as another size variant
+      int idx = fontBinCount[existingIdx];
+      fontBinFiles[existingIdx][idx] = tmpFiles[i];
+      fontBinSizes[existingIdx][idx] = tmpBinSize[i];
+      fontBinCount[existingIdx]++;
+      binPaired[i] = true;
+      Serial.printf("  Grouped BIN: %s into %s (%dpt)\n", tmpFiles[i].c_str(), fontDisplayNames[existingIdx].c_str(), tmpBinSize[i]);
+    } else if (existingIdx < 0) {
+      // Create new group — first BIN becomes the primary entry
+      // Also add it as the first bin button so all sizes show as buttons
+      fontFileList[fontFileCount] = tmpFiles[i];
+      fontDisplayNames[fontFileCount] = tmpNames[i];
+      fontBinFiles[fontFileCount][0] = tmpFiles[i];
+      fontBinSizes[fontFileCount][0] = tmpBinSize[i];
+      fontBinCount[fontFileCount] = 1;
+      binPaired[i] = true;
+      
+      // Look ahead for other BINs with the same display name to group them
+      for (int j = i + 1; j < tmpCount; j++) {
+        if (!tmpIsBin[j] || binPaired[j]) continue;
+        String otherNameLow = tmpNames[j];
+        otherNameLow.toLowerCase();
+        if (otherNameLow == thisNameLow && fontBinCount[fontFileCount] < MAX_BIN_PER_FONT) {
+          int idx = fontBinCount[fontFileCount];
+          fontBinFiles[fontFileCount][idx] = tmpFiles[j];
+          fontBinSizes[fontFileCount][idx] = tmpBinSize[j];
+          fontBinCount[fontFileCount]++;
+          binPaired[j] = true;
+          Serial.printf("  Grouped BIN: %s (%dpt)\n", tmpFiles[j].c_str(), tmpBinSize[j]);
+        }
+      }
+      fontFileCount++;
+    }
   }
   
   // Sort fonts by display name
@@ -544,6 +595,8 @@ struct CachedGlyph {
   uint16_t bitmapSize;
   uint16_t width;
   uint16_t height;
+  int8_t offsetX;  // draw offset from cell origin
+  int8_t offsetY;
   bool occupied;
 };
 static CachedGlyph* glyphCache = nullptr;
@@ -583,7 +636,7 @@ static CachedGlyph* cacheFind(uint32_t unicode) {
   return nullptr;
 }
 
-static void cacheInsert(uint32_t unicode, const uint8_t* bitmap, uint16_t bitmapSize, uint16_t w, uint16_t h) {
+static void cacheInsert(uint32_t unicode, const uint8_t* bitmap, uint16_t bitmapSize, uint16_t w, uint16_t h, int8_t ox = 0, int8_t oy = 0) {
   if (!glyphCache || !glyphBitmapPool) return;
   if (glyphPoolUsed + bitmapSize > GLYPH_POOL_SIZE) return;  // Pool full
 
@@ -597,6 +650,8 @@ static void cacheInsert(uint32_t unicode, const uint8_t* bitmap, uint16_t bitmap
       glyphCache[slot].bitmapSize = bitmapSize;
       glyphCache[slot].width = w;
       glyphCache[slot].height = h;
+      glyphCache[slot].offsetX = ox;
+      glyphCache[slot].offsetY = oy;
       glyphCache[slot].occupied = true;
       glyphPoolUsed += bitmapSize;
       return;
@@ -765,12 +820,8 @@ int drawBinFontStringScaled(const String &text, int x, int y, float scale, bool 
     if (glyph && glyph->width > 0) {
       int yOffset = 0;
       if (noYOffset) {
-        // Preview mode: use bearingY if available, else center small glyphs
-        if (glyph->bearingY != 0) {
-          yOffset = fontSize - glyph->bearingY;
-        } else if (glyph->height < fontSize) {
-          yOffset = (fontSize - glyph->height) / 2;
-        }
+        // Preview mode: bearingY is the offset from em-square top (normalized)
+        yOffset = (glyph->bearingY > 0) ? glyph->bearingY : 0;
       } else {
         yOffset = fontSize - glyph->height;
         if (glyph->bearingY != 0) {
@@ -808,6 +859,8 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
     const uint8_t* bitmap = cached->bitmap;
     int w = cached->width;
     int h = cached->height;
+    int drawX = x + cached->offsetX;
+    int drawY = y + cached->offsetY;
     for (int py = 0; py < h; py++) {
       int lineStart = -1;
       for (int px = 0; px < w; px++) {
@@ -817,35 +870,76 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
           if (lineStart == -1) lineStart = px;
         } else {
           if (lineStart != -1) {
-            M5.Display.drawFastHLine(x + lineStart, y + py, px - lineStart, color);
+            M5.Display.drawFastHLine(drawX + lineStart, drawY + py, px - lineStart, color);
             lineStart = -1;
           }
         }
       }
       if (lineStart != -1) {
-        M5.Display.drawFastHLine(x + lineStart, y + py, w - lineStart, color);
+        M5.Display.drawFastHLine(drawX + lineStart, drawY + py, w - lineStart, color);
       }
     }
     return true;
   }
 
-  // Cache miss — render via FreeType into a sprite, then capture bitmap
-  int sprW = fontSize;
-  int sprH = fontSize;
+  // Cache miss — render via FreeType into an oversized sprite to avoid clipping.
+  // Use 2x fontSize to accommodate fonts whose ascender+descender exceeds fontSize.
+  // Render at y=0 (no top margin) — FreeType places text from y=0 downward.
+  int sprW = fontSize * 2;
+  int sprH = fontSize * 2;
   LGFX_Sprite sprite(&M5.Display);
   sprite.setColorDepth(8);
   if (!sprite.createSprite(sprW, sprH)) return false;
   sprite.fillSprite(TFT_WHITE);
 
-  ofr.setDrawer(sprite);
+  // Check if the character exists in the loaded font (glyph_index != 0)
+  if (!ofr.isCharAvailable(unicode)) {
+    sprite.deleteSprite();
+    return false;
+  }
+
   char chBuf[5];
   int chLen = utf8Encode(unicode, chBuf);
   chBuf[chLen] = '\0';
+
+  // Render centered horizontally, starting from top of sprite.
+  // Cell origin in sprite coords: x = (sprW - fontSize) / 2, y = 0
+  int cellX = (sprW - fontSize) / 2;  // left edge of virtual fontSize×fontSize cell
+  ofr.setFontSize(fontSize);
+  ofr.setDrawer(sprite);
   ofr.cdrawString(chBuf, sprW / 2, 0, TFT_BLACK, TFT_WHITE);
   ofr.setDrawer(M5.Display);
 
-  // Convert 8-bit sprite buffer to 1-bit packed bitmap
-  int bitmapSize = (sprW * sprH + 7) / 8;
+  // Find tight bounding box of rendered pixels
+  uint8_t* spriteBuf = (uint8_t*)sprite.getBuffer();
+  if (!spriteBuf) {
+    sprite.deleteSprite();
+    return false;
+  }
+  int minX = sprW, maxX = -1, minY = sprH, maxY = -1;
+  for (int py = 0; py < sprH; py++) {
+    for (int px = 0; px < sprW; px++) {
+      if (spriteBuf[py * sprW + px] < 128) {
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+      }
+    }
+  }
+  if (maxX < 0) {
+    sprite.deleteSprite();
+    return false;
+  }
+
+  // Crop to tight bounds
+  int cropW = maxX - minX + 1;
+  int cropH = maxY - minY + 1;
+  int8_t offsetX = (int8_t)(minX - cellX);   // offset relative to cell left edge
+  int8_t offsetY = (int8_t)(minY);            // offset relative to cell top (y=0)
+
+  // Convert cropped region to 1-bit packed bitmap
+  int bitmapSize = (cropW * cropH + 7) / 8;
   static uint8_t* convBuf = nullptr;
   static size_t convBufSize = 0;
   if ((size_t)bitmapSize > convBufSize) {
@@ -856,40 +950,39 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
   }
   memset(convBuf, 0, bitmapSize);
 
-  uint8_t* spriteBuf = (uint8_t*)sprite.getBuffer();
-  if (spriteBuf) {
-    for (int py = 0; py < sprH; py++) {
-      for (int px = 0; px < sprW; px++) {
-        uint8_t pixel = spriteBuf[py * sprW + px];
-        if (pixel < 128) {  // Dark pixel (0=black, 255=white in 8-bit)
-          int bitPos = py * sprW + px;
-          convBuf[bitPos / 8] |= (1 << (7 - (bitPos % 8)));
-        }
+  for (int py = 0; py < cropH; py++) {
+    for (int px = 0; px < cropW; px++) {
+      uint8_t pixel = spriteBuf[(minY + py) * sprW + (minX + px)];
+      if (pixel < 128) {
+        int bitPos = py * cropW + px;
+        convBuf[bitPos / 8] |= (1 << (7 - (bitPos % 8)));
       }
     }
   }
   sprite.deleteSprite();
 
-  // Cache the 1-bit bitmap
-  cacheInsert(unicode, convBuf, bitmapSize, sprW, sprH);
+  // Cache the cropped 1-bit bitmap with offsets
+  cacheInsert(unicode, convBuf, bitmapSize, cropW, cropH, offsetX, offsetY);
 
   // Draw to display using hline optimization
-  for (int py = 0; py < sprH; py++) {
+  int drawX = x + offsetX;
+  int drawY = y + offsetY;
+  for (int py = 0; py < cropH; py++) {
     int lineStart = -1;
-    for (int px = 0; px < sprW; px++) {
-      int bitPos = py * sprW + px;
+    for (int px = 0; px < cropW; px++) {
+      int bitPos = py * cropW + px;
       bool isSet = convBuf[bitPos / 8] & (1 << (7 - (bitPos % 8)));
       if (isSet) {
         if (lineStart == -1) lineStart = px;
       } else {
         if (lineStart != -1) {
-          M5.Display.drawFastHLine(x + lineStart, y + py, px - lineStart, color);
+          M5.Display.drawFastHLine(drawX + lineStart, drawY + py, px - lineStart, color);
           lineStart = -1;
         }
       }
     }
     if (lineStart != -1) {
-      M5.Display.drawFastHLine(x + lineStart, y + py, sprW - lineStart, color);
+      M5.Display.drawFastHLine(drawX + lineStart, drawY + py, cropW - lineStart, color);
     }
   }
 

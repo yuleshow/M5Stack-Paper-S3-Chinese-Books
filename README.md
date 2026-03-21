@@ -22,9 +22,9 @@ A feature-rich Chinese e-ink application for the **M5Stack Paper S3** (ESP32-S3,
 - EPUB parsing with built-in ZIP/deflate decompression and HTML-to-text extraction
 - **Table of Contents (TOC)** — NCX-based chapter index for EPUB files; paginated list with tap-to-jump navigation; shows "此書無目錄" popup for TXT or EPUBs without TOC
 - **Bitmap toolbar** — Pre-rendered icon strip with 6 touch buttons: font decrease (−A), font size display, font increase (+A), font menu (Aa), index/TOC (≡), bookmark (★)
-- Configurable font size (20–52px)
+- Configurable font size (20–64px), page position preserved across font size changes
 - **Smart font scaling** — Silver font automatically enlarged using per-size scale factors to match GenYoMinTW visual size, with tighter vertical character spacing for optimal readability
-- **Per-character centering** — Each glyph is measured and horizontally centered within its column cell for precise vertical text alignment
+- **Per-character centering** — Each glyph is measured and centered both horizontally and vertically within its em-square cell for precise vertical text alignment
 - Reading position auto-saved to SD card (`.pos` sidecar files)
 - Bookmarks support (up to 5 per book, saved as `.bm` files)
 - **CJK font filtering** — Font selection list automatically hides English-only fonts by detecting CJK support via OS/2 table (TTF) or glyph index sampling (BIN)
