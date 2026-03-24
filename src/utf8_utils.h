@@ -14,20 +14,25 @@ inline int utf8CharLen(unsigned char leadByte) {
 // Decode a UTF-8 character from a String at position `pos`.
 // Returns the Unicode codepoint and advances `pos` past the character.
 inline uint32_t utf8Decode(const String &text, int &pos) {
+  int len = text.length();
+  if (pos >= len) { pos++; return 0xFFFD; }
   unsigned char c = text.charAt(pos);
   uint32_t cp;
   if (c < 0x80) {
     cp = c;
     pos += 1;
   } else if (c < 0xE0) {
+    if (pos + 1 >= len) { pos = len; return 0xFFFD; }
     cp = ((c & 0x1F) << 6) | (text.charAt(pos + 1) & 0x3F);
     pos += 2;
   } else if (c < 0xF0) {
+    if (pos + 2 >= len) { pos = len; return 0xFFFD; }
     cp = ((c & 0x0F) << 12) |
          ((text.charAt(pos + 1) & 0x3F) << 6) |
          (text.charAt(pos + 2) & 0x3F);
     pos += 3;
   } else {
+    if (pos + 3 >= len) { pos = len; return 0xFFFD; }
     cp = ((c & 0x07) << 18) |
          ((text.charAt(pos + 1) & 0x3F) << 12) |
          ((text.charAt(pos + 2) & 0x3F) << 6) |

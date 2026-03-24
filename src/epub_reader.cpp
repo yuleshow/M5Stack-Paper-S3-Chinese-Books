@@ -5,21 +5,32 @@
 
 // Little-endian binary readers
 static uint16_t zipU16(const uint8_t* b) { return b[0] | (b[1] << 8); }
-static uint32_t zipU32(const uint8_t* b) { return b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24); }
+static uint32_t zipU32(const uint8_t* b) { return b[0] | (b[1] << 8) | (b[2] << 16) | ((uint32_t)b[3] << 24); }
 
 // Helper: log loading step (serial + watchdog only, no e-ink display to avoid bus conflicts)
 static int _lastStepNum = -1;
 static unsigned long _lastStepMillis = 0;
 // epubLoad progress occupies 0-70% of the bar; post-load steps cover 70-100%
+static int _totalChaptersForProgress = 0;
+// Only update the on-screen progress bar during initial book load (epubLoad),
+// not during chapter reloads triggered by page turns.
+static bool _progressDisplayEnabled = false;
+
 static void showLoadStep(const char* step) {
   Serial.printf("EPUB step: %s (heap=%u, psram=%u)\n", step, ESP.getFreeHeap(), ESP.getFreePsram());
   _lastStepNum++;
   _lastStepMillis = millis();
+  esp_task_wdt_reset();
+  if (!_progressDisplayEnabled) return;  // Skip screen updates during page-turn reloads
   // Map step number to 0-70%: first 8 fixed steps are ~5% each = 40%,
   // then per-chapter steps fill up to 70%
   int pct;
   if (_lastStepNum <= 8) {
     pct = _lastStepNum * 5;  // 0..40%
+  } else if (_totalChaptersForProgress > 0) {
+    // Scale chapter progress from 40% to 70% based on actual chapter count
+    int chapterStep = _lastStepNum - 8;
+    pct = 40 + min((30 * chapterStep * 5) / _totalChaptersForProgress, 30);
   } else {
     pct = 40 + min((_lastStepNum - 8) * 3, 30);  // 40..70%
   }
@@ -277,8 +288,8 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
                 for (size_t k = valStart; k < valEnd && outPos < outBufSize - 10; k++) {
                   if (htmlBuf[k] == '%' && k + 2 < valEnd) {
                     char hex[3] = {htmlBuf[k+1], htmlBuf[k+2], 0};
-                    char decoded = (char)strtol(hex, nullptr, 16);
-                    if (decoded > 0) { outBuf[outPos++] = decoded; k += 2; continue; }
+                    unsigned char decoded = (unsigned char)strtol(hex, nullptr, 16);
+                    if (decoded != 0) { outBuf[outPos++] = (char)decoded; k += 2; continue; }
                   }
                   outBuf[outPos++] = htmlBuf[k];
                 }
@@ -312,6 +323,21 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
             lastWasNewline = true;
             lastWasSpace = true;  // Prevent space after block-tag newline
           }
+        }
+        // Inline style tags → insert style markers
+        if (outPos < outBufSize - 10) {
+          if (strcmp(tagName, "em") == 0 || strcmp(tagName, "i") == 0)
+            outBuf[outPos++] = STYLE_ITALIC_ON;
+          else if (strcmp(tagName, "/em") == 0 || strcmp(tagName, "/i") == 0)
+            outBuf[outPos++] = STYLE_ITALIC_OFF;
+          else if (strcmp(tagName, "strong") == 0 || strcmp(tagName, "b") == 0)
+            outBuf[outPos++] = STYLE_BOLD_ON;
+          else if (strcmp(tagName, "/strong") == 0 || strcmp(tagName, "/b") == 0)
+            outBuf[outPos++] = STYLE_BOLD_OFF;
+          else if (tagName[0] == 'a' && (tagName[1] == '\0' || tagName[1] == ' '))
+            outBuf[outPos++] = STYLE_UNDERLINE_ON;
+          else if (strcmp(tagName, "/a") == 0)
+            outBuf[outPos++] = STYLE_UNDERLINE_OFF;
         }
       }
 
@@ -364,7 +390,7 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
       }
     }
 
-    // Normal character — convert half-width CJK punctuation to full-width
+    // Normal character — pass through unchanged.
     // In HTML, raw newlines/carriage returns are whitespace, equivalent to spaces.
     // Only block-level tags (</p>, <br>, etc.) produce structural line breaks.
     // All whitespace (space, tab, \n, \r, U+00A0) → collapse to one regular space
@@ -497,6 +523,9 @@ bool epubLoad(const String& epubPath) {
   // Clean up previous EPUB data
   _lastStepNum = -1;  // Reset so all steps display fresh
   _lastStepMillis = 0;
+  _totalChaptersForProgress = 0;
+  _progressDisplayEnabled = true;  // Enable on-screen progress for initial load
+  resetLoadProgress();
   showLoadStep("cleanup");
   epubCleanup();
 
@@ -559,6 +588,25 @@ bool epubLoad(const String& epubPath) {
     epubCleanup(); f.close(); return false;
   }
 
+  // Early comic heuristic: if ZIP has many more images than HTML files,
+  // suppress progress bar updates (each partial e-ink refresh costs ~200ms)
+  {
+    int earlyImgCount = 0, earlyHtmlCount = 0;
+    for (int i = 0; i < epubZipEntryCount; i++) {
+      const String& fn = epubZipEntries[i].filename;
+      if (fn.endsWith(".jpg") || fn.endsWith(".jpeg") || fn.endsWith(".png") ||
+          fn.endsWith(".JPG") || fn.endsWith(".JPEG") || fn.endsWith(".PNG"))
+        earlyImgCount++;
+      else if (fn.endsWith(".html") || fn.endsWith(".xhtml") || fn.endsWith(".htm"))
+        earlyHtmlCount++;
+    }
+    if (earlyHtmlCount > 0 && earlyImgCount >= earlyHtmlCount * 5) {
+      _progressDisplayEnabled = false;
+      Serial.printf("EPUB: Early comic hint (%d img/%d html) — progress display disabled\n",
+                    earlyImgCount, earlyHtmlCount);
+    }
+  }
+
   // Step 1: Find container.xml → get OPF path
   showLoadStep("find OPF");
   String opfPath = "";
@@ -599,6 +647,23 @@ bool epubLoad(const String& epubPath) {
   if (opfContent.length() == 0) {
     lastLoadError = "empty OPF";
     epubCleanup(); f.close(); return false;
+  }
+
+  // Log language from OPF metadata (layout controlled by user's English/Chinese toggle)
+  {
+    int langStart = opfContent.indexOf("<dc:language");
+    if (langStart >= 0) {
+      int langContentStart = opfContent.indexOf('>', langStart);
+      if (langContentStart >= 0) {
+        langContentStart++;
+        int langEnd = opfContent.indexOf("</dc:language>", langContentStart);
+        if (langEnd > langContentStart) {
+          String lang = opfContent.substring(langContentStart, langEnd);
+          lang.trim();
+          Serial.printf("EPUB language: '%s', horizontal=%d\n", lang.c_str(), epubIsHorizontal);
+        }
+      }
+    }
   }
 
   // Parse manifest: <item id="..." href="..." media-type="..."/>
@@ -763,8 +828,40 @@ bool epubLoad(const String& epubPath) {
     return false;
   }
 
+  // Pre-detection: check ZIP-level image ratio (fast heuristic before loading chapters)
+  // If there are many more image files than HTML files, it's almost certainly a manga/comic
+  {
+    int zipImageCount = 0, zipHtmlCount = 0;
+    for (int i = 0; i < epubZipEntryCount; i++) {
+      const String& fn = epubZipEntries[i].filename;
+      if (fn.endsWith(".jpg") || fn.endsWith(".jpeg") || fn.endsWith(".png") ||
+          fn.endsWith(".gif") || fn.endsWith(".JPG") || fn.endsWith(".JPEG") || fn.endsWith(".PNG"))
+        zipImageCount++;
+      else if (fn.endsWith(".html") || fn.endsWith(".xhtml") || fn.endsWith(".htm"))
+        zipHtmlCount++;
+    }
+    Serial.printf("EPUB: ZIP composition: %d images, %d HTML files\n", zipImageCount, zipHtmlCount);
+    if (zipHtmlCount > 0 && zipImageCount >= zipHtmlCount * 5 && epubChapterCount >= 10) {
+      epubIsImageBased = true;
+      _progressDisplayEnabled = false;  // No more e-ink progress updates for comics
+      Serial.printf("EPUB: Detected as IMAGE-BASED via ZIP ratio (%d images / %d HTML = %.1fx)\n",
+                    zipImageCount, zipHtmlCount, (float)zipImageCount / zipHtmlCount);
+    }
+  }
+
   // Step 4: Load initial chapters into buffer
-  showLoadStep("loading...");
+  _totalChaptersForProgress = epubChapterCount;  // Set for progress calculation
+  showLoadStep("AI智能排版中...");
+
+  // For image-based EPUBs detected by ZIP ratio, skip bulk chapter loading
+  // (chapters will be loaded individually when pages are displayed)
+  if (epubIsImageBased) {
+    // Still need to set up chapter metadata with proper zip entry indices
+    // The chapters are already built from spine, just mark them ready
+    Serial.printf("EPUB: Skipping bulk load for image-based EPUB (%d chapters)\n", epubChapterCount);
+    goto detection_done;
+  }
+
   if (!epubLoadChapterRange(0)) {
     if (lastLoadError.isEmpty()) lastLoadError = "chapterRange";
     epubCleanup();
@@ -799,6 +896,7 @@ bool epubLoad(const String& epubPath) {
           char ch = epubFullText[j];
           if (ch == EPUB_IMG_MARKER) { hasImage = true; inMarker = !inMarker; continue; }
           if (inMarker) continue;  // skip image path chars
+          if (ch >= STYLE_ITALIC_ON && ch <= STYLE_BOLD_OFF) continue;  // skip style markers
           if (ch != '\n' && ch != '\r' && ch != ' ' && ch != '\t') realTextChars++;
           if (realTextChars >= 100) break;  // enough to know it's not image-only
         }
@@ -851,8 +949,11 @@ bool epubLoad(const String& epubPath) {
     }
   }
 
-  // Loading complete — no showLoadStep here to avoid e-ink conflicts with drawReading
-  Serial.printf("EPUB: load complete (heap=%u, psram=%u)\n", ESP.getFreeHeap(), ESP.getFreePsram());
+detection_done:
+  // Loading complete — disable on-screen progress for subsequent chapter reloads
+  _progressDisplayEnabled = false;
+  Serial.printf("EPUB: load complete (heap=%u, psram=%u, imgBased=%d)\n",
+                ESP.getFreeHeap(), ESP.getFreePsram(), epubIsImageBased);
   return true;
 }
 
@@ -952,11 +1053,15 @@ bool epubLoadChapterRange(int startChapter) {
     EpubChapterInfo& ch = epubChapters[c];
     ZipEntry& entry = epubZipEntries[ch.zipEntryIndex];
 
-    // Show progress for every chapter
-    {
+    // Show progress periodically (not every chapter — reduces display bus contention)
+    if (c == startChapter || (c - startChapter) % 5 == 0 || c == epubChapterCount - 1) {
       char stepMsg[32];
-      snprintf(stepMsg, sizeof(stepMsg), "ch %d/%d unzip", c + 1, epubChapterCount);
+      snprintf(stepMsg, sizeof(stepMsg), "ch %d/%d", c + 1, epubChapterCount);
       showLoadStep(stepMsg);
+    } else {
+      // Still feed watchdog and yield on non-display iterations
+      esp_task_wdt_reset();
+      yield();
     }
 
     Serial.printf("  Chapter %d/%d: %s (%u bytes comp=%u, free PSRAM: %u)\n",
@@ -977,10 +1082,10 @@ bool epubLoadChapterRange(int startChapter) {
     if (!rawBuf || rawLen == 0) {
       if (rawBuf) free(rawBuf);
       Serial.printf("  Skipping chapter %d (extraction failed)\n", c + 1);
-      // Still update cumulative offset even if extraction fails
-      if (ch.actualTextSize == 0) ch.actualTextSize = ch.estimatedTextSize;
+      // Mark as empty — don't inflate runningOffset for failed extractions
+      // (inflating causes subsequent chapters' offsets to drift from actual buffer positions)
+      ch.actualTextSize = 0;
       ch.cumulativeOffset = runningOffset;
-      runningOffset += ch.actualTextSize;
       continue;
     }
 
@@ -995,11 +1100,7 @@ bool epubLoadChapterRange(int startChapter) {
     // Strip HTML directly into buffer
     // Use the HTML file's own directory as basePath (not OPF directory)
     // so that relative image paths like "../images/cover.jpg" resolve correctly
-    {
-      char stepMsg[32];
-      snprintf(stepMsg, sizeof(stepMsg), "ch %d/%d strip", c + 1, epubChapterCount);
-      showLoadStep(stepMsg);
-    }
+    esp_task_wdt_reset();
     String chapterDir = pathDir(entry.filename);
     size_t remaining = bufferSize - epubFullTextLen - 1;
     unsigned long stripStart = millis();
@@ -1043,6 +1144,7 @@ bool epubLoadChapterRange(int startChapter) {
     }
 
     yield();
+    esp_task_wdt_reset();
   }
 
   f.close();
@@ -1265,6 +1367,7 @@ void epubCleanup() {
   epubEstimatedTotalBytes = 0;
   epubIsImageBased = false;
   epubHasMultiImageChapters = false;
+  epubIsHorizontal = false;
 }
 
 // Parse JPEG dimensions from raw data (returns true if found)
@@ -1441,11 +1544,9 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
     } else {
       float sx = (float)maxW / (float)imgW;
       float sy = (float)maxH / (float)imgH;
-      float scale = (sx < sy) ? sx : sy;  // Fit within bounds
-      if (scale < 1.0f) {
-        scale_x = scale;
-        scale_y = scale;
-      }
+      float scale = (sx < sy) ? sx : sy;  // Fit within bounds (scale up or down)
+      scale_x = scale;
+      scale_y = scale;
       Serial.printf("EPUB IMG: Original %dx%d, scale=%.3f, output ~%dx%d\n",
                     imgW, imgH, scale_x, (int)(imgW * scale_x), (int)(imgH * scale_x));
     }

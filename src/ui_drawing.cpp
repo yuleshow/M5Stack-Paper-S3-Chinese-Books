@@ -68,30 +68,30 @@ bool drawNavIcon(const char* iconName, int x, int y) {
     char iconPath[48];
     snprintf(iconPath, sizeof(iconPath), "/icons/%s", iconName);
     
-    File iconFile;
-    if (sdMutex != NULL) {
-      xSemaphoreTake(sdMutex, portMAX_DELAY);
-      iconFile = SD.open(iconPath);
-      xSemaphoreGive(sdMutex);
-    } else {
-      iconFile = SD.open(iconPath);
-    }
-    
-    if (iconFile) {
-      size_t fileSize = iconFile.size();
-      uint8_t* buffer = (uint8_t*)malloc(fileSize);
-      if (buffer) {
-        size_t bytesRead = iconFile.read(buffer, fileSize);
-        iconFile.close();
-        if (bytesRead == fileSize) {
-          M5.Display.drawPng(buffer, fileSize, x, y);
-          free(buffer);
-          return true;
+    uint8_t* buffer = nullptr;
+    size_t fileSize = 0;
+    size_t bytesRead = 0;
+    {
+      ScopedSDLock lock;
+      File iconFile = SD.open(iconPath);
+      if (iconFile) {
+        fileSize = iconFile.size();
+        if (fileSize > 0 && fileSize <= 512 * 1024) {
+          buffer = (uint8_t*)ps_malloc(fileSize);
+          if (buffer) {
+            bytesRead = iconFile.read(buffer, fileSize);
+          }
         }
-        free(buffer);
-      } else {
         iconFile.close();
       }
+    }
+    if (buffer) {
+      if (bytesRead == fileSize) {
+        M5.Display.drawPng(buffer, fileSize, x, y);
+        free(buffer);
+        return true;
+      }
+      free(buffer);
     }
   }
   
@@ -134,6 +134,14 @@ void drawNavBar(bool showPrev, bool showNext) {
 void drawVerticalNavBar(bool hasPrev, bool hasNext) {
   if (hasNext) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);  // ← left arrow = next page (CJK forward)
   if (hasPrev) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);  // → right arrow = prev page (CJK backward)
+  drawReturnButton();
+}
+
+// Horizontal LTR nav bar: standard left-to-right page flow (English)
+// Left button (←) = prev (go back), Right button (→) = next (go forward)
+void drawHorizontalNavBar(bool hasPrev, bool hasNext) {
+  if (hasPrev) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);  // ← left arrow = prev page
+  if (hasNext) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);  // → right arrow = next page
   drawReturnButton();
 }
 
@@ -399,17 +407,29 @@ void drawSystemTextCentered(const char* text, int centerX, int y, int size, uint
 }
 
 // Progress bar for book loading — call with 0..100
+static int _lastProgressPercent = -1;
+
 void updateLoadProgress(int percent) {
   if (percent < 0) percent = 0;
   if (percent > 100) percent = 100;
+  // Skip redundant display updates when percentage hasn't changed
+  if (percent == _lastProgressPercent) {
+    yield();
+    return;
+  }
+  _lastProgressPercent = percent;
   const int barX = 70, barW = 400, barH = 30;
   int barY = DISPLAY_HEIGHT / 2 + 50;
   int border = 3;
   int fillableW = barW - border * 2;
   int fillW = (fillableW * percent) / 100;
-  M5.Display.setEpdMode(epd_mode_t::epd_fastest);
+  M5.Display.setEpdMode(epd_mode_t::epd_fast);
   M5.Display.fillRect(barX + border, barY + border,
                       fillW, barH - border * 2, TFT_BLACK);
-  M5.Display.display();
+  M5.Display.display(barX, barY, barW, barH);
   yield();
+}
+
+void resetLoadProgress() {
+  _lastProgressPercent = -1;
 }

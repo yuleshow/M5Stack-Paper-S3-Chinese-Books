@@ -30,6 +30,8 @@ SD 卡根目錄/
 │   └── *.bmp                 ← BMP 桌布圖片
 ├── icons/
 │   └── icon1.png – icon8.png ← 自訂主畫面圖標
+├── dict/
+│   └── en-zh.txt              ← 英漢字典（長按查詞用）
 └── fortune_slips/
     ├── kuanyin.bin            ← 觀音靈籖
     └── sensoji.bin            ← 淺草寺靈籖
@@ -189,6 +191,32 @@ units=metric
 | `icon8.png` | 右下（求籤） |
 
 圖標應為 **PNG** 格式。若未找到自訂圖標，則使用內建的嵌入式圖標。
+
+---
+
+## 字典 — `/dict/`
+
+英漢字典，用於英文閱讀模式中的長按查詞功能。
+
+| 檔案 | 說明 |
+|------|------|
+| `en-zh.txt` | Tab 分隔的英漢字典，按字母排序 |
+
+閱讀英文書籍時，長按任意單字即可彈出中文翻譯。
+
+### 產生字典
+
+字典資料來自 [ECDICT](https://github.com/skywind3000/ECDICT)（MIT 授權，約 77 萬條目）：
+
+1. 從 [ECDICT releases 頁面](https://github.com/skywind3000/ECDICT/releases) 下載 `ecdict-sqlite-28.zip`
+2. 解壓獲得 `stardict.db`
+3. 執行轉換腳本：
+
+```bash
+python3 scripts/convert_ecdict.py path/to/stardict.db
+```
+
+產生 `sd_card/dict/en-zh.txt`（約 2.5 MB，依詞頻排名前 50,000 個單字）。將 `dict/` 資料夾複製到 SD 卡即可。
 
 ---
 

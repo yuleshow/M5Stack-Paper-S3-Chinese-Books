@@ -38,5 +38,8 @@ build/
 *.spec
 .venv*/
 
+# Dictionary source (too large for git, ~851MB)
+sd_card/dict/stardict.db
+
 # Boot log
 boot_log.txt

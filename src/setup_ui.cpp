@@ -1,4 +1,5 @@
 #include "globals.h"
+#include <esp_task_wdt.h>
 
 void drawFontMenu() {
   Serial.println("Drawing font menu...");
@@ -9,6 +10,27 @@ void drawFontMenu() {
   }
   numFonts = fontFileCount;  // Update for touch handler
   
+  // Build filtered font list based on mode
+  bool englishMode = (fontMenuReturnMode == MODE_READING && epubIsHorizontal);
+  Serial.printf("Font menu: englishMode=%d, fontMenuReturnMode=%d, epubIsHorizontal=%d, fontFileCount=%d\n",
+                englishMode, fontMenuReturnMode, epubIsHorizontal, fontFileCount);
+  fontMenuFilteredCount = 0;
+  if (englishMode) {
+    for (int i = 0; i < fontFileCount; i++) {
+      if (!fontIsCJK[i]) {
+        fontMenuFilteredMap[fontMenuFilteredCount++] = i;
+      }
+    }
+  } else {
+    for (int i = 0; i < fontFileCount; i++) {
+      if (fontIsCJK[i]) {
+        fontMenuFilteredMap[fontMenuFilteredCount++] = i;
+      }
+    }
+  }
+  Serial.printf("Font menu: filteredCount=%d\n", fontMenuFilteredCount);
+  int visibleCount = fontMenuFilteredCount;
+  
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
   M5.Display.startWrite();
   M5.Display.fillScreen(TFT_WHITE);
@@ -16,7 +38,7 @@ void drawFontMenu() {
   // Status bar + nav bar first
   drawStatusBar();
   {
-    int totalPages = (fontFileCount + FONTS_PER_PAGE - 1) / FONTS_PER_PAGE;
+    int totalPages = (visibleCount + FONTS_PER_PAGE - 1) / FONTS_PER_PAGE;
     bool showPrev = (fontMenuPage > 0);
     bool showNext = (fontMenuPage < totalPages - 1);
     drawNavBar(showPrev, showNext);
@@ -28,15 +50,18 @@ void drawFontMenu() {
   M5.Display.setTextSize(1);
   M5.Display.setTextColor(TFT_BLACK);
   
-  drawSystemText("選擇閱讀字型", 20, 42, 40);
+  if (englishMode)
+    drawSystemText("Select Font", 20, 42, 40);
+  else
+    drawSystemText("選擇閱讀字型", 20, 42, 40);
   M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Pagination
-  int totalPages = (fontFileCount + FONTS_PER_PAGE - 1) / FONTS_PER_PAGE;
+  int totalPages = (visibleCount + FONTS_PER_PAGE - 1) / FONTS_PER_PAGE;
   if (fontMenuPage >= totalPages) fontMenuPage = totalPages - 1;
   if (fontMenuPage < 0) fontMenuPage = 0;
-  int startIdx = fontMenuPage * FONTS_PER_PAGE;
-  int endIdx = min(startIdx + FONTS_PER_PAGE, fontFileCount);
+  int startSlot = fontMenuPage * FONTS_PER_PAGE;
+  int endSlot = min(startSlot + FONTS_PER_PAGE, visibleCount);
   
   // Layout: each item = [separator] [display name] [filename + BIN button] [sample text]
   // Item layout (ITEM_HEIGHT = 100px):
@@ -47,25 +72,32 @@ void drawFontMenu() {
   const int ITEM_HEIGHT = 100;
   const int LIST_TOP = 90;
   const int BIN_BTN_H = 36;
-  for (int i = startIdx; i < endIdx; i++) {
+
+  // ===== Pass 1: Draw all labels/buttons with system font (no font switching) =====
+  // Pre-compute preview info for pass 2
+  struct PreviewInfo {
+    int y;
+    int fontIdx;
+    bool isSelected;
+    bool isStandaloneBin;
+    String fontFile;       // file to load for preview
+    bool isBinPreview;     // true = BIN font, false = TTF/ETBook
+  };
+  PreviewInfo previews[7];  // max FONTS_PER_PAGE
+  int previewCount = 0;
+
+  for (int slot = startSlot; slot < endSlot; slot++) {
+    int i = fontMenuFilteredMap[slot];  // Real font index
+    yield(); esp_task_wdt_reset();
     if (checkNavTouch()) {
       Serial.println("Nav touch during font menu render - aborting");
       return;
     }
     
-    int y = LIST_TOP + ((i - startIdx) * ITEM_HEIGHT);
+    int y = LIST_TOP + ((slot - startSlot) * ITEM_HEIGHT);
 
     // Separator line at top
     M5.Display.drawLine(30, y, 510, y, TFT_LIGHTGRAY);
-    
-    // Check if any paired bin is currently selected
-    int selectedBinIdx = -1;
-    for (int b = 0; b < fontBinCount[i]; b++) {
-      if (i == selectedFontIndex && readingFontFile == fontBinFiles[i][b]) {
-        selectedBinIdx = b;
-        break;
-      }
-    }
     
     if (i == selectedFontIndex) {
       M5.Display.fillRect(30, y + 2, 480, ITEM_HEIGHT - 2, TFT_LIGHTGRAY);
@@ -73,114 +105,150 @@ void drawFontMenu() {
     
     String displayName = fontDisplayNames[i];
     String fileName = fontFileList[i];
-    bool hasBinPair = (fontBinCount[i] > 0);
     
-    // Line 1: Display name (prominent, 22px) with selection indicator
-    String nameInfo = displayName;
-    if (i == selectedFontIndex) nameInfo += " \u2713";
-    drawSystemText(nameInfo.c_str(), 50, y + 5, 22);
-    
-    // Line 2: Filename (smaller, 14px, secondary) + BIN buttons
-    bool isStandaloneBin = (fileName.endsWith(".bin") || fileName.endsWith(".BIN"));
-    String typeLabel = isStandaloneBin ? "\u25A3 " : "\u24C9 ";
-    String fileInfo = typeLabel + fileName;
-    drawSystemText(fileInfo.c_str(), 50, y + 30, 14, TFT_DARKGRAY);
-    
-    // Draw buttons: BIN size buttons + TTF button
-    // For Silver, show the equivalent nominal size (e.g. 36 not 49)
-    bool selectedIsTTF = (i == selectedFontIndex && !isStandaloneBin &&
-                          readingFontFile == fontFileList[i]);
-    if (hasBinPair || !isStandaloneBin) {
-      int btnY = y + 25;
-      int btnX = 510;  // Start from right edge, grow leftward
-      
-      // TTF button (for any font that has a TTF file)
-      if (!isStandaloneBin) {
-        String ttfLabel = "TTF";
-        int ttfBtnW = ttfLabel.length() * 12 + 16;
-        btnX -= (ttfBtnW + 4);
-        if (selectedIsTTF) {
-          M5.Display.fillRoundRect(btnX, btnY, ttfBtnW, BIN_BTN_H, 6, TFT_BLACK);
-          drawSystemText(ttfLabel.c_str(), btnX + 8, btnY + 8, 18, TFT_WHITE, TFT_BLACK);
-        } else {
-          M5.Display.drawRoundRect(btnX, btnY, ttfBtnW, BIN_BTN_H, 6, TFT_DARKGRAY);
-          M5.Display.drawRoundRect(btnX + 1, btnY + 1, ttfBtnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
-          drawSystemText(ttfLabel.c_str(), btnX + 8, btnY + 8, 18, TFT_DARKGRAY);
+    if (englishMode) {
+      String nameInfo = displayName;
+      if (i == selectedFontIndex) nameInfo += " \u2713";
+      drawSystemText(nameInfo.c_str(), 50, y + 5, 22);
+      // Store preview info for pass 2
+      previews[previewCount] = {y, i, (i == selectedFontIndex), false, fileName, false};
+      previewCount++;
+    } else {
+      // Chinese mode: full layout with filename, BIN/TTF buttons
+      bool hasBinPair = (fontBinCount[i] > 0);
+      int selectedBinIdx = -1;
+      for (int b = 0; b < fontBinCount[i]; b++) {
+        if (i == selectedFontIndex && readingFontFile == fontBinFiles[i][b]) {
+          selectedBinIdx = b;
+          break;
         }
       }
+    
+      String nameInfo = displayName;
+      if (i == selectedFontIndex) nameInfo += " \u2713";
+      drawSystemText(nameInfo.c_str(), 50, y + 5, 22);
+    
+      bool isStandaloneBin = (fileName.endsWith(".bin") || fileName.endsWith(".BIN"));
+      String typeLabel = isStandaloneBin ? "\u25A3 " : "\u24C9 ";
+      String fileInfo = typeLabel + fileName;
+      drawSystemText(fileInfo.c_str(), 50, y + 30, 14, TFT_DARKGRAY);
+    
+      bool selectedIsTTF = (i == selectedFontIndex && !isStandaloneBin &&
+                            readingFontFile == fontFileList[i]);
+      if (hasBinPair || !isStandaloneBin) {
+        int btnY = y + 25;
+        int btnX = 510;
       
-      // BIN size buttons (only if there are paired bins)
-      if (hasBinPair) {
-        bool isSilverFont = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
-        for (int b = fontBinCount[i] - 1; b >= 0; b--) {
-          int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[i][b]) : (int)fontBinSizes[i][b];
-          String label = String(displaySize);
-          int btnW = label.length() * 12 + 16;
-          btnX -= (btnW + 4);
-          if (b == selectedBinIdx) {
-            M5.Display.fillRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_BLACK);
-            drawSystemTextCentered(label.c_str(), btnX + btnW / 2, btnY + (BIN_BTN_H - 18) / 2, 18, TFT_WHITE, TFT_BLACK);
+        if (!isStandaloneBin) {
+          String ttfLabel = "TTF";
+          int ttfBtnW = ttfLabel.length() * 12 + 16;
+          btnX -= (ttfBtnW + 4);
+          if (selectedIsTTF) {
+            M5.Display.fillRoundRect(btnX, btnY, ttfBtnW, BIN_BTN_H, 6, TFT_BLACK);
+            drawSystemText(ttfLabel.c_str(), btnX + 8, btnY + 8, 18, TFT_WHITE, TFT_BLACK);
           } else {
-            M5.Display.drawRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_DARKGRAY);
-            M5.Display.drawRoundRect(btnX + 1, btnY + 1, btnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
-            drawSystemTextCentered(label.c_str(), btnX + btnW / 2, btnY + (BIN_BTN_H - 18) / 2, 18, TFT_DARKGRAY);
+            M5.Display.drawRoundRect(btnX, btnY, ttfBtnW, BIN_BTN_H, 6, TFT_DARKGRAY);
+            M5.Display.drawRoundRect(btnX + 1, btnY + 1, ttfBtnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
+            drawSystemText(ttfLabel.c_str(), btnX + 8, btnY + 8, 18, TFT_DARKGRAY);
+          }
+        }
+      
+        if (hasBinPair) {
+          bool isSilverFont = (fileName.indexOf("Silver") >= 0 || fileName.indexOf("silver") >= 0);
+          for (int b = fontBinCount[i] - 1; b >= 0; b--) {
+            int displaySize = isSilverFont ? silverNominalSize(fontBinSizes[i][b]) : (int)fontBinSizes[i][b];
+            String label = String(displaySize);
+            int btnW = label.length() * 12 + 16;
+            btnX -= (btnW + 4);
+            if (b == selectedBinIdx) {
+              M5.Display.fillRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_BLACK);
+              drawSystemTextCentered(label.c_str(), btnX + btnW / 2, btnY + (BIN_BTN_H - 18) / 2, 18, TFT_WHITE, TFT_BLACK);
+            } else {
+              M5.Display.drawRoundRect(btnX, btnY, btnW, BIN_BTN_H, 6, TFT_DARKGRAY);
+              M5.Display.drawRoundRect(btnX + 1, btnY + 1, btnW - 2, BIN_BTN_H - 2, 5, TFT_DARKGRAY);
+              drawSystemTextCentered(label.c_str(), btnX + btnW / 2, btnY + (BIN_BTN_H - 18) / 2, 18, TFT_DARKGRAY);
+            }
           }
         }
       }
-    }
-    
-    // Line 3: Sample text (rendered in actual font — use TTF for preview)
-    int sampleTop = y + 50;
-    int sampleH = 40;
-    String sampleLine = "\xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
 
-    if (isStandaloneBin) {
-      // Standalone BIN (no TTF pair) — render sample with the selected bin
-      // Use the selected bin if this font is currently selected, otherwise use primary
-      String sampleBinFile = fileName;
-      if (i == selectedFontIndex && selectedBinIdx >= 0) {
-        sampleBinFile = fontBinFiles[i][selectedBinIdx];
+      // Determine which file to use for sample preview
+      String previewFile = fileName;
+      bool isBin = isStandaloneBin;
+      if (isStandaloneBin) {
+        if (i == selectedFontIndex && selectedBinIdx >= 0) {
+          previewFile = fontBinFiles[i][selectedBinIdx];
+        }
       }
-      if (g_binFont.loaded) {
-        if (g_binFont.index) { free(g_binFont.index); g_binFont.index = nullptr; }
-        g_binFont.fontFile.close();
-        g_binFont.loaded = false;
-      }
-      if (loadBinaryFont(sampleBinFile.c_str())) {
+      previews[previewCount] = {y, i, (i == selectedFontIndex), isStandaloneBin, previewFile, isBin};
+      previewCount++;
+    }
+  }
+
+  // ===== Pass 2: Draw font previews (no system font restores between items) =====
+  // Ensure PSRAM-heavy buffers are freed before preview pass (each preview
+  // loads/unloads a font with large alloc/free cycles).
+  if (currentBookIsEpub && epubFullText) {
+    free(epubFullText);
+    epubFullText = nullptr;
+    epubFullTextLen = 0;
+  }
+  freeGlyphCache();
+  M5.Display.setAutoDisplay(false);
+  M5.Display.endWrite();
+  String sampleLineCJK = "\xE7\xAF\x84\xE4\xBE\x8B\xEF\xBC\x9A\xE3\x80\x8C\xE9\x80\x99\xE6\x97\xA5\xEF\xBC\x8C\xE3\x80\x82\xE3\x80\x8D";
+  String sampleLineEn = "The quick brown fox jumps over";
+
+  for (int p = 0; p < previewCount; p++) {
+    yield(); esp_task_wdt_reset();
+    auto &pv = previews[p];
+    int sampleTop = pv.y + (englishMode ? 40 : 50);
+    int sampleH = 40;
+    uint16_t bg = pv.isSelected ? TFT_LIGHTGRAY : TFT_WHITE;
+    const String &sampleLine = englishMode ? sampleLineEn : sampleLineCJK;
+
+    if (pv.isBinPreview) {
+      // BIN font preview
+      unloadBinaryFont();
+      bool binLoaded = loadBinaryFont(pv.fontFile.c_str());
+      if (binLoaded) {
         float scale = (float)sampleH / g_binFont.fontSize;
         drawBinFontStringScaled(sampleLine, 50, sampleTop, scale, true);
-      } else {
-        drawSystemText(sampleLine.c_str(), 50, sampleTop, 24);
       }
+    } else if (pv.fontFile == "ETBook-embedded") {
+      loadEmbeddedETBook(36);
+      ofr.setFontColor(TFT_BLACK, bg);
+      ofr.drawString(sampleLine.c_str(), 50, sampleTop);
     } else {
-      // TTF (with or without BIN pair) — always preview with TTF
-      int previewSize = 40;
-      bool loaded = loadTTFFont(fileName.c_str(), previewSize);
+      // TTF preview — loadTTFFont internally unloads previous font
+      bool loaded = loadTTFFont(pv.fontFile.c_str(), englishMode ? 36 : 40);
       if (loaded && ofrFontLoaded) {
-        ofr.setFontColor(TFT_BLACK, (i == selectedFontIndex) ? TFT_LIGHTGRAY : TFT_WHITE);
+        ofr.setFontColor(TFT_BLACK, bg);
         ofr.drawString(sampleLine.c_str(), 50, sampleTop);
-      } else {
-        drawSystemText(sampleLine.c_str(), 50, sampleTop, 24);
       }
     }
   }
-  
-  // Free any bin font loaded during preview
-  if (g_binFont.loaded) {
-    if (g_binFont.index) { free(g_binFont.index); g_binFont.index = nullptr; }
-    g_binFont.fontFile.close();
-    g_binFont.loaded = false;
-  }
 
-  // Restore system font after rendering font previews
-  loadSystemFont();
+  // Restore system font (thorough cleanup)
+  unloadBinaryFont();
+  resetToSystemFont();
+  M5.Display.startWrite();
   
   // Status at bottom — two lines, larger text
-  String sysLine = "系統：" + (systemFontFile.length() > 0 ? systemFontFile : String("內建"));
-  drawSystemText(sysLine.c_str(), 20, 810, 22);
-  if (readingFontIndex >= 0 && readingFontIndex < fontFileCount) {
-    String rdLine = "閱讀：" + fontDisplayNames[readingFontIndex];
-    drawSystemText(rdLine.c_str(), 20, 840, 22);
+  if (englishMode) {
+    String rdLine = "Font: ";
+    if (readingFontIndex >= 0 && readingFontIndex < fontFileCount)
+      rdLine += fontDisplayNames[readingFontIndex];
+    else
+      rdLine += "Default";
+    drawSystemText(rdLine.c_str(), 20, 820, 22);
+  } else {
+    String sysLine = "系統：" + (systemFontFile.length() > 0 ? systemFontFile : String("內建"));
+    drawSystemText(sysLine.c_str(), 20, 810, 22);
+    if (readingFontIndex >= 0 && readingFontIndex < fontFileCount) {
+      String rdLine = "閱讀：" + fontDisplayNames[readingFontIndex];
+      drawSystemText(rdLine.c_str(), 20, 840, 22);
+    }
   }
   
   // Page indicator next to right arrow, larger font
@@ -191,13 +259,13 @@ void drawFontMenu() {
     M5.Display.printf("%d/%d", fontMenuPage + 1, totalPages);
   }
   
+  M5.Display.endWrite();
+  M5.Display.setAutoDisplay(true);
   Serial.println("Calling display()...");
   if (pendingNavTouch) {
     Serial.println("Skipping display() - nav touch pending");
-    M5.Display.endWrite();
     return;
   }
-  M5.Display.endWrite();
   M5.Display.display();
   
   // Flush stale touch state after e-ink quality refresh to prevent phantom
@@ -1395,8 +1463,10 @@ void drawAboutPage() {
 
   // Build date
   M5.Display.drawLine(20, y - 5, 520, y - 5, EPD_LIGHT_GRAY);
-  String buildInfo = String("編譯日期：") + __DATE__ + "  " + __TIME__;
-  drawSystemText(buildInfo.c_str(), 20, y, 22);
+  {
+    int xOff = drawSystemText("編譯日期：", 20, y, 22);
+    drawSystemText((String(__DATE__) + "  " + __TIME__).c_str(), 20 + xOff, y, 22);
+  }
   y += lineH;
 
   // Hardware
@@ -1404,31 +1474,41 @@ void drawAboutPage() {
   y += lineH;
 
   // CPU frequency
-  String cpuInfo = "CPU：" + String(ESP.getCpuFreqMHz()) + " MHz";
-  drawSystemText(cpuInfo.c_str(), 20, y, 22);
+  {
+    int xOff = drawSystemText("CPU：", 20, y, 22);
+    drawSystemText((String(ESP.getCpuFreqMHz()) + " MHz").c_str(), 20 + xOff, y, 22);
+  }
   y += lineH;
 
   // Flash
-  String flashInfo = "Flash：" + String(ESP.getFlashChipSize() / 1024 / 1024) + " MB";
-  drawSystemText(flashInfo.c_str(), 20, y, 22);
+  {
+    int xOff = drawSystemText("Flash：", 20, y, 22);
+    drawSystemText((String(ESP.getFlashChipSize() / 1024 / 1024) + " MB").c_str(), 20 + xOff, y, 22);
+  }
   y += lineH;
 
   // PSRAM
-  String psramInfo = "PSRAM：" + String(ESP.getPsramSize() / 1024 / 1024) + " MB（剩餘 " + String(ESP.getFreePsram() / 1024) + " KB）";
-  drawSystemText(psramInfo.c_str(), 20, y, 22);
+  {
+    int xOff = drawSystemText("PSRAM：", 20, y, 22);
+    xOff += drawSystemText((String(ESP.getPsramSize() / 1024 / 1024) + " MB").c_str(), 20 + xOff, y, 22);
+    xOff += drawSystemText("（剩餘 ", 20 + xOff, y, 22);
+    drawSystemText((String(ESP.getFreePsram() / 1024) + " KB）").c_str(), 20 + xOff, y, 22);
+  }
   y += lineH;
 
   // Heap
-  String heapInfo = "記憶體：剩餘 " + String(ESP.getFreeHeap() / 1024) + " KB";
-  drawSystemText(heapInfo.c_str(), 20, y, 22);
+  {
+    int xOff = drawSystemText("記憶體：剩餘 ", 20, y, 22);
+    drawSystemText((String(ESP.getFreeHeap() / 1024) + " KB").c_str(), 20 + xOff, y, 22);
+  }
   y += lineH;
 
   // SD card
   if (sdCardAvailable) {
     uint64_t totalBytes = SD.totalBytes();
     uint64_t usedBytes = SD.usedBytes();
-    String sdInfo = "SD 卡：" + String((uint32_t)(usedBytes / 1024 / 1024)) + " / " + String((uint32_t)(totalBytes / 1024 / 1024)) + " MB";
-    drawSystemText(sdInfo.c_str(), 20, y, 22);
+    int xOff = drawSystemText("SD 卡：", 20, y, 22);
+    drawSystemText((String((uint32_t)(usedBytes / 1024 / 1024)) + " / " + String((uint32_t)(totalBytes / 1024 / 1024)) + " MB").c_str(), 20 + xOff, y, 22);
   } else {
     drawSystemText("SD 卡：未插入", 20, y, 22);
   }
@@ -1440,8 +1520,8 @@ void drawAboutPage() {
 
   // WiFi
   if (WiFi.status() == WL_CONNECTED) {
-    String wifiInfo = "WiFi：" + WiFi.SSID() + "  " + WiFi.localIP().toString();
-    drawSystemText(wifiInfo.c_str(), 20, y, 22);
+    int xOff = drawSystemText("WiFi：", 20, y, 22);
+    drawSystemText((WiFi.SSID() + "  " + WiFi.localIP().toString()).c_str(), 20 + xOff, y, 22);
   } else {
     drawSystemText("WiFi：未連接", 20, y, 22);
   }

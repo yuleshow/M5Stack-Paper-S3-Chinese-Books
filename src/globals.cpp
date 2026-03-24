@@ -217,7 +217,11 @@ String fontDisplayNames[MAX_FONT_FILES];
 String fontBinFiles[MAX_FONT_FILES][MAX_BIN_PER_FONT];
 uint8_t fontBinSizes[MAX_FONT_FILES][MAX_BIN_PER_FONT];
 int fontBinCount[MAX_FONT_FILES];
+bool fontIsCJK[MAX_FONT_FILES];
+String fontStyleFiles[MAX_FONT_FILES][4];
 int fontFileCount = 0;
+int fontMenuFilteredMap[MAX_FONT_FILES];
+int fontMenuFilteredCount = 0;
 
 // Mode
 Mode currentMode = MODE_WELCOME;
@@ -285,6 +289,7 @@ String epubBasePath = "";
 size_t epubEstimatedTotalBytes = 0;
 bool epubIsImageBased = false;
 bool epubHasMultiImageChapters = false;
+bool epubIsHorizontal = false;
 TocEntry* epubTocEntries = nullptr;
 int epubTocCount = 0;
 int tocListPage = 0;
@@ -348,6 +353,10 @@ String medPasscodeFirst = "";
 // Fortune Slips
 int fortuneSlipCategory = -1;  // 0=kuanyin, 1=senso-ji
 int fortuneSlipNumber = -1;
+int sensoji_wording_page = 0;  // 0=first page, 1+=continuation pages (for Silver enlarged text)
+bool sensoji_hasMore = false;   // true if sensoji wording has more pages
+int kuanyin_story_page = 0;    // page index for kuanyin story (multi-page for Silver)
+bool kuanyin_story_hasMore = false;  // true if story has more pages
 
 // WiFi / Config
 WiFiConfig wifiConfig;

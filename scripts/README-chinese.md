@@ -16,13 +16,17 @@ Python 建置工具與資產轉換及分析公用程式。
 | `convert_sleeping.py` | 將 `assets/sleeping.jpg` 睡眠畫面圖片轉換為 C 標頭檔（`src/sleeping_jpg.h`） |
 | `convert_icons.py` | 將 `assets/icons/` 中的 PNG 圖標轉換為 `src/icons/` 中的 C 標頭檔 |
 | `convert_cangjie.py` | 將 `data/cangjie5.dict.yaml` 轉換為二進位查詢格式（`assets/cangjie5.bin`） |
-| `convert_ttf_to_bin.py` | 將 TTF 字型轉換為預渲染 BIN 格式以加速載入。支援備用字型借取缺失字形，以及渲染尺寸縮放（如 Silver 以 61px 渲染 → 44px 方格）。自動將水平括號字形順時針旋轉 90° 以合成缺失的直排形式。每個字形均在字面框內水平及垂直置中。使用 `--gui` 啟動圖形介面。 |
+| `convert_ttf_to_bin.py` | 將 TTF 字型轉換為預渲染 BIN 格式以加速載入。支援備用字型借取缺失字形，以及渲染尺寸縮放（如 Silver 以 61px 渲染 → 44px 方格）。自動將水平括號字形順時針旋轉 90° 以合成缺失的直排形式。每個字形均在字面框內水平及垂直置中。正確讀取 TTC 合集檔案的 cmap。使用 `--gui` 啟動圖形介面。 |
 
 ### 字型轉換器 GUI
 
 ![字型轉換器 GUI](convert_ttf_to_bin-gui.png)
 
-執行 `python3 convert_ttf_to_bin.py --gui` 啟動圖形化轉換器。支援中英語言切換、字型預覽、備用字型選擇及批次轉換。
+執行 `python3 convert_ttf_to_bin.py --gui` 啟動圖形化轉換器。支援中英語言切換、字型預覽、備用字型選擇及批次轉換。功能包括：
+- **CJK 字型篩選** — 自動隱藏僅含英文的字型
+- **可捲動字型清單** — 支援大量字型集合的捲動區域與滑鼠滾輪
+- **備用字形警告** — 當超過 50% 字形來自備用字型時發出警告（表示字型讀取問題）
+- **macOS 應用程式** — 使用 `bash scripts/build_mac_app.sh` 建置獨立 `.app` 和 `.dmg`
 
 | 腳本 | 說明 |
 |------|------|

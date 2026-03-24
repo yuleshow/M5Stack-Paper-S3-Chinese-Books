@@ -30,6 +30,8 @@ SD Card Root/
 │   └── *.bmp                 ← BMP wallpaper images
 ├── icons/
 │   └── icon1.png – icon8.png ← Custom dashboard icons
+├── dict/
+│   └── en-zh.txt              ← English-Chinese dictionary (for long-press lookup)
 └── fortune_slips/
     ├── kuanyin.bin            ← 觀音靈籖 (Guanyin fortune slips)
     └── sensoji.bin            ← 淺草寺靈籖 (Sensoji fortune slips)
@@ -189,6 +191,32 @@ Custom dashboard icons to replace the built-in defaults.
 | `icon8.png` | Bottom-right (求籖) |
 
 Icons should be **PNG** format. If a custom icon is not found, the built-in embedded icon is used.
+
+---
+
+## Dictionary — `/dict/`
+
+English-Chinese dictionary for the long-press word lookup feature in English reading mode.
+
+| File | Description |
+|------|-------------|
+| `en-zh.txt` | Tab-separated English-Chinese dictionary, sorted alphabetically |
+
+Long-press any word while reading an English book to see its Chinese translation in a popup.
+
+### Generating the dictionary
+
+The dictionary is generated from [ECDICT](https://github.com/skywind3000/ECDICT) (MIT license, ~770K entries):
+
+1. Download `ecdict-sqlite-28.zip` from the [ECDICT releases page](https://github.com/skywind3000/ECDICT/releases)
+2. Extract `stardict.db`
+3. Run the conversion script:
+
+```bash
+python3 scripts/convert_ecdict.py path/to/stardict.db
+```
+
+This generates `sd_card/dict/en-zh.txt` (~2.5 MB, top 50,000 words by frequency). Copy the `dict/` folder to your SD card.
 
 ---
 

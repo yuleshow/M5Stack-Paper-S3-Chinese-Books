@@ -1,5 +1,6 @@
 #include "globals.h"
 #include "esp_task_wdt.h"
+#include "etbook_ttf.h"
 
 // ==================== OpenFontRender SD File I/O Overrides ====================
 
@@ -264,79 +265,112 @@ void scanFontFiles() {
   
   if (!sdCardAvailable) return;
   
-  File fontsDir;
-  if (sdMutex != NULL) {
-    xSemaphoreTake(sdMutex, portMAX_DELAY);
-    fontsDir = SD.open("/fonts");
-    xSemaphoreGive(sdMutex);
-  } else {
-    fontsDir = SD.open("/fonts");
-  }
-  
-  if (!fontsDir || !fontsDir.isDirectory()) return;
-  
   // First pass: collect all font files into temporary arrays
-  String tmpFiles[MAX_FONT_FILES];
-  String tmpNames[MAX_FONT_FILES];
-  bool   tmpIsBin[MAX_FONT_FILES];
-  uint8_t tmpBinSize[MAX_FONT_FILES];
+  // Use static to avoid ~3KB+ stack allocation (function called only once)
+  // Chinese fonts live in /fonts/, English fonts in /fonts/en/
+  static String tmpFiles[MAX_FONT_FILES];
+  static String tmpNames[MAX_FONT_FILES];
+  static bool   tmpIsBin[MAX_FONT_FILES];
+  static bool   tmpIsCJK[MAX_FONT_FILES];
+  static uint8_t tmpBinSize[MAX_FONT_FILES];
   int tmpCount = 0;
   
-  File entry = fontsDir.openNextFile();
-  while (entry && tmpCount < MAX_FONT_FILES) {
-    String name = String(entry.name());
-    if (!name.startsWith("._") && !name.startsWith(".")) {
-      if (name.endsWith(".ttf") || name.endsWith(".TTF") ||
-          name.endsWith(".ttc") || name.endsWith(".TTC") ||
-          name.endsWith(".otf") || name.endsWith(".OTF")) {
-        if (!ttfHasCJK(entry)) {
-          Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
-        } else {
+  // Scan both /fonts/ (CJK) and /fonts/en/ (English)
+  const char* scanDirs[] = { "/fonts", "/fonts/en" };
+  const char* scanPrefixes[] = { "", "en/" };
+  const bool  scanIsCJK[] = { true, false };
+  
+  for (int d = 0; d < 2; d++) {
+    File fontsDir;
+    if (sdMutex != NULL) {
+      xSemaphoreTake(sdMutex, portMAX_DELAY);
+      fontsDir = SD.open(scanDirs[d]);
+      xSemaphoreGive(sdMutex);
+    } else {
+      fontsDir = SD.open(scanDirs[d]);
+    }
+    
+    if (!fontsDir || !fontsDir.isDirectory()) {
+      if (d == 0) Serial.println("WARNING: /fonts directory not found");
+      continue;
+    }
+    
+    bool isCJK = scanIsCJK[d];
+    String prefix = scanPrefixes[d];
+    Serial.printf("Scanning %s (%s fonts)...\n", scanDirs[d], isCJK ? "CJK" : "English");
+    
+    File entry = fontsDir.openNextFile();
+    while (entry && tmpCount < MAX_FONT_FILES) {
+      yield(); esp_task_wdt_reset();
+      String name = String(entry.name());
+      if (!name.startsWith("._") && !name.startsWith(".") && !entry.isDirectory()) {
+        if (name.endsWith(".ttf") || name.endsWith(".TTF") ||
+            name.endsWith(".ttc") || name.endsWith(".TTC") ||
+            name.endsWith(".otf") || name.endsWith(".OTF")) {
           String displayName = extractTTFName(entry);
-          // Map well-known English names to Traditional Chinese
-          if (displayName == "Noto Sans TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE9\xBB\x91\xE9\xAB\x94";  // 思源黑體
-          else if (displayName == "Noto Serif TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE5\xAE\x8B\xE9\xAB\x94";  // 思源宋體
-          tmpFiles[tmpCount] = name;
+          if (isCJK) {
+            // Map well-known English names to Traditional Chinese
+            if (displayName == "Noto Sans TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE9\xBB\x91\xE9\xAB\x94";  // 思源黑體
+            else if (displayName == "Noto Serif TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE5\xAE\x8B\xE9\xAB\x94";  // 思源宋體
+          }
+          tmpFiles[tmpCount] = prefix + name;
           tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
           tmpIsBin[tmpCount] = false;
+          tmpIsCJK[tmpCount] = isCJK;
           tmpBinSize[tmpCount] = 0;
-          Serial.printf("  Font found: %s → %s\n", name.c_str(), tmpNames[tmpCount].c_str());
+          Serial.printf("  %s font: %s → %s\n", isCJK ? "CJK" : "English", (prefix + name).c_str(), tmpNames[tmpCount].c_str());
           tmpCount++;
-        }
-      } else if (name.endsWith(".bin") || name.endsWith(".BIN")) {
-        if (!binHasCJK(entry)) {
-          Serial.printf("  Skipped (no CJK): %s\n", name.c_str());
-        } else {
+        } else if (name.endsWith(".bin") || name.endsWith(".BIN")) {
           String displayName = extractBinFontName(entry);
-          // Map well-known English names to Traditional Chinese
-          if (displayName == "Noto Sans TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE9\xBB\x91\xE9\xAB\x94";  // 思源黑體
-          else if (displayName == "Noto Serif TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE5\xAE\x8B\xE9\xAB\x94";  // 思源宋體
-          tmpFiles[tmpCount] = name;
+          if (isCJK) {
+            if (displayName == "Noto Sans TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE9\xBB\x91\xE9\xAB\x94";  // 思源黑體
+            else if (displayName == "Noto Serif TC") displayName = "\xE6\x80\x9D\xE6\xBA\x90\xE5\xAE\x8B\xE9\xAB\x94";  // 思源宋體
+          }
+          tmpFiles[tmpCount] = prefix + name;
           tmpNames[tmpCount] = (displayName.length() > 0) ? displayName : name;
           tmpIsBin[tmpCount] = true;
+          tmpIsCJK[tmpCount] = isCJK;
           tmpBinSize[tmpCount] = extractBinFontSize(entry);
-          Serial.printf("  Font found: %s → %s (%dpt)\n", name.c_str(), tmpNames[tmpCount].c_str(), tmpBinSize[tmpCount]);
+          Serial.printf("  %s font: %s → %s (%dpt)\n", isCJK ? "CJK" : "English", (prefix + name).c_str(), tmpNames[tmpCount].c_str(), tmpBinSize[tmpCount]);
           tmpCount++;
         }
       }
+      entry.close();
+      entry = fontsDir.openNextFile();
     }
-    entry.close();
-    entry = fontsDir.openNextFile();
+    fontsDir.close();
   }
-  fontsDir.close();
   
   // Second pass: pair TTF+BIN fonts with matching display names
   // TTF entries take priority; matching BIN files become the paired counterparts
   // A TTF can have multiple BIN files with different font sizes
-  bool binPaired[MAX_FONT_FILES];
-  for (int i = 0; i < tmpCount; i++) binPaired[i] = false;
+  static bool binPaired[MAX_FONT_FILES];
+  static bool ttfPaired[MAX_FONT_FILES];
+  for (int i = 0; i < tmpCount; i++) { binPaired[i] = false; ttfPaired[i] = false; }
   
-  // Add all TTF entries first
+  // Helper: detect font style from filename
+  auto detectStyle = [](const String& filename) -> int {
+    String lower = filename;
+    lower.toLowerCase();
+    int dot = lower.lastIndexOf('.');
+    if (dot > 0) lower = lower.substring(0, dot);
+    bool hasBold = lower.indexOf("bold") >= 0 || lower.endsWith("bd");
+    bool hasItalic = lower.indexOf("italic") >= 0 || lower.endsWith("bi") || lower.endsWith("it");
+    if (hasBold && hasItalic) return 3;  // Bold Italic
+    if (hasBold) return 2;               // Bold
+    if (hasItalic) return 1;             // Italic
+    return 0;                            // Regular
+  };
+  
+  // Add CJK TTF entries (one entry per font, no grouping needed)
   for (int i = 0; i < tmpCount && fontFileCount < MAX_FONT_FILES; i++) {
-    if (tmpIsBin[i]) continue;  // Skip BIN in this pass
+    if (tmpIsBin[i] || !tmpIsCJK[i]) continue;
     fontFileList[fontFileCount] = tmpFiles[i];
     fontDisplayNames[fontFileCount] = tmpNames[i];
     fontBinCount[fontFileCount] = 0;
+    fontIsCJK[fontFileCount] = true;
+    for (int s = 0; s < 4; s++) fontStyleFiles[fontFileCount][s] = "";
+    ttfPaired[i] = true;
     
     // Find all matching BINs by display name
     String ttfNameLow = tmpNames[i];
@@ -351,10 +385,64 @@ void scanFontFiles() {
         fontBinSizes[fontFileCount][idx] = tmpBinSize[j];
         fontBinCount[fontFileCount]++;
         binPaired[j] = true;
-        Serial.printf("  Paired: %s + %s (%s, %dpt)\n", tmpFiles[i].c_str(), tmpFiles[j].c_str(), tmpNames[i].c_str(), tmpBinSize[j]);
       }
     }
     fontFileCount++;
+  }
+  
+  // Add non-CJK TTF entries, grouped by family name
+  for (int i = 0; i < tmpCount && fontFileCount < MAX_FONT_FILES; i++) {
+    if (tmpIsBin[i] || tmpIsCJK[i] || ttfPaired[i]) continue;
+    
+    // Check if we already created an entry for this family
+    String familyLow = tmpNames[i];
+    familyLow.toLowerCase();
+    int existingIdx = -1;
+    for (int f = 0; f < fontFileCount; f++) {
+      if (fontIsCJK[f]) continue;
+      String existLow = fontDisplayNames[f];
+      existLow.toLowerCase();
+      if (existLow == familyLow) { existingIdx = f; break; }
+    }
+    
+    int style = detectStyle(tmpFiles[i]);
+    
+    if (existingIdx >= 0) {
+      // Add as style variant to existing group
+      if (fontStyleFiles[existingIdx][style].length() == 0) {
+        fontStyleFiles[existingIdx][style] = tmpFiles[i];
+        // If this is Regular and the current primary isn't, update primary
+        if (style == 0) fontFileList[existingIdx] = tmpFiles[i];
+        Serial.printf("  Grouped style: %s into %s (style %d)\n", tmpFiles[i].c_str(), fontDisplayNames[existingIdx].c_str(), style);
+      }
+    } else {
+      // Create new family entry
+      fontFileList[fontFileCount] = tmpFiles[i];
+      fontDisplayNames[fontFileCount] = tmpNames[i];
+      fontBinCount[fontFileCount] = 0;
+      fontIsCJK[fontFileCount] = false;
+      for (int s = 0; s < 4; s++) fontStyleFiles[fontFileCount][s] = "";
+      fontStyleFiles[fontFileCount][style] = tmpFiles[i];
+      
+      // Look ahead for other variants with the same family name
+      for (int j = i + 1; j < tmpCount; j++) {
+        if (tmpIsBin[j] || tmpIsCJK[j] || ttfPaired[j]) continue;
+        String otherLow = tmpNames[j];
+        otherLow.toLowerCase();
+        if (otherLow == familyLow) {
+          int otherStyle = detectStyle(tmpFiles[j]);
+          if (fontStyleFiles[fontFileCount][otherStyle].length() == 0) {
+            fontStyleFiles[fontFileCount][otherStyle] = tmpFiles[j];
+            // Prefer a Regular file as the primary
+            if (otherStyle == 0) fontFileList[fontFileCount] = tmpFiles[j];
+          }
+          ttfPaired[j] = true;
+          Serial.printf("  Grouped style: %s (style %d)\n", tmpFiles[j].c_str(), otherStyle);
+        }
+      }
+      ttfPaired[i] = true;
+      fontFileCount++;
+    }
   }
   
   // Add unpaired BIN entries (no matching TTF found)
@@ -391,6 +479,7 @@ void scanFontFiles() {
       fontBinFiles[fontFileCount][0] = tmpFiles[i];
       fontBinSizes[fontFileCount][0] = tmpBinSize[i];
       fontBinCount[fontFileCount] = 1;
+      fontIsCJK[fontFileCount] = true;
       binPaired[i] = true;
       
       // Look ahead for other BINs with the same display name to group them
@@ -426,6 +515,15 @@ void scanFontFiles() {
         tmp = fontDisplayNames[i];
         fontDisplayNames[i] = fontDisplayNames[j];
         fontDisplayNames[j] = tmp;
+        bool tmpCJK = fontIsCJK[i];
+        fontIsCJK[i] = fontIsCJK[j];
+        fontIsCJK[j] = tmpCJK;
+        // Swap style files
+        for (int k = 0; k < 4; k++) {
+          tmp = fontStyleFiles[i][k];
+          fontStyleFiles[i][k] = fontStyleFiles[j][k];
+          fontStyleFiles[j][k] = tmp;
+        }
         // Swap bin arrays
         int tmpCnt = fontBinCount[i];
         fontBinCount[i] = fontBinCount[j];
@@ -442,7 +540,21 @@ void scanFontFiles() {
     }
   }
   
+  // Add embedded ET Book as virtual entry (from firmware, no SD file)
+  if (fontFileCount < MAX_FONT_FILES) {
+    fontFileList[fontFileCount] = "ETBook-embedded";
+    fontDisplayNames[fontFileCount] = "ET Book (Built-in)";
+    fontBinCount[fontFileCount] = 0;
+    fontIsCJK[fontFileCount] = false;
+    for (int s = 0; s < 4; s++) fontStyleFiles[fontFileCount][s] = "";
+    fontStyleFiles[fontFileCount][0] = "ETBook-embedded";
+    fontFileCount++;
+  }
+  
   Serial.printf("Total fonts found: %d\n", fontFileCount);
+  for (int i = 0; i < fontFileCount; i++) {
+    Serial.printf("  [%d] %s (CJK=%d, file=%s)\n", i, fontDisplayNames[i].c_str(), fontIsCJK[i], fontFileList[i].c_str());
+  }
 }
 
 // ==================== Binary Font Loading ====================
@@ -453,11 +565,17 @@ bool loadBinaryFont(const char* fontPath) {
   
   // Clear glyph cache from previous font
   clearGlyphCache();
+  clearAdvanceCache();
 
   // Free old glyph index if reloading (prevents PSRAM leak)
   if (g_binFont.index) {
     free(g_binFont.index);
     g_binFont.index = nullptr;
+  }
+  // Close previous BIN font file handle
+  if (g_binFont.loaded) {
+    g_binFont.fontFile.close();
+    g_binFont.loaded = false;
   }
   
   if (!sdCardAvailable) {
@@ -501,9 +619,14 @@ bool loadBinaryFont(const char* fontPath) {
     return false;
   }
   
-  g_binFont.charCount = *((uint32_t*)&header[0]);
+  memcpy(&g_binFont.charCount, &header[0], 4);
   g_binFont.fontSize = header[4];
-  g_binFont.version = *((uint32_t*)&header[5]);
+  memcpy(&g_binFont.version, &header[5], 4);
+  if (g_binFont.charCount > 200000) {
+    Serial.printf("✗ Unreasonable charCount: %u\n", g_binFont.charCount);
+    g_binFont.fontFile.close();
+    return false;
+  }
   memcpy(g_binFont.familyName, &header[9], 64);
   memcpy(g_binFont.styleName, &header[73], 64);
   
@@ -584,6 +707,41 @@ bool loadBinaryFont(const char* fontPath) {
   return true;
 }
 
+void unloadBinaryFont() {
+  if (g_binFont.loaded) {
+    g_binFont.fontFile.close();
+    g_binFont.loaded = false;
+    Serial.println("BIN font unloaded");
+  }
+  if (g_binFont.index) {
+    free(g_binFont.index);
+    g_binFont.index = nullptr;
+  }
+}
+
+// Thorough cleanup of ALL font resources — call when leaving reading mode.
+// Unloads BIN font, OFR/FreeType font, closes stale file handles, then
+// reloads the system font so the UI is ready to draw.
+void resetToSystemFont() {
+  Serial.printf("resetToSystemFont: heap=%u psram=%u ofrFiles=%d\n",
+                ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+  unloadBinaryFont();
+  if (ofrFontLoaded) {
+    ofr.unloadFont();
+    ofrFontLoaded = false;
+  }
+  // Force-close any stale SD file handles left by incomplete FreeType cleanup
+  if (!ofr_file_list.empty()) {
+    Serial.printf("WARNING: %d stale OFR file handles in resetToSystemFont\n", (int)ofr_file_list.size());
+    for (auto &f : ofr_file_list) f.close();
+    ofr_file_list.clear();
+  }
+  currentFontFile = "";
+  loadSystemFont();
+  Serial.printf("resetToSystemFont done: heap=%u psram=%u\n",
+                ESP.getFreeHeap(), ESP.getFreePsram());
+}
+
 // ==================== Glyph Lookup & Drawing ====================
 
 // Glyph bitmap cache — avoids repeated SD reads for the same character
@@ -623,6 +781,19 @@ void clearGlyphCache() {
     for (int i = 0; i < GLYPH_CACHE_SIZE; i++) glyphCache[i].occupied = false;
     glyphPoolUsed = 0;
   }
+}
+
+void freeGlyphCache() {
+  if (glyphBitmapPool) {
+    free(glyphBitmapPool);
+    glyphBitmapPool = nullptr;
+  }
+  if (glyphCache) {
+    free(glyphCache);
+    glyphCache = nullptr;
+  }
+  glyphPoolUsed = 0;
+  Serial.printf("Glyph cache freed: psram=%u\n", ESP.getFreePsram());
 }
 
 static CachedGlyph* cacheFind(uint32_t unicode) {
@@ -704,6 +875,10 @@ bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color, float scale
     bitmap = cached->bitmap;
   } else {
     // Read from SD card
+    if (!g_binFont.fontFile) {
+      Serial.printf("drawBinFontChar: fontFile not open for U+%04X\n", unicode);
+      return false;
+    }
     if (glyph->bitmapSize > reuseBufSize) {
       if (reuseBuf) free(reuseBuf);
       reuseBufSize = glyph->bitmapSize + 64;  // Slight overalloc to avoid frequent reallocs
@@ -716,7 +891,11 @@ bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color, float scale
     size_t bytesRead = g_binFont.fontFile.read(reuseBuf, glyph->bitmapSize);
     if (sdMutex != NULL) xSemaphoreGive(sdMutex);
     
-    if (bytesRead != glyph->bitmapSize) return false;
+    if (bytesRead != glyph->bitmapSize) {
+      Serial.printf("drawBinFontChar: short read for U+%04X (got %u of %u)\n",
+                    unicode, (unsigned)bytesRead, (unsigned)glyph->bitmapSize);
+      return false;
+    }
     
     // Cache the bitmap for future use
     cacheInsert(unicode, reuseBuf, glyph->bitmapSize, glyph->width, glyph->height);
@@ -889,7 +1068,14 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
   int sprH = fontSize * 2;
   LGFX_Sprite sprite(&M5.Display);
   sprite.setColorDepth(8);
-  if (!sprite.createSprite(sprW, sprH)) return false;
+  sprite.setPsram(true);  // Use PSRAM — internal DMA heap is too tight with SD TTF fonts
+  if (!sprite.createSprite(sprW, sprH)) {
+    static int sprFailCount = 0;
+    if (++sprFailCount <= 3)
+      Serial.printf("createSprite FAILED: %dx%d (%d bytes), heap=%u psram=%u\n",
+                     sprW, sprH, sprW * sprH, ESP.getFreeHeap(), ESP.getFreePsram());
+    return false;
+  }
   sprite.fillSprite(TFT_WHITE);
 
   // Check if the character exists in the loaded font (glyph_index != 0)
@@ -989,11 +1175,88 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
   return true;
 }
 
+// ==================== Proportional Advance Width Cache (Horizontal Mode) =========
+// Caches per-character advance widths so word measurement is O(1) per char
+// instead of calling FreeType for every word on every page turn.
+static int16_t s_advanceCache[128];  // ASCII advance widths
+static int s_advanceCacheFontSize = 0;
+
+void clearAdvanceCache() {
+  s_advanceCacheFontSize = 0;
+}
+
+int getCharAdvanceW(uint32_t unicode, int fontSize) {
+  if (!ofrFontLoaded) return fontSize / 2;  // fallback
+  // Rebuild ASCII cache on font size change
+  if (fontSize != s_advanceCacheFontSize) {
+    ofr.setFontSize(fontSize);
+    char buf[2] = {0, 0};
+    for (int c = 33; c < 127; c++) {
+      buf[0] = (char)c;
+      s_advanceCache[c] = (int16_t)ofr.getTextWidth(buf);
+    }
+    // Space: derive from advance (getTextWidth(" ") returns 0 for OFR)
+    int spW = (int)ofr.getTextWidth("i i") - (int)ofr.getTextWidth("ii");
+    if (spW <= 0) spW = fontSize / 3;
+    s_advanceCache[32] = (int16_t)spW;
+    s_advanceCacheFontSize = fontSize;
+    Serial.printf("Advance cache built for size %d, space=%d\n", fontSize, spW);
+  }
+  if (unicode < 128) return s_advanceCache[unicode];
+  // Non-ASCII: measure single char on demand
+  char chBuf[5];
+  int len = utf8Encode(unicode, chBuf);
+  chBuf[len] = '\0';
+  ofr.setFontSize(fontSize);
+  return (int)ofr.getTextWidth(chBuf);
+}
+
+int drawOFRCharHoriz(uint32_t unicode, int cursorX, int y, uint16_t color, int fontSize) {
+  int advW = getCharAdvanceW(unicode, fontSize);
+  if (unicode == 32 || unicode < 33) return advW;  // Space/control: just advance
+  // Adjust position: drawOFRCharCached uses centered rendering (cdrawString)
+  // so the advance origin sits at fontSize/2 from cell left. Shift x so
+  // the advance origin aligns with cursorX.
+  int adjustedX = cursorX - fontSize / 2 + advW / 2;
+  drawOFRCharCached(unicode, adjustedX, y, color, fontSize);
+  return advW;
+}
+
+// ==================== Embedded ET Book Font ====================
+
+bool loadEmbeddedETBook(int size) {
+  // Short-circuit if already loaded
+  if (ofrFontLoaded && currentFontFile == "ETBook-embedded") {
+    ofr.setFontSize(size);
+    ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+    return true;
+  }
+  clearGlyphCache();
+  clearAdvanceCache();
+  if (ofrFontLoaded) { ofr.unloadFont(); ofrFontLoaded = false; }
+  Serial.printf("Loading embedded ET Book font (%u bytes), size=%d\n", (unsigned)etbook_ttf_len, size);
+  FT_Error error = ofr.loadFont(etbook_ttf, etbook_ttf_len);
+  if (error) {
+    Serial.printf("ET Book loadFont error: 0x%02X\n", error);
+    return false;
+  }
+  ofr.setDrawer(M5.Display);
+  ofr.setFontSize(size);
+  ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+  ofr.setBackgroundFillMethod(BgFillMethod::None);
+  ofrFontLoaded = true;
+  useTTFFont = true;
+  currentFontFile = "ETBook-embedded";
+  Serial.printf("ET Book loaded from flash (size=%d)\n", size);
+  return true;
+}
+
 // ==================== TTF Font Loading ====================
 
 bool loadTTFFont(const char* fontPath, int size) {
   // Clear glyph cache from previous font/size
   clearGlyphCache();
+  clearAdvanceCache();
 
   if (!sdCardAvailable) {
     Serial.println("SD card not available");
@@ -1013,6 +1276,13 @@ bool loadTTFFont(const char* fontPath, int size) {
     ofr.unloadFont();
     ofrFontLoaded = false;
     Serial.println("Unloaded previous OFR font");
+  }
+  
+  // Safety: close any stale OFR file handles left by incomplete cleanup
+  if (!ofr_file_list.empty()) {
+    Serial.printf("WARNING: %d stale OFR file handles, force-closing\n", (int)ofr_file_list.size());
+    for (auto &f : ofr_file_list) f.close();
+    ofr_file_list.clear();
   }
   
   yield();
@@ -1097,12 +1367,16 @@ bool loadReadingFont() {
   }
   // Use readingFontFile if set (may be paired BIN), otherwise use primary font file
   String fname = (readingFontFile.length() > 0) ? readingFontFile : fontFileList[readingFontIndex];
+  // Embedded ET Book: load from flash, not SD
+  if (fname == "ETBook-embedded") {
+    return loadEmbeddedETBook(readingFontSize);
+  }
   if (ofrFontLoaded && currentFontFile == fname) return true;
   if (g_binFont.loaded && currentFontFile == fname) return true;
   // BIN font is already in memory but currentFontFile was changed by loadSystemFont().
-  // Keep OFR loaded — drawReading() reuses it for Latin text (EBGaramond) across pages.
-  // Don't overwrite currentFontFile — it tracks the OFR font (e.g. EBGaramond)
-  // so the EBGaramond short-circuit in drawReading() keeps working.
+  // Keep OFR loaded — drawReading() reuses it for Latin text (ET Book) across pages.
+  // Don't overwrite currentFontFile — it tracks the OFR font (e.g. ETBook-embedded)
+  // so the ET Book short-circuit in loadEmbeddedETBook() keeps working.
   // Note: must check g_binFont.filePath matches — selectBestBinForSize() may have
   // changed readingFontFile to a different BIN.
   if (g_binFont.loaded && (fname.endsWith(".bin") || fname.endsWith(".BIN"))) {
@@ -1114,9 +1388,21 @@ bool loadReadingFont() {
       fname.endsWith(".otf") || fname.endsWith(".OTF")) {
     return loadTTFFont(fname.c_str(), readingFontSize);
   } else if (fname.endsWith(".bin") || fname.endsWith(".BIN")) {
-    if (ofrFontLoaded) { ofr.unloadFont(); ofrFontLoaded = false; }
+    // Keep ETBook loaded — drawChineseReading() needs it for Latin fallback.
+    // Unloading then immediately reloading FreeType wastes time and can fail
+    // due to PSRAM fragmentation after font menu preview cycles.
+    if (ofrFontLoaded && currentFontFile != "ETBook-embedded") {
+      ofr.unloadFont();
+      ofrFontLoaded = false;
+    }
     bool ok = loadBinaryFont(fname.c_str());
-    if (ok) currentFontFile = fname;
+    if (ok) {
+      // If ETBook is still loaded, preserve currentFontFile so the
+      // loadEmbeddedETBook() short-circuit keeps working on the next render.
+      if (!(ofrFontLoaded && currentFontFile == "ETBook-embedded")) {
+        currentFontFile = fname;
+      }
+    }
     return ok;
   }
   return false;
@@ -1187,6 +1473,7 @@ bool loadSDLabels() {
 
     sdLabelEntries[i].bitmap = ptr;
     int bitmapSize = ((sdLabelEntries[i].w + 1) / 2) * sdLabelEntries[i].h;
+    if (ptr + bitmapSize > end) break;
     ptr += bitmapSize;
   }
 

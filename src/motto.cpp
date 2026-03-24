@@ -5,6 +5,9 @@
 // RTC-persistent motto index — survives deep sleep
 RTC_DATA_ATTR int mottoIndex = -1;  // -1 = not yet initialized (random first pick)
 
+// Current page for builtin motto list (no-SD mode)
+static int mottoBuiltinPage = 0;
+
 // Built-in default mottos (used when /mottos.txt is missing)
 static const char* defaultMottos[] = {
 "自戀的人會把自己的話寫到程序中去，比如這一條。——梅璽閣主",
@@ -303,4 +306,149 @@ void drawMottoScreen() {
 
   M5.Display.endWrite();
   M5.Display.display();
+}
+
+// ── No-SD built-in motto list (per-character Kai label rendering) ──────────
+
+void drawMottoBuiltinPage() {
+  if (mottoBuiltinPage < 0) mottoBuiltinPage = 0;
+  if (mottoBuiltinPage >= defaultMottoCount) mottoBuiltinPage = 0;
+
+  const char* motto = defaultMottos[mottoBuiltinPage];
+  Serial.printf("Builtin motto #%d: %s\n", mottoBuiltinPage, motto);
+
+  M5.Display.setEpdMode(epd_mode_t::epd_quality);
+  M5.Display.startWrite();
+
+  int w = M5.Display.width();   // 540
+  int h = M5.Display.height();  // 960
+
+  // Draw sleeping wallpaper as background
+  M5.Display.drawJpg(sleeping_jpg, sleeping_jpg_len, 0, 0, w, h);
+
+  // --- Vertical text layout parameters (same as drawMottoOnSleep) ---
+  int charSize = 48;
+  int colSpacing = 58;
+  int charSpacing = 56;
+  int padTop = 40;
+  int padBottom = 40;
+  int padSide = 30;
+
+  // Split at "——" for attribution
+  String mottoStr = motto;
+  String mainText = mottoStr;
+  String attrText = "";
+  int dashIdx = mottoStr.indexOf("——");
+  if (dashIdx >= 0) {
+    mainText = mottoStr.substring(0, dashIdx);
+    attrText = mottoStr.substring(dashIdx);
+  }
+
+  int mainCharCount = utf8CharCount(mainText);
+  int attrCharCount = utf8CharCount(attrText);
+
+  int textAreaH = h - 200;
+  int maxCharsPerCol = (textAreaH - padTop - padBottom) / charSpacing;
+  if (maxCharsPerCol < 1) maxCharsPerCol = 1;
+
+  int mainCols = mainCharCount > 0 ? (mainCharCount + maxCharsPerCol - 1) / maxCharsPerCol : 0;
+  int attrCols = attrCharCount > 0 ? (attrCharCount + maxCharsPerCol - 1) / maxCharsPerCol : 0;
+  int numCols = mainCols + attrCols;
+  if (numCols < 1) numCols = 1;
+
+  int effectiveRows = (mainCols > 1) ? maxCharsPerCol : mainCharCount;
+  if (attrCharCount > 0 && attrCharCount > effectiveRows) {
+    effectiveRows = min(attrCharCount, maxCharsPerCol);
+  }
+  if (effectiveRows < 1) effectiveRows = 1;
+
+  int cardW = numCols * colSpacing + padSide * 2;
+  int cardH = effectiveRows * charSpacing + padTop + padBottom;
+  if (cardW < 100) cardW = 100;
+  if (cardH < 120) cardH = 120;
+
+  int cardX = (w - cardW) / 2;
+  int cardY = (h - cardH) / 2 - 20;
+
+  // Card background
+  M5.Display.fillRoundRect(cardX, cardY, cardW, cardH, 12, TFT_WHITE);
+  M5.Display.drawRoundRect(cardX, cardY, cardW, cardH, 12, EPD_DARK_GRAY);
+  M5.Display.drawRoundRect(cardX + 1, cardY + 1, cardW - 2, cardH - 2, 11, EPD_DARK_GRAY);
+  M5.Display.drawLine(cardX + 12, cardY + 15, cardX + 12, cardY + cardH - 15, EPD_LIGHT_GRAY);
+  M5.Display.drawLine(cardX + cardW - 12, cardY + 15, cardX + cardW - 12, cardY + cardH - 15, EPD_LIGHT_GRAY);
+
+  // --- Draw main text vertically (right-to-left columns) using label bitmaps ---
+  int col = 0, row = 0, j = 0;
+  while (j < (int)mainText.length()) {
+    String ch = utf8CharAt(mainText, j);
+    // Vertical punctuation mapping
+    {
+      int tmp = 0;
+      uint32_t cp = utf8Decode(ch, tmp);
+      uint32_t mapped = toVerticalPunct(cp);
+      if (mapped != cp) { ch = ""; utf8Encode(mapped, ch); }
+    }
+
+    int cx = cardX + cardW - padSide - col * colSpacing - colSpacing / 2;
+    int cy = cardY + padTop + row * charSpacing;
+    drawSystemTextCentered(ch.c_str(), cx, cy, charSize, TFT_BLACK, TFT_WHITE);
+
+    row++;
+    if (row >= maxCharsPerCol) { row = 0; col++; }
+  }
+
+  // --- Draw attribution vertically (bottom-aligned) ---
+  if (attrCharCount > 0) {
+    col = mainCols;
+    int charsInFirstCol = min(attrCharCount, maxCharsPerCol);
+    row = effectiveRows - charsInFirstCol;
+    if (row < 0) row = 0;
+    j = 0;
+    while (j < (int)attrText.length()) {
+      String ch = utf8CharAt(attrText, j);
+      {
+        int tmp = 0;
+        uint32_t cp = utf8Decode(ch, tmp);
+        uint32_t mapped = toVerticalPunct(cp);
+        if (mapped != cp) { ch = ""; utf8Encode(mapped, ch); }
+      }
+
+      int cx = cardX + cardW - padSide - col * colSpacing - colSpacing / 2;
+      int cy = cardY + padTop + row * charSpacing;
+      drawSystemTextCentered(ch.c_str(), cx, cy, charSize, TFT_BLACK, TFT_WHITE);
+
+      row++;
+      if (row >= effectiveRows) { row = 0; col++; }
+    }
+  }
+
+  // Page indicator at bottom
+  char pageStr[16];
+  snprintf(pageStr, sizeof(pageStr), "%d / %d", mottoBuiltinPage + 1, defaultMottoCount);
+  // Draw on a small white strip at bottom for readability
+  int piY = h - 50;
+  int piW = 80, piH = 24;
+  M5.Display.fillRoundRect((w - piW) / 2, piY - 4, piW, piH, 6, TFT_WHITE);
+  M5.Display.setFont(&fonts::Font2);
+  M5.Display.setTextColor(TFT_BLACK);
+  M5.Display.setTextDatum(MC_DATUM);
+  M5.Display.drawString(pageStr, w / 2, piY + piH / 2 - 4);
+  M5.Display.setTextDatum(TL_DATUM);
+
+  drawReturnButton();
+
+  M5.Display.endWrite();
+  M5.Display.display();
+}
+
+void mottoBuiltinNext() {
+  mottoBuiltinPage++;
+  if (mottoBuiltinPage >= defaultMottoCount) mottoBuiltinPage = 0;
+  drawMottoBuiltinPage();
+}
+
+void mottoBuiltinPrev() {
+  mottoBuiltinPage--;
+  if (mottoBuiltinPage < 0) mottoBuiltinPage = defaultMottoCount - 1;
+  drawMottoBuiltinPage();
 }

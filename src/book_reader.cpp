@@ -233,11 +233,45 @@ void scanBooks() {
   }
   
   booksDir.close();
-  Serial.printf("Found %d books\n", bookCount);
+  
+  // Sort books by display name (case-insensitive)
+  for (int i = 0; i < bookCount - 1; i++) {
+    for (int j = i + 1; j < bookCount; j++) {
+      String a = bookDisplayName[i]; a.toLowerCase();
+      String b = bookDisplayName[j]; b.toLowerCase();
+      if (a > b) {
+        String tmp = bookList[i]; bookList[i] = bookList[j]; bookList[j] = tmp;
+        tmp = bookDisplayName[i]; bookDisplayName[i] = bookDisplayName[j]; bookDisplayName[j] = tmp;
+      }
+    }
+  }
+  
+  Serial.printf("Found %d books (sorted)\n", bookCount);
+}
+
+// Check if a filename contains Chinese/CJK characters (any byte >= 0x80 in UTF-8)
+bool isChineseBookName(const String& filename) {
+  for (int i = 0; i < (int)filename.length(); i++) {
+    if ((uint8_t)filename[i] >= 0x80) return true;
+  }
+  return false;
+}
+
+// Check if a book should be opened in English (horizontal) mode
+// EPUB: check the display title (embedded metadata title)
+// TXT: check the filename
+bool bookIsEnglishMode(int bookIndex) {
+  if (bookIndex < 0 || bookIndex >= bookCount) return false;
+  String fname = bookList[bookIndex];
+  fname.toLowerCase();
+  if (fname.endsWith(".epub")) {
+    return !isChineseBookName(bookDisplayName[bookIndex]);
+  }
+  return !isChineseBookName(bookList[bookIndex]);
 }
 
 // Check if the current reading font is Silver
-static bool isReadingFontSilver() {
+bool isReadingFontSilver() {
   if (readingFontIndex >= 0 && readingFontIndex < fontFileCount) {
     String fname = fontFileList[readingFontIndex];
     fname.toLowerCase();
@@ -260,6 +294,23 @@ void updateBytesPerPage() {
   areaRight = READING_AREA_RIGHT; maxY = VERTICAL_TEXT_MAX_Y;
   if (charH < 1) charH = 1;
   if (colSp < 1) colSp = 1;
+
+  // Horizontal layout for English/Latin books
+  if (epubIsHorizontal) {
+    int lineHeight = readingFontSize + readingFontSize / 4;  // 1.25x — matches renderer
+    int availH = 830 - areaTop;                               // rdBottom=830 in renderer
+    int linesPerPage = availH / lineHeight;
+    if (linesPerPage < 1) linesPerPage = 1;
+    int availW = areaRight - areaLeft;
+    // Estimate ~1.8 bytes per pixel width for English text at this font size
+    int charsPerLine = availW / max(1, readingFontSize * 3 / 5);  // ~0.6em per char
+    int totalChars = linesPerPage * charsPerLine;
+    bytesPerPage = max(200, totalChars * 2 + 50);  // *2 for UTF-8 multi-byte (smart quotes etc.)
+    Serial.printf("Horizontal: fontSize %d -> bytesPerPage %d (lines %d × chars %d)\n",
+                  readingFontSize, bytesPerPage, linesPerPage, charsPerLine);
+    return;
+  }
+
   // Optimize: squeeze one more column if leftover space >= 40% of column width
   {
     int availW = areaRight - areaLeft;
@@ -443,6 +494,24 @@ bool loadCurrentPage() {
       while (safeEnd > 0 && (epubFullText[localOffset + safeEnd] & 0xC0) == 0x80) {
         safeEnd--;
       }
+      // For horizontal (English) mode, snap back to a word boundary so the
+      // page buffer never ends mid-word. The renderer sees complete words and
+      // produces clean page breaks.
+      if (epubIsHorizontal && safeEnd > 0 && safeEnd < remaining) {
+        unsigned char endChar = (unsigned char)epubFullText[localOffset + safeEnd];
+        // If we'd cut inside a word, back up to last whitespace
+        if (endChar != ' ' && endChar != '\n' && endChar != '\r' && endChar != '\t') {
+          size_t wordBound = safeEnd;
+          while (wordBound > 0) {
+            unsigned char c = (unsigned char)epubFullText[localOffset + wordBound - 1];
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') break;
+            wordBound--;
+          }
+          if (wordBound > safeEnd / 2) {  // Don't snap too far back
+            safeEnd = wordBound;
+          }
+        }
+      }
     }
     
     char saved = epubFullText[localOffset + safeEnd];
@@ -533,7 +602,7 @@ bool loadCurrentPage() {
 
 String lastLoadError = "";  // Stores the specific failure reason for on-screen display
 
-bool loadBook(int bookIndex) {
+bool loadBook(int bookIndex, bool forceChinese) {
   lastLoadError = "";
   Serial.printf("\n=== loadBook(%d) === Free heap: %u, Free PSRAM: %u, OFR files: %d\n",
                 bookIndex, ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
@@ -549,13 +618,20 @@ bool loadBook(int bookIndex) {
   Serial.printf("loadBook: cleanup - epubFullText=%p, epubZipEntries=%p, epubChapters=%p\n",
                 epubFullText, epubZipEntries, epubChapters);
   epubCleanup();
-  // Unload OFR font to free its SD file handle — prevents SD bus contention
+  // Unload all font resources to free SD file handles — prevents SD bus contention
   // during heavy EPUB chapter loading. Will be reloaded after loading completes.
+  unloadBinaryFont();
   if (ofrFontLoaded) {
     ofr.unloadFont();
     ofrFontLoaded = false;
-    Serial.printf("loadBook: unloaded OFR font, ofr_file_list.size=%d\n", (int)ofr_file_list.size());
   }
+  // Force-close any stale OFR file handles
+  if (!ofr_file_list.empty()) {
+    Serial.printf("WARNING: %d stale OFR file handles in loadBook\n", (int)ofr_file_list.size());
+    for (auto &f : ofr_file_list) f.close();
+    ofr_file_list.clear();
+  }
+  currentFontFile = "";
   currentBookIsEpub = false;
   currentPageContent = "";
   currentPage = 0;
@@ -584,10 +660,18 @@ bool loadBook(int bookIndex) {
       return false;
     }
     size_t fsize = checkFile.size();
+    bool isDir = checkFile.isDirectory();
     checkFile.close();
-    Serial.printf("loadBook: file verified, size=%u bytes\n", fsize);
+    Serial.printf("loadBook: file verified, size=%u bytes, isDir=%d, path=%s\n",
+                  fsize, isDir, currentBookPath.c_str());
+    if (isDir) {
+      lastLoadError = "is directory";
+      return false;
+    }
     if (fsize < 100) {
-      lastLoadError = "file too small";
+      char detail[60];
+      snprintf(detail, sizeof(detail), "太小: %u bytes", (unsigned)fsize);
+      lastLoadError = String(detail);
       return false;
     }
   }
@@ -597,11 +681,44 @@ bool loadBook(int bookIndex) {
   lowerName.toLowerCase();
   if (lowerName.endsWith(".epub")) {
     currentBookIsEpub = true;
+    // Detect English mode BEFORE epubLoad (which calls epubCleanup and resets the flag)
+    bool useHorizontal = (!forceChinese && bookIsEnglishMode(bookIndex));
     if (!epubLoad(currentBookPath)) {
       Serial.println("EPUB: Failed to load");
       if (lastLoadError.isEmpty()) lastLoadError = "epubLoad fail";
       currentBookIsEpub = false;
       return false;
+    }
+    // Set horizontal layout AFTER epubLoad (epubCleanup resets epubIsHorizontal)
+    if (useHorizontal) {
+      epubIsHorizontal = true;
+      Serial.println("EPUB: English mode (horizontal layout)");
+      readingFontSize = loadPrefInt("ereader", "rdFontSzEn", DEFAULT_ENGLISH_READING_FONT_SIZE);
+      readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
+      // Restore English font selection (default to embedded ET Book)
+      readingFontIndex = loadPrefInt("ereader", "fontIdxEn", -1);
+      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) {
+        // Find ET Book index (last entry added by scanFontFiles)
+        int etIdx = -1;
+        for (int fi = 0; fi < fontFileCount; fi++) {
+          if (fontFileList[fi] == "ETBook-embedded") { etIdx = fi; break; }
+        }
+        readingFontIndex = (etIdx >= 0) ? etIdx : max(0, systemFontIndex);
+      }
+      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
+      selectedFontIndex = readingFontIndex;
+      readingFontFile = loadPrefStr("ereader", "fontFileEn", "ETBook-embedded");
+    } else {
+      readingFontSize = loadPrefInt("ereader", "rdFontSz", DEFAULT_READING_FONT_SIZE);
+      readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
+      // Restore Chinese font selection (default to system font, not previous readingFontIndex
+      // which may point to an English font from a previous session)
+      readingFontIndex = loadPrefInt("ereader", "fontIdx", max(0, systemFontIndex));
+      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = max(0, systemFontIndex);
+      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
+      selectedFontIndex = readingFontIndex;
+      readingFontFile = loadPrefStr("ereader", "fontFile",
+                         (readingFontIndex >= 0 && readingFontIndex < fontFileCount) ? fontFileList[readingFontIndex] : String(""));
     }
     // Use estimated total for page calculation (covers all chapters, not just loaded ones)
     if (epubIsImageBased) {
@@ -626,6 +743,7 @@ bool loadBook(int bookIndex) {
           auto t = M5.Touch.getDetail();
           if (t.wasPressed()) break;
           delay(50);
+          esp_task_wdt_reset();
         }
       }
     } else {
@@ -637,21 +755,56 @@ bool loadBook(int bookIndex) {
                   currentPage, totalPages, epubIsImageBased, epubChapterCount);
     if (currentPage >= totalPages) currentPage = 0;
     loadBookmarks();
-    updateLoadProgress(75);
+    if (!epubIsImageBased) updateLoadProgress(75);
     yield();
     esp_task_wdt_reset();
     if (!loadCurrentPage()) { lastLoadError = "epub loadPage"; return false; }
     Serial.println("EPUB: loadCurrentPage OK, ready to draw");
-    updateLoadProgress(85);
-    // Pre-load reading font here (not in drawReading) to avoid e-ink display bus conflicts
-    loadReadingFont();
-    updateLoadProgress(95);
+    if (epubIsImageBased) {
+      // Comics render images, not text — skip font loading entirely.
+      // drawReading() will unload any leftover OFR font to free heap for image decode.
+      Serial.println("EPUB: Comic mode — skipping loadReadingFont");
+    } else {
+      updateLoadProgress(85);
+      // Pre-load reading font here (not in drawReading) to avoid e-ink display bus conflicts
+      loadReadingFont();
+      updateLoadProgress(95);
+    }
     yield();
     esp_task_wdt_reset();
     return true;
   }
   
   // Plain text file
+  // Set horizontal layout: auto-detect from filename unless forced Chinese
+  if (!forceChinese && bookIsEnglishMode(bookIndex)) {
+    epubIsHorizontal = true;
+    Serial.println("TXT: English mode (horizontal layout)");
+    readingFontSize = loadPrefInt("ereader", "rdFontSzEn", DEFAULT_ENGLISH_READING_FONT_SIZE);
+    readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
+    // Restore English font selection (default to embedded ET Book)
+    readingFontIndex = loadPrefInt("ereader", "fontIdxEn", -1);
+    if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) {
+      // Find ET Book index
+      int etIdx = -1;
+      for (int fi = 0; fi < fontFileCount; fi++) {
+        if (fontFileList[fi] == "ETBook-embedded") { etIdx = fi; break; }
+      }
+      readingFontIndex = (etIdx >= 0) ? etIdx : max(0, systemFontIndex);
+    }
+    if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
+    selectedFontIndex = readingFontIndex;
+    readingFontFile = loadPrefStr("ereader", "fontFileEn", "ETBook-embedded");
+  } else {
+    readingFontSize = loadPrefInt("ereader", "rdFontSz", DEFAULT_READING_FONT_SIZE);
+    readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
+    readingFontIndex = loadPrefInt("ereader", "fontIdx", max(0, systemFontIndex));
+    if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = max(0, systemFontIndex);
+    if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
+    selectedFontIndex = readingFontIndex;
+    readingFontFile = loadPrefStr("ereader", "fontFile",
+                       (readingFontIndex >= 0 && readingFontIndex < fontFileCount) ? fontFileList[readingFontIndex] : String(""));
+  }
   {
     ScopedSDLock lock;
     File file = SD.open(currentBookPath.c_str());
@@ -674,6 +827,86 @@ bool loadBook(int bookIndex) {
   if (!loadCurrentPage()) { lastLoadError = "txt loadPage"; return false; }
   updateLoadProgress(95);
   return true;
+}
+
+bool openBookFromList(int bookIndex, bool openAsChinese) {
+  currentBook = bookDisplayName[bookIndex];
+  Serial.printf("Opening book: %s (%s) chinese=%d\n", currentBook.c_str(), bookList[bookIndex].c_str(), openAsChinese);
+  
+  esp_task_wdt_reset();
+  pagesSinceFullRefresh = 1;
+
+  // Show loading indicator
+  {
+    unsigned long busyStart = millis();
+    while (M5.Display.displayBusy()) {
+      delay(10);
+      esp_task_wdt_reset();
+      if (millis() - busyStart > 3000) break;
+    }
+    M5.Display.setEpdMode(epd_mode_t::epd_fast);
+    M5.Display.startWrite();
+    M5.Display.fillScreen(TFT_WHITE);
+    drawStatusBar();
+    drawSystemTextCentered(currentBook.c_str(), M5.Display.width() / 2,
+                           M5.Display.height() / 2 - 100, 32);
+    drawSystemTextCentered("AI智能排版中...", M5.Display.width() / 2,
+                           M5.Display.height() / 2 - 20, 36);
+    int barX = 70, barY = M5.Display.height() / 2 + 50;
+    int barW = 400, barH = 30;
+    M5.Display.drawRect(barX, barY, barW, barH, TFT_BLACK);
+    M5.Display.drawRect(barX + 1, barY + 1, barW - 2, barH - 2, TFT_BLACK);
+    M5.Display.endWrite();
+    M5.Display.display();
+  }
+
+  Serial.printf("\n=== Attempting to load book index %d ===\n", bookIndex);
+  Serial.printf("Pre-loadBook: Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
+
+  unsigned long loadStart = millis();
+  loadBookCrashed = true;
+  if (loadBook(bookIndex, openAsChinese)) {
+    loadBookCrashed = false;
+    unsigned long loadMs = millis() - loadStart;
+    Serial.printf("Book loaded OK in %lu ms - Free heap: %u, Free PSRAM: %u\n",
+                  loadMs, ESP.getFreeHeap(), ESP.getFreePsram());
+    savePrefStr("ereader", "lastBook", bookList[bookIndex]);
+    yield();
+    esp_task_wdt_reset();
+    currentMode = MODE_READING;
+    comicZoomQuadrant = -1;
+    drawReading();
+    return true;
+  } else {
+    Serial.printf("Failed to load book! Free heap: %u, Free PSRAM: %u, error: %s\n",
+                  ESP.getFreeHeap(), ESP.getFreePsram(), lastLoadError.c_str());
+    M5.Display.setEpdMode(epd_mode_t::epd_fast);
+    M5.Display.startWrite();
+    M5.Display.fillScreen(TFT_WHITE);
+    drawSystemText("載入失敗", 120, 200, 48);
+    char errMsg1[80];
+    snprintf(errMsg1, sizeof(errMsg1), "錯誤: %s", lastLoadError.c_str());
+    drawSystemText(errMsg1, 40, 320, 32);
+    char errMsg2[80];
+    snprintf(errMsg2, sizeof(errMsg2), "%.50s", bookList[bookIndex].c_str());
+    drawSystemText(errMsg2, 40, 400, 24);
+    char errMsg3[80];
+    snprintf(errMsg3, sizeof(errMsg3), "Heap:%uK PSRAM:%uK",
+             ESP.getFreeHeap()/1024, ESP.getFreePsram()/1024);
+    drawSystemText(errMsg3, 40, 470, 24);
+    drawSystemText("點擊螢幕繼續", 140, 600, 28);
+    M5.Display.endWrite();
+    M5.Display.display();
+    while (true) {
+      M5.update();
+      auto t = M5.Touch.getDetail();
+      if (t.wasPressed()) break;
+      delay(50);
+    }
+    loadSystemFont();
+    drawBookList();
+    return false;
+  }
 }
 
 void drawBookList() {
@@ -701,7 +934,17 @@ void drawBookList() {
   M5.Display.setTextColor(TFT_BLACK);
   
   // Draw title
-  drawSystemText("電子書列表", 20, 42, 40);
+  drawSystemText("電子書列表", 20, 42, 36);
+  
+  // Draw "最後閱讀" button if there's a saved last book
+  {
+    String lastBook = loadPrefStr("ereader", "lastBook", "");
+    if (lastBook.length() > 0) {
+      const int btnX = 370, btnY = 44, btnW = 140, btnH = 36;
+      M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 6, TFT_BLACK);
+      drawSystemTextCentered("最後閱讀", btnX + btnW / 2, btnY + (btnH - 24) / 2, 24);
+    }
+  }
   
   M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
@@ -751,6 +994,14 @@ void drawBookList() {
         }
       }
       drawSystemText(displayName.c_str(), 40, 120 + (row * BOOK_ROW_HEIGHT), 28);
+      // English-mode books: show "中" button to allow opening in Chinese mode
+      if (bookIsEnglishMode(i)) {
+        int btnX = DISPLAY_WIDTH - 60;
+        int btnY = 120 + (row * BOOK_ROW_HEIGHT) - 2;
+        int btnW = 45, btnH = 34;
+        M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 4, TFT_BLACK);
+        drawSystemTextCentered("中", btnX + btnW / 2, btnY + (btnH - 24) / 2, 24);
+      }
     }
     
     // Draw pagination nav arrows if needed
@@ -781,7 +1032,7 @@ void drawBookList() {
 }
 
 // Determine e-ink refresh mode based on pageRefreshMode setting
-static epd_mode_t getReadingEpdMode() {
+epd_mode_t getReadingEpdMode() {
   if (pageRefreshMode == 1) {
     // Mode 1: always quality (slowest, cleanest)
     return epd_mode_t::epd_quality;
@@ -805,8 +1056,22 @@ void drawReading() {
   
   // Ensure reading font is loaded (first page or after mode change).
   // loadReadingFont() short-circuits if BIN is already in memory,
-  // keeping OFR (EBGaramond) loaded across pages for fast Latin rendering.
-  loadReadingFont();
+  // keeping OFR (ET Book embedded) loaded across pages for fast Latin rendering.
+  // Skip for image-based EPUBs — they render images, not text, so no font needed.
+  if (!(currentBookIsEpub && epubIsImageBased)) {
+    loadReadingFont();
+  } else {
+    // Comics don't need FreeType — they render images, not text.
+    // Unload OFR to free ~200KB of regular heap that JPEG/PNG decoders need.
+    // Comic UI (page numbers, zoom label) uses built-in fonts and PROGMEM labels.
+    if (ofrFontLoaded) {
+      Serial.printf("Comic mode: unloading OFR to free heap for image decode (heap=%u)\n", ESP.getFreeHeap());
+      ofr.unloadFont();
+      ofrFontLoaded = false;
+      currentFontFile = "";
+      Serial.printf("Comic mode: OFR unloaded (heap=%u)\n", ESP.getFreeHeap());
+    }
+  }
   yield();
   esp_task_wdt_reset();
 
@@ -833,845 +1098,19 @@ void drawReading() {
   drawStatusBar();
   Serial.println("drawReading: screen cleared, status bar drawn");
   
-  // Comic zoom mode: draw zoomed quadrant fullscreen
-  if (currentBookIsEpub && epubIsImageBased && comicZoomQuadrant >= 0) {
-    String displayText = currentPageContent;
-    // Find the image marker in the page content
-    int markerPos = displayText.indexOf(EPUB_IMG_MARKER);
-    if (markerPos >= 0) {
-      int pathStart = markerPos + 1;
-      int pathEnd = displayText.indexOf(EPUB_IMG_MARKER, pathStart);
-      if (pathEnd > pathStart) {
-        String imgPath = displayText.substring(pathStart, pathEnd);
-        // Release display bus during SD I/O + image decode to avoid SPI conflicts
-        M5.Display.endWrite();
-        esp_task_wdt_reset();
-        epubExtractAndDrawImage(imgPath, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT,
-                                comicZoomQuadrant, comicZoomCX, comicZoomCY);
-        esp_task_wdt_reset();
-        M5.Display.startWrite();
-      }
-    }
-    
-    // Redraw status bar on top of fullscreen image
-    drawStatusBar();
-    M5.Display.endWrite();
-    M5.Display.display();
-    return;
-  }
-  
-  // Image-based EPUB full view: render image directly, skip text loop
-  // This avoids showing stray text (e.g. filenames) that may precede image markers
+  // Dispatch to specialized renderer based on book type
   if (currentBookIsEpub && epubIsImageBased) {
-    // Only draw arrows and return button (no progress bar / font buttons for comic)
-    drawReturnButton();
-    {
-      bool hasPrev = (currentPage > 0);
-      bool hasNext = (currentPage < totalPages - 1);
-      // Draw arrows only, nav bar already includes return
-      if (hasNext) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
-      if (hasPrev) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
-    }
-    // Page number centered, vertically aligned with arrows
-    {
-      char pageStr[16];
-      snprintf(pageStr, sizeof(pageStr), "%d / %d", currentPage + 1, totalPages);
-      drawSystemText(pageStr, 180, NAV_Y + (NAV_ICON_SIZE - 24) / 2, 24);
-    }
-    // Comic zoom mode toggle button
-    {
-      int btnX = 350;
-      int btnY = NAV_Y;
-      int btnW = 80, btnH = 64;
-      M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 8, TFT_BLACK);
-      const char* zoomLabel = (comicZoomMode == 1) ? "自由" : "四分";
-      // Manually center: measure text width then draw at calculated x
-      loadSystemFont();
-      int tx = btnX + (btnW - (int)getSystemTextWidth(zoomLabel, 24)) / 2;
-      int ty = btnY + btnH / 2 - 12;
-      drawSystemText(zoomLabel, tx, ty, 24);
-    }
-    
-    String displayText = currentPageContent;
-    int markerPos = displayText.indexOf(EPUB_IMG_MARKER);
-    if (markerPos >= 0) {
-      int pathStart = markerPos + 1;
-      int pathEnd = displayText.indexOf(EPUB_IMG_MARKER, pathStart);
-      if (pathEnd > pathStart) {
-        String imgPath = displayText.substring(pathStart, pathEnd);
-        Serial.printf("EPUB IMG full view: page %d/%d, image='%s'\n",
-                      currentPage + 1, totalPages, imgPath.c_str());
-        int imgX = READING_AREA_LEFT;
-        int imgY = READING_AREA_TOP;
-        int imgW = READING_AREA_RIGHT - READING_AREA_LEFT;
-        int imgH = READING_AREA_BOTTOM - READING_AREA_TOP;
-        // Release display bus during SD I/O + image decode
-        M5.Display.endWrite();
-        esp_task_wdt_reset();
-        bool imgDrawn = epubExtractAndDrawImage(imgPath, imgX, imgY, imgW, imgH);
-        esp_task_wdt_reset();
-        M5.Display.startWrite();
-        if (!imgDrawn) {
-          Serial.printf("EPUB IMG: Failed to draw image for page %d\n", currentPage + 1);
-          drawSystemText("圖片載入失敗", 60, 400, 24);
-        }
-      }
-    } else {
-      Serial.printf("EPUB IMG: No image marker found in page %d content (%d bytes)\n",
-                    currentPage + 1, displayText.length());
-      drawSystemText("此頁無圖片內容", 60, 400, 24);
-    }
-    
-    M5.Display.endWrite();
-    M5.Display.display();
+    drawComicReading();
     return;
   }
   
-  // Font was already loaded before startWrite() above
-  
-  // Nav bar
-  {
-    bool hasPrev = (currentPage > 0);
-    bool hasNext = (currentPage < totalPages - 1);
-    drawVerticalNavBar(hasPrev, hasNext);
+  // Dispatch to text renderer based on book language/orientation
+  if (epubIsHorizontal) {
+    drawEnglishReading();
+    return;
   }
-  
-  // Determine which font renderer to use based on user's font selection
-  // (not ofrFontLoaded, since OFR may also hold a Latin font like EBGaramond)
-  enum FontRenderer { FONT_BUILTIN, FONT_BINFONT, FONT_OFR };
-  FontRenderer renderer = FONT_BUILTIN;
-  
-  {
-    String activeFont = (readingFontFile.length() > 0) ? readingFontFile :
-        ((readingFontIndex >= 0 && readingFontIndex < fontFileCount) ? fontFileList[readingFontIndex] : String(""));
-    bool isBinFile = activeFont.endsWith(".bin") || activeFont.endsWith(".BIN");
-    if (isBinFile && g_binFont.loaded) {
-      renderer = FONT_BINFONT;
-      Serial.println("Using binary font (BIN)");
-    } else if (ofrFontLoaded) {
-      renderer = FONT_OFR;
-      Serial.printf("Using OpenFontRender TTF: %s\n", currentFontFile.c_str());
-    } else if (g_binFont.loaded) {
-      renderer = FONT_BINFONT;
-      Serial.println("Using binary font (BIN) fallback");
-    } else {
-      Serial.println("No custom font loaded - built-in fallback");
-      M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextSize(1);
-      M5.Display.setTextColor(TFT_BLACK);
-    }
-  }
-  
-  // Use current page content or sample text
-  String displayText = (currentPageContent.length() > 0) ? currentPageContent :
-                      "這是一個中文電子書閱讀器的測試文字"
-                      "傳統中文書籍採用直式排版"
-                      "文字由上而下由右而左排列"
-                      "這種閱讀方式已經使用了數千年"
-                      "每一列從右邊開始向左移動"
-                      "每一個字從上方開始向下書寫"
-                      "閱讀時視線自然地從右向左掃視"
-                      "這就是傳統中文的優雅排版方式"
-                      "可以使用觸控螢幕來翻頁"
-                      "左側觸控是上一頁的功能"
-                      "右側觸控是下一頁的功能"
-                      "頂部左角有返回按鈕"
-                      "可以返回到書籍列表頁面"
-                      "這個閱讀器支持從SD卡載入書籍"
-                      "將書籍放入SD卡的books資料夾"
-                      "檔案格式必須是UTF8編碼的txt文字檔"
-                      "系統會自動掃描並顯示所有書籍"
-                      "目前正在顯示的是示範文字"
-                      "用來展示直式排版的效果";
-  
-  Serial.printf("Rendering page %d/%d, content: %d bytes\n", currentPage + 1, totalPages, displayText.length());
-  // Dump first bytes for diagnostics (hex for control chars, chars for printable)
-  {
-    int dumpLen = min(80, (int)displayText.length());
-    Serial.printf("Page content (first %d bytes): ", dumpLen);
-    for (int d = 0; d < dumpLen; d++) {
-      unsigned char c = (unsigned char)displayText.charAt(d);
-      if (c >= 0x20 && c < 0x7F) Serial.printf("%c", c);
-      else Serial.printf("\\x%02X", c);
-    }
-    Serial.println();
-  }
-  
-  String sampleText = displayText;
-  
-  // Vertical text rendering: right-to-left columns, top-to-bottom characters
-  int fontSizePt;
-  bool silverReading = isReadingFontSilver();
-  if (renderer == FONT_OFR) {
-    fontSizePt = silverReading ? silverScaledSize(readingFontSize) : readingFontSize;
-    ofr.setFontSize(fontSizePt);
-    ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-  } else if (renderer == FONT_BINFONT) {
-    fontSizePt = silverReading ? silverScaledSize(readingFontSize) : readingFontSize;
-    // Load a font into OFR for Latin text rendering.
-    // GenYoMinTW renders English poorly — use EBGaramond if available.
-    // Use readingFontSize (not fontSizePt) so fallback matches Silver's visual size
-    int ofrFallbackSize = readingFontSize;
-    bool latinFontLoaded = false;
-    if (systemFontChoice == 0) {
-      // Check if EBGaramond is already loaded from a previous page turn
-      String curLower = currentFontFile;
-      curLower.toLowerCase();
-      if (ofrFontLoaded && curLower.startsWith("ebgaramond")) {
-        ofr.setFontSize(ofrFallbackSize);
-        ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-        latinFontLoaded = true;
-      } else {
-        for (int fi = 0; fi < fontFileCount; fi++) {
-          String lower = fontFileList[fi];
-          lower.toLowerCase();
-          if (lower.startsWith("ebgaramond") && (lower.endsWith(".ttf") || lower.endsWith(".otf"))) {
-            latinFontLoaded = loadTTFFont(fontFileList[fi].c_str(), ofrFallbackSize);
-            break;
-          }
-        }
-      }
-    }
-    if (!latinFontLoaded) {
-      loadSystemFont();
-    }
-  } else {
-    fontSizePt = DEFAULT_READING_FONT_SIZE;
-  }
-  
-  int charHeight, columnSpacing;
-  int rdLeft, rdRight, rdTop, rdMaxY;
-  // Use nominal readingFontSize for layout so all fonts at same size have same grid
-  int layoutSize = readingFontSize;
-  charHeight = layoutSize + (layoutSize / 5);  // ~1.2x font size for spacing
-  columnSpacing = layoutSize + (layoutSize / 5);
-  rdLeft = READING_AREA_LEFT; rdRight = READING_AREA_RIGHT;
-  rdTop = READING_AREA_TOP;   rdMaxY = VERTICAL_TEXT_MAX_Y;
-  // Safety: guard against zero char dimensions (would cause div-by-zero or infinite loop)
-  if (charHeight < 1) charHeight = 1;
-  if (columnSpacing < 1) columnSpacing = 1;
-  // Optimize: squeeze one more column if leftover space >= 40% of column width
-  {
-    int availW = rdRight - rdLeft;
-    int numCols = availW / columnSpacing;
-    int leftover = availW - numCols * columnSpacing;
-    if (numCols > 0 && leftover * 5 >= columnSpacing * 2) {
-      numCols++;
-      columnSpacing = availW / numCols;
-    }
-  }
-  int charsPerColumn = (rdMaxY - rdTop) / charHeight - 1;
-  // Ensure kinsoku overflow slot stays above progress bar / page numbers
-  if (rdTop + (charsPerColumn + 1) * charHeight > READING_AREA_BOTTOM)
-    charsPerColumn--;
-  if (charsPerColumn < 1) charsPerColumn = 1;
-  int columnX = rdRight - columnSpacing / 2;
-  // Anchor first row's em-square top at rdTop regardless of font size
-  int startY = rdTop - (charHeight - fontSizePt) / 2;
-  
-  // BinFont scale factor: ratio of desired size to native bitmap size
-  float binScale = (renderer == FONT_BINFONT && g_binFont.fontSize > 0) ?
-    (float)fontSizePt / (float)g_binFont.fontSize : 1.0f;
 
-  int charIndex = 0;
-  int currentY = startY;
-  bool lastWasSpace = true;   // Start true to skip leading spaces/U+3000 (paragraph indent)
-  bool pageHasImage = false;  // Track if this page rendered a cover/inline image
-  int indentCount = 0;        // Track paragraph indent spaces rendered (for paragraphIndent mode)
-  
-  Serial.printf("Font renderer: %d, fontSize: %d, charHeight: %d, silverReading: %d\n", renderer, fontSizePt, charHeight, silverReading);
-  Serial.printf("Layout: rdLeft=%d rdRight=%d rdTop=%d rdMaxY=%d charsPerCol=%d columnX=%d\n",
-                rdLeft, rdRight, rdTop, rdMaxY, charsPerColumn, columnX);
-  int charsDrawn = 0;
-  yield();
-  esp_task_wdt_reset();
-  
-  // OFR font size for fallback rendering (Latin runs, punctuation, etc.)
-  // For BIN fonts, use readingFontSize so fallback matches the BIN's visual size
-  int ofrRenderSize = (renderer == FONT_BINFONT) ? readingFontSize : fontSizePt;
-  
-  int renderStopByte = sampleText.length();  // Track actual bytes consumed by rendering
-  int loopSafety = 0;  // Safety counter to prevent infinite loops
-  
-  for (int i = 0; i < (int)sampleText.length(); ) {
-    // Safety: detect infinite loop (no byte progress)
-    if (++loopSafety > (int)sampleText.length() + 1000) {
-      Serial.printf("HALT SAFETY: loop stuck at i=%d, breaking\n", i);
-      renderStopByte = i;
-      break;
-    }
-    // Check for nav touch every 50 characters
-    if (charsDrawn > 0 && charsDrawn % 50 == 0) {
-      yield();
-      esp_task_wdt_reset();
-      if (checkNavTouch()) {
-        Serial.println("Nav touch during reading render - aborting");
-        M5.Display.endWrite();  // Must close write transaction before returning
-        M5.Display.display();
-        return;
-      }
-    }
-    
-    // Get one UTF-8 character and its Unicode codepoint
-    int charStart = i;
-    uint32_t unicode = utf8Decode(sampleText, i);
-    
-    // Skip carriage returns and control characters
-    if (unicode == '\r') continue;
-    if (unicode < 0x20 && unicode != '\n' && unicode != EPUB_IMG_MARKER) continue;
-    // Collapse consecutive spaces into one; render as blank cell
-    if (unicode == 0x3000 || unicode == ' ') {
-      // When paragraphIndent is enabled, allow up to 2 U+3000 at paragraph start
-      if (paragraphIndent && unicode == 0x3000 && indentCount < 2) {
-        indentCount++;
-        currentY += charHeight;
-        charIndex++;
-        charsDrawn++;
-        if (currentY + charHeight > rdMaxY || charIndex >= charsPerColumn) {
-          columnX -= columnSpacing;
-          currentY = startY;
-          charIndex = 0;
-          if (columnX - columnSpacing / 2 < rdLeft) {
-            renderStopByte = i;
-            break;
-          }
-        }
-        continue;
-      }
-      if (lastWasSpace) continue;  // Skip consecutive spaces
-      lastWasSpace = true;
-      // Render space as empty cell (advance position without drawing)
-      currentY += charHeight;
-      charIndex++;
-      charsDrawn++;
-      // Check column overflow
-      if (currentY + charHeight > rdMaxY || charIndex >= charsPerColumn) {
-        columnX -= columnSpacing;
-        currentY = startY;
-        charIndex = 0;
-        if (columnX - columnSpacing / 2 < rdLeft) {
-          renderStopByte = i;
-          break;
-        }
-      }
-      continue;
-    }
-    lastWasSpace = false;
-
-    // Detect chapter heading "第XXX回/章/節/篇/卷" → force page break (next page starts at 第)
-    // Applied to all books: TXT, EPUBs with/without TOC.
-    // Only triggers when charsDrawn > 0, so it won't break if 第 is already the first char.
-    if (unicode == 0x7B2C && charsDrawn > 0) {  // 第
-      int scanPos = i;
-      bool hasNumber = false;
-      while (scanPos < (int)sampleText.length()) {
-        uint32_t numCp = utf8Decode(sampleText, scanPos);
-        bool isCJKNum = (numCp == 0x4E00 || numCp == 0x4E8C || numCp == 0x4E09 || numCp == 0x56DB ||
-                         numCp == 0x4E94 || numCp == 0x516D || numCp == 0x4E03 || numCp == 0x516B ||
-                         numCp == 0x4E5D || numCp == 0x5341 || numCp == 0x767E || numCp == 0x5343 ||
-                         numCp == 0x96F6 || numCp == 0x3007);
-        bool isDigit = (numCp >= '0' && numCp <= '9') ||
-                       (numCp >= 0xFF10 && numCp <= 0xFF19);
-        if (isCJKNum || isDigit) {
-          hasNumber = true;
-        } else if (hasNumber &&
-                   (numCp == 0x56DE ||   // 回
-                    numCp == 0x7AE0 ||   // 章
-                    numCp == 0x7BC0 ||   // 節
-                    numCp == 0x7BC7 ||   // 篇
-                    numCp == 0x5377)) {  // 卷
-          renderStopByte = charStart;  // Next page starts at 第
-          columnX = rdLeft - columnSpacing;
-          Serial.printf("Chapter break: 第...%c at byte %d\n", (char)numCp, charStart);
-          break;
-        } else {
-          break;
-        }
-      }
-      if (columnX - columnSpacing / 2 < rdLeft) break;
-    }
-    
-    // Latin text run: collect consecutive printable ASCII chars and render rotated 90° CW
-    // Only trigger for runs containing at least one letter (skip lone digits/punctuation)
-    // Must run BEFORE halfToFullWidth so ASCII values are preserved for detection
-    if (unicode >= 0x21 && unicode <= 0x7E) {
-      // Peek ahead to check if there's at least one letter in the run
-      bool hasLetter = (unicode >= 'A' && unicode <= 'Z') || (unicode >= 'a' && unicode <= 'z');
-      if (!hasLetter) {
-        int peek_i = i;
-        while (peek_i < (int)sampleText.length()) {
-          unsigned char pc = (unsigned char)sampleText.charAt(peek_i);
-          if ((pc >= 'A' && pc <= 'Z') || (pc >= 'a' && pc <= 'z')) { hasLetter = true; break; }
-          if (pc >= 0x21 && pc <= 0x7E) { peek_i++; continue; }
-          if (pc == ' ' && peek_i + 1 < (int)sampleText.length() &&
-              (unsigned char)sampleText.charAt(peek_i + 1) >= 0x21 &&
-              (unsigned char)sampleText.charAt(peek_i + 1) <= 0x7E) { peek_i++; continue; }
-          break;
-        }
-      }
-      if (!hasLetter) {
-        // No letters — treat as normal character (draw vertically as-is)
-        goto draw_normal_char;
-      }
-      // Rewind to collect the full run (we already decoded one char)
-      i = charStart;
-      int runStart = i;
-      String latinRun = "";
-      // Cap collection: only collect ~2x what a column can hold to avoid O(n²) splitting.
-      // At font size F, each char is roughly F*0.6 pixels wide; after 90° rotation,
-      // the run width becomes the column height. maxColumnH ≈ 792 pixels at default layout.
-      int maxLatinChars = max(20, (rdMaxY - rdTop) / max(1, fontSizePt / 3) + 10);
-      while (i < (int)sampleText.length() && (int)latinRun.length() < maxLatinChars) {
-        unsigned char peek = (unsigned char)sampleText.charAt(i);
-        if (peek >= 0x21 && peek <= 0x7E) {
-          latinRun += (char)peek;
-          i++;
-        } else if (peek == ' ' && i + 1 < (int)sampleText.length() &&
-                   (unsigned char)sampleText.charAt(i + 1) >= 0x21 &&
-                   (unsigned char)sampleText.charAt(i + 1) <= 0x7E) {
-          // Include spaces between Latin words
-          latinRun += ' ';
-          i++;
-        } else {
-          break;
-        }
-      }
-      if (latinRun.length() == 0) continue;
-
-      // Measure text width using OFR
-      ofr.setFontSize(ofrRenderSize);
-      uint32_t textW = ofr.getTextWidth(latinRun.c_str());
-      int spriteW = (int)textW + 8;
-      int spriteH = ofrRenderSize + 4;
-      int rotatedH = spriteW;  // After 90° rotation, width becomes height
-      int maxColumnH = rdMaxY - startY - charHeight;  // Max height available in a fresh column
-
-      // If the run is too long even for a fresh column, split at word boundary
-      if (rotatedH > maxColumnH && maxColumnH > 0) {
-        String bestFit = "";
-        int bestEnd = 0;
-        // Binary search for the longest prefix that fits (O(log n) instead of O(n))
-        int lo = 0, hi = latinRun.length();
-        while (lo < hi) {
-          int mid = (lo + hi + 1) / 2;
-          // Find the nearest space at or before mid
-          int splitAt = mid;
-          while (splitAt > lo && latinRun.charAt(splitAt) != ' ') splitAt--;
-          if (splitAt <= lo) {
-            // No space between lo and mid — try the raw position
-            String sub = latinRun.substring(0, mid);
-            uint32_t subW = ofr.getTextWidth(sub.c_str());
-            if ((int)subW + 8 <= maxColumnH) {
-              lo = mid;
-            } else {
-              hi = mid - 1;
-            }
-          } else {
-            String sub = latinRun.substring(0, splitAt);
-            uint32_t subW = ofr.getTextWidth(sub.c_str());
-            if ((int)subW + 8 <= maxColumnH) {
-              bestFit = sub;
-              bestEnd = splitAt + 1;
-              lo = splitAt + 1;
-            } else {
-              hi = splitAt - 1;
-            }
-          }
-          yield();
-          esp_task_wdt_reset();
-        }
-        if (bestFit.length() > 0) {
-          latinRun = bestFit;
-          i = runStart + bestEnd;
-        } else {
-          // No word boundary works — force split by character count
-          // Use proportional estimate then verify
-          int estChars = max(1, (int)((long)latinRun.length() * maxColumnH / rotatedH));
-          // Shrink until it fits
-          while (estChars > 1) {
-            String sub = latinRun.substring(0, estChars);
-            uint32_t subW = ofr.getTextWidth(sub.c_str());
-            if ((int)subW + 8 <= maxColumnH) break;
-            estChars = estChars * 3 / 4;  // Reduce by 25%
-          }
-          if (estChars < 1) estChars = 1;
-          latinRun = latinRun.substring(0, estChars);
-          i = runStart + estChars;
-        }
-        textW = ofr.getTextWidth(latinRun.c_str());
-        spriteW = (int)textW + 8;
-        rotatedH = spriteW;
-      }
-
-      // Check if the rotated text fits in the remaining column space
-      if (currentY + rotatedH > rdMaxY - charHeight) {
-        // Doesn't fit — move to next column and try again
-        columnX -= columnSpacing;
-        currentY = startY;
-        charIndex = 0;
-        if (columnX - columnSpacing / 2 < rdLeft) {
-          renderStopByte = runStart;  // Reprocess this run on next page
-          i = runStart;
-          break;
-        }
-      }
-
-      // Render into sprite, then push rotated
-      // OFR always has a font loaded here (reading font or system font)
-      LGFX_Sprite sprite(&M5.Display);
-      if (sprite.createSprite(spriteW, spriteH)) {
-        sprite.fillSprite(TFT_WHITE);
-        ofr.setDrawer(sprite);
-        ofr.setFontSize(ofrRenderSize);
-        ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-        ofr.cdrawString(latinRun.c_str(), spriteW / 2, 2, TFT_BLACK, TFT_WHITE);
-        int destX = columnX;
-        int destY = currentY + rotatedH / 2;
-        sprite.pushRotateZoom(&M5.Display, destX, destY, 90, 1.0, 1.0);
-        sprite.deleteSprite();
-        ofr.setDrawer(M5.Display);
-      }
-
-      currentY += rotatedH;
-      // Count equivalent character slots for the Latin run (not raw char count)
-      int slotsUsed = (rotatedH + charHeight - 1) / charHeight;
-      charIndex += slotsUsed;
-      charsDrawn += latinRun.length();
-      lastWasSpace = true;  // Suppress blank cell if space follows the run
-
-      // Check column overflow
-      if (charIndex >= charsPerColumn || currentY + charHeight > rdMaxY) {
-        columnX -= columnSpacing;
-        currentY = startY;
-        charIndex = 0;
-        if (columnX - columnSpacing / 2 < rdLeft) {
-          renderStopByte = i;
-          break;
-        }
-      }
-      continue;
-    }
-    
-    // Handle EPUB image markers: \x01<image_path>\x01
-    if (unicode == EPUB_IMG_MARKER && currentBookIsEpub) {
-      // Parse image path until next marker
-      int pathStart = i;
-      while (i < (int)sampleText.length() && sampleText.charAt(i) != EPUB_IMG_MARKER) i++;
-      if (i < (int)sampleText.length()) {
-        String imgPath = sampleText.substring(pathStart, i);
-        i++;  // Skip closing marker
-        
-        Serial.printf("EPUB IMG marker found: '%s'\n", imgPath.c_str());
-        
-        // Use the full reading area for the image (not just remaining columns)
-        int imgX = rdLeft;
-        int imgY = rdTop;
-        int imgW = rdRight - rdLeft;
-        int imgH = rdMaxY - rdTop;
-        
-        // Release display bus during SD I/O + image decode to avoid SPI conflicts
-        M5.Display.endWrite();
-        esp_task_wdt_reset();
-        Serial.printf("EPUB IMG: extracting '%s'...\n", imgPath.c_str());
-        unsigned long imgStart = millis();
-        bool imgDrawn = epubExtractAndDrawImage(imgPath, imgX, imgY, imgW, imgH);
-        Serial.printf("EPUB IMG: extraction took %lu ms, drawn=%d\n", millis() - imgStart, imgDrawn);
-        esp_task_wdt_reset();
-        M5.Display.startWrite();
-        
-        if (imgDrawn) {
-          pageHasImage = true;
-          // Image drawn — this page is done, break to next page
-          renderStopByte = i;
-          Serial.printf("EPUB IMG: page %d endPageRender at renderStopByte=%d of %d, offset=%d, freePSRAM=%u\n",
-                        currentPage, renderStopByte, (int)sampleText.length(),
-                        (int)currentPageByteOffset, ESP.getFreePsram());
-          goto endPageRender;
-        } else {
-          // Image failed — show placeholder text
-          Serial.printf("EPUB: Image not rendered: %s\n", imgPath.c_str());
-        }
-      }
-      continue;
-    }
-    
-    // Hard newline → start a new column (paragraph break in vertical text)
-    if (unicode == '\n') {
-      lastWasSpace = true;  // Skip leading spaces/U+3000 at start of new column (paragraph indent)
-      indentCount = 0;      // Reset indent counter for new paragraph
-      if (charIndex > 0) {  // Only if current column has content
-        columnX -= columnSpacing;
-        currentY = startY;
-        charIndex = 0;
-        if (columnX - columnSpacing / 2 < rdLeft) {
-          renderStopByte = i;
-          break;
-        }
-      }
-      continue;
-    }
-    
-    // Convert half-width punctuation to full-width for CJK rendering
-    // (only lone ASCII punctuation reaches here — Latin runs with letters are handled above)
-    unicode = halfToFullWidth(unicode);
-    // Apply vertical punctuation mapping
-    unicode = toVerticalPunct(unicode);
-
-    // Draw character using the selected renderer
-    draw_normal_char:
-    // Vertically center each glyph within its charHeight cell
-    int vOffset = (charHeight - fontSizePt) / 2;
-    if (renderer == FONT_OFR) {
-      // OpenFontRender with PSRAM glyph cache — FreeType runs only on first encounter
-      int drawY = currentY + vOffset;
-      bool drawn = drawOFRCharCached(unicode, columnX - fontSizePt / 2, drawY, TFT_BLACK, fontSizePt);
-      if (drawn) {
-        charsDrawn++;
-        currentY += charHeight;
-        charIndex++;
-      } else {
-        // Character not in font, skip
-        if (charsDrawn < 10) {
-          Serial.printf("OFR: skip U+%04X (not rendered)\n", unicode);
-        }
-        continue;
-      }
-    } else if (renderer == FONT_BINFONT) {
-      GlyphIndex* glyph = findGlyph(unicode);
-      if (glyph && glyph->width > 0) {
-        // Position glyph within em-square using bearing offsets (v2) or center fallback (v1)
-        int emY = currentY + (charHeight - fontSizePt) / 2;  // em-square top edge
-        int emX = columnX - fontSizePt / 2;                   // em-square left edge
-        int scaledW = (int)(glyph->width * binScale + 0.5f);
-        int scaledH = (int)(glyph->height * binScale + 0.5f);
-        int drawX, drawY;
-        if (g_binFont.version >= 2) {
-          drawX = emX + (int)(glyph->bearingX * binScale + 0.5f);
-          drawY = emY + (int)(glyph->bearingY * binScale + 0.5f);
-        } else {
-          drawX = columnX - scaledW / 2;
-          drawY = emY + (fontSizePt - scaledH) / 2;
-        }
-        if (charsDrawn < 5) {
-          Serial.printf("Drawing char %d: U+%04X at x=%d y=%d scale=%.2f bearing=(%d,%d)\n", charsDrawn, unicode, drawX, drawY, binScale, glyph->bearingX, glyph->bearingY);
-        }
-        if (drawBinFontChar(unicode, drawX, drawY, TFT_BLACK, binScale)) {
-          charsDrawn++;
-          currentY += charHeight;
-          charIndex++;
-        }
-      } else {
-        if (unicode > 0x20 && charsDrawn < 10) {
-          Serial.printf("Skipping U+%04X (not in font)\n", unicode);
-        }
-        continue;
-      }
-    } else {
-      // Built-in font fallback (ASCII only, CJK won't render)
-      char chBuf2[5];
-      int chLen2 = utf8Encode(unicode, chBuf2);
-      chBuf2[chLen2] = '\0';
-      int drawY = currentY + vOffset;
-      M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextSize(1);
-      M5.Display.setCursor(columnX - 8, drawY);
-      M5.Display.print(chBuf2);
-      charsDrawn++;
-      currentY += charHeight;
-      charIndex++;
-    }
-    
-    // Move to next column when column is full
-    if (charIndex >= charsPerColumn || currentY > rdMaxY) {
-      // Kinsoku (禁則處理): peek at next character — if it's a punctuation mark
-      // that should not start a new column, pull it into the reserved bottom slot
-      if (i < (int)sampleText.length()) {
-        int peekI = i;
-        uint32_t peekUnicode = utf8Decode(sampleText, peekI);
-        uint32_t mappedPeek = toVerticalPunct(peekUnicode);
-        if (isColumnStartProhibited(peekUnicode) || isColumnStartProhibited(mappedPeek)) {
-          String peekCh = sampleText.substring(i, peekI);
-          applyVerticalPunct(peekCh, mappedPeek);
-
-          // Draw single prohibited char at normal size in reserved slot
-          int vOff = (charHeight - fontSizePt) / 2;
-          if (renderer == FONT_OFR) {
-            drawOFRCharCached(mappedPeek, columnX - fontSizePt / 2, currentY + vOff, TFT_BLACK, fontSizePt);
-          } else if (renderer == FONT_BINFONT) {
-            GlyphIndex* glyph = findGlyph(mappedPeek);
-            if (glyph && glyph->width > 0) {
-              int emY = currentY + (charHeight - fontSizePt) / 2;
-              int emX = columnX - fontSizePt / 2;
-              int kx, ky;
-              if (g_binFont.version >= 2) {
-                kx = emX + (int)(glyph->bearingX * binScale + 0.5f);
-                ky = emY + (int)(glyph->bearingY * binScale + 0.5f);
-              } else {
-                int kScaledW = (int)(glyph->width * binScale + 0.5f);
-                int kScaledH = (int)(glyph->height * binScale + 0.5f);
-                kx = columnX - kScaledW / 2;
-                ky = emY + (fontSizePt - kScaledH) / 2;
-              }
-              drawBinFontChar(mappedPeek, kx, ky, TFT_BLACK, binScale);
-            }
-          } else {
-            M5.Display.setFont(&fonts::Font2);
-            M5.Display.setTextSize(1);
-            M5.Display.setCursor(columnX - 8, currentY + vOff);
-            M5.Display.print(peekCh);
-          }
-          charsDrawn++;
-          i = peekI;  // Consume the peeked character
-        }
-      }
-      columnX -= columnSpacing;
-      currentY = startY;
-      charIndex = 0;
-      
-      if (columnX - columnSpacing / 2 < rdLeft) {
-        renderStopByte = i;  // Record where rendering actually stopped
-        break;
-      }
-    }
-  }
-  endPageRender:  // Jump target for image rendering page break
-  
-  // OFR Latin font (EBGaramond) is intentionally kept loaded — avoids
-  // expensive SD card re-reads on every page turn.  BIN font stays in
-  // memory regardless; renderer selection uses readingFontFile extension.
-  
-  // Redraw nav bar on top of image — image rendering may have overlapped the nav area
-  if (pageHasImage) {
-    lastPageWasImage = true;
-    bool hasPrev = (currentPage > 0);
-    bool hasNext = (currentPage < totalPages - 1);
-    drawVerticalNavBar(hasPrev, hasNext);
-    Serial.printf("EPUB IMG: Redrawn nav bar (hasPrev=%d, hasNext=%d, page=%d/%d)\n",
-                  hasPrev, hasNext, currentPage, totalPages);
-  } else {
-    lastPageWasImage = false;
-  }
-  
-  // Correct next page byte offset based on actual bytes rendered
-  // This prevents text from being skipped between pages
-  // Skip for image-based EPUBs (they use chapter-index pagination instead of byte offsets)
-  if (!epubIsImageBased && renderStopByte < (int)sampleText.length() && pageByteOffsets) {
-    size_t correctedNextStart = currentPageByteOffset + renderStopByte;
-    
-    // Always store/extend the corrected offset for the next page
-    if (currentPage + 1 < pageOffsetsCount) {
-      // Update existing tracked offset
-      if (correctedNextStart != pageByteOffsets[currentPage + 1]) {
-        Serial.printf("Page offset correction: page %d offset %d -> %d (rendered %d of %d bytes)\n",
-                      currentPage + 1, (int)pageByteOffsets[currentPage + 1], (int)correctedNextStart,
-                      renderStopByte, (int)sampleText.length());
-        pageByteOffsets[currentPage + 1] = correctedNextStart;
-      }
-    } else if (currentPage + 1 == pageOffsetsCount && pageOffsetsCount < MAX_PAGE_OFFSETS) {
-      // Extend offset array — next page wasn't tracked yet
-      pageByteOffsets[pageOffsetsCount] = correctedNextStart;
-      pageOffsetsCount++;
-      Serial.printf("Page offset extended: page %d offset %d (rendered %d of %d bytes)\n",
-                    currentPage + 1, (int)correctedNextStart, renderStopByte, (int)sampleText.length());
-    }
-    
-    // Also store current page offset if not yet tracked (e.g., jumped to saved page)
-    if (currentPage >= pageOffsetsCount) {
-      // Fill gap: estimate backward from the known current page offset
-      // This is more accurate than N*bytesPerPage when early pages consume few bytes (e.g., cover images)
-      while (pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
-        int gap = currentPage - pageOffsetsCount;
-        size_t est = (currentPageByteOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                     currentPageByteOffset - (size_t)(gap + 1) * bytesPerPage : 0;
-        pageByteOffsets[pageOffsetsCount] = est;
-        pageOffsetsCount++;
-      }
-    }
-    if (currentPage < pageOffsetsCount) {
-      pageByteOffsets[currentPage] = currentPageByteOffset;
-    }
-    // Extend for next page if needed after filling gaps
-    if (currentPage + 1 >= pageOffsetsCount && pageOffsetsCount < MAX_PAGE_OFFSETS) {
-      pageByteOffsets[pageOffsetsCount] = correctedNextStart;
-      pageOffsetsCount = currentPage + 2;
-      Serial.printf("Page offset gap-filled: page %d offset %d\n",
-                    currentPage + 1, (int)correctedNextStart);
-    }
-  }
-  
-  // Reading progress bar (thin bar above buttons)
-  {
-    int barX = PROGRESS_BAR_X;
-    int barY = 878;  // Clear gap below text (850) and above buttons (910)
-    int barW = M5.Display.width() - 60;  // 480px wide
-    int barH = 4;
-    float progress = (totalPages > 1) ? (float)(currentPage) / (totalPages - 1) : 1.0f;
-    int fillW = (int)(barW * progress);
-    M5.Display.drawRect(barX, barY, barW, barH, TFT_BLACK);
-    if (fillW > 0) {
-      M5.Display.fillRect(barX, barY, fillW, barH, TFT_BLACK);
-    }
-    // Percentage above bar on the right
-    char pctStr[8];
-    snprintf(pctStr, sizeof(pctStr), "%d%%", (int)(progress * 100));
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(BR_DATUM);
-    M5.Display.drawString(pctStr, barX + barW, barY - 6);
-    M5.Display.setTextDatum(TL_DATUM);
-    // Page number on the left side above progress bar (avoid overlapping font buttons)
-    char pageStr[16];
-    snprintf(pageStr, sizeof(pageStr), "%d/%d", currentPage + 1, totalPages);
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(BL_DATUM);
-    M5.Display.drawString(pageStr, barX, barY - 6);
-    M5.Display.setTextDatum(TL_DATUM);
-  }
-  
-  // Toolbar bitmap: [−A] [size] [+A] [Aa] [≡] [★]  (6 cells, 312×50)
-  // Drawn at (150, 905), each cell 52px wide
-  int btnRowY = 905;
-  int tbX = 150;     // toolbar X origin
-  int cellW = 52;    // cell width (312/6)
-  drawNavIcon("reader_toolbar.png", tbX, btnRowY);
-  
-  // Dynamic font size number in cell 1 (size display)
-  {
-    int sizeCell = tbX + cellW;  // x=202
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.drawNumber(readingFontSize, sizeCell + cellW / 2, btnRowY + 25);
-    M5.Display.setTextDatum(TL_DATUM);
-  }
-  
-  // Bookmark highlight overlay (fill ★ cell when bookmarked)
-  {
-    bool isBookmarked = false;
-    for (int i = 0; i < bookmarkCount; i++) {
-      if (bookmarks[i].page == currentPage) { isBookmarked = true; break; }
-    }
-    if (isBookmarked) {
-      int starX = tbX + cellW * 5;  // x=410
-      M5.Display.fillRect(starX + 1, btnRowY + 1, cellW - 2, 48, TFT_BLACK);
-      M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextSize(1);
-      M5.Display.setTextColor(TFT_WHITE);
-      M5.Display.setTextDatum(MC_DATUM);
-      M5.Display.drawString("*", starX + cellW / 2, btnRowY + 25);
-      M5.Display.setTextColor(TFT_BLACK);
-      M5.Display.setTextDatum(TL_DATUM);
-    }
-  }
-  
-  Serial.println("Calling display()...");
-  M5.Display.endWrite();
-  M5.Display.display();
-  Serial.println("Reading mode displayed");
+  drawChineseReading();
 }
 
 // ==================== Table of Contents ====================
@@ -1720,6 +1159,14 @@ void drawTocList() {
       int startIdx = tocListPage * TOC_PER_PAGE;
       int endIdx = min(startIdx + TOC_PER_PAGE, epubTocCount);
 
+      // Load reading font for chapter titles
+      loadReadingFont();
+      if (ofrFontLoaded) {
+        ofr.setFontSize(28);
+        ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+        ofr.setDrawer(M5.Display);
+      }
+
       for (int i = startIdx; i < endIdx; i++) {
         int row = i - startIdx;
         int rowY = listStartY + row * BOOK_ROW_HEIGHT;
@@ -1752,9 +1199,15 @@ void drawTocList() {
           }
         }
 
-        drawSystemText(displayName.c_str(), 40, rowY, 28);
+        if (ofrFontLoaded) {
+          ofr.drawString(displayName.c_str(), 40, rowY);
+        } else {
+          drawSystemText(displayName.c_str(), 40, rowY, 28);
+        }
         yield();
       }
+      // Restore system font for UI elements below
+      loadSystemFont();
 
       bool hasPrev = (tocListPage > 0);
       bool hasNext = (tocListPage < totalTocPages - 1);

@@ -26,6 +26,7 @@ void layoutIcons() {
 void drawWelcome() {
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
   M5.Display.startWrite();
+  M5.Display.fillScreen(TFT_WHITE);  // Clear e-ink ghosting from loading progress bar
 
   int w = M5.Display.width();
   int h = M5.Display.height();
@@ -76,28 +77,28 @@ void drawDashboard() {
       snprintf(iconPath, sizeof(iconPath), "/icons/icon%d.png", i + 1);
       
       if (SD.exists(iconPath)) {
-        File iconFile;
-        if (sdMutex != NULL) {
-          xSemaphoreTake(sdMutex, portMAX_DELAY);
-          iconFile = SD.open(iconPath);
-          xSemaphoreGive(sdMutex);
-        } else {
-          iconFile = SD.open(iconPath);
-        }
-        
-        if (iconFile) {
-          size_t fileSize = iconFile.size();
-          uint8_t* buffer = (uint8_t*)malloc(fileSize);
-          if (buffer) {
-            size_t bytesRead = iconFile.read(buffer, fileSize);
-            iconFile.close();
-            if (bytesRead == fileSize) {
-              iconDrawn = drawIconData(buffer, fileSize);
+        uint8_t* buffer = nullptr;
+        size_t fileSize = 0;
+        size_t bytesRead = 0;
+        {
+          ScopedSDLock lock;
+          File iconFile = SD.open(iconPath);
+          if (iconFile) {
+            fileSize = iconFile.size();
+            if (fileSize > 0 && fileSize <= 512 * 1024) {
+              buffer = (uint8_t*)ps_malloc(fileSize);
+              if (buffer) {
+                bytesRead = iconFile.read(buffer, fileSize);
+              }
             }
-            free(buffer);
-          } else {
             iconFile.close();
           }
+        }
+        if (buffer) {
+          if (bytesRead == fileSize) {
+            iconDrawn = drawIconData(buffer, fileSize);
+          }
+          free(buffer);
         }
       }
     }

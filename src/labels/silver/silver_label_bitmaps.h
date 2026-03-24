@@ -18,6 +18,7 @@
 #include "slabel_kuanyin_slips.h"
 #include "slabel_sensoji_slips.h"
 #include "slabel_sleep_motto.h"
+#include "slabel_sleep_motto_36.h"
 #include "slabel_sincere_prayer.h"
 #include "slabel_shake_to_draw.h"
 #include "slabel_char_cheng.h"
@@ -1344,17 +1345,195 @@
 #include "slabel_s32_wake.h"
 #include "slabel_s36_switch_silver.h"
 #include "slabel_s36_switch_genyomin.h"
+#include "slabel_s36_loading.h"
+#include "slabel_s36_book_loading.h"
 #include "slabel_s36_safe_mode.h"
 #include "slabel_s36_fortune.h"
 #include "slabel_s36_select_ym.h"
 #include "slabel_s40_sys_font.h"
 #include "slabel_s40_bluetooth.h"
+#include "slabel_s40_setup.h"
+#include "slabel_s40_select_font.h"
+#include "slabel_s40_about.h"
 #include "slabel_s22_no_sd.h"
 #include "slabel_s32_no_sd.h"
 #include "slabel_s24_insert_sd.h"
+#include "slabel_s24_free_zoom.h"
+#include "slabel_s24_quad_zoom.h"
+#include "slabel_s22_sd_absent.h"
+#include "slabel_s22_wifi_disconn.h"
+#include "slabel_s22_about_desc.h"
+#include "slabel_s22_hw_info.h"
+#include "slabel_s22_screen_info.h"
+#include "slabel_s22_no_indent.h"
+#include "slabel_s22_indent.h"
+#include "slabel_s28_about_title.h"
+#include "slabel_s32_para_indent.h"
+#include "slabel_s32_about.h"
+#include "slabel_s22_build_date.h"
+#include "slabel_s22_cpu.h"
+#include "slabel_s22_flash.h"
+#include "slabel_s22_psram.h"
+#include "slabel_s22_remain.h"
+#include "slabel_s22_kb_suffix.h"
+#include "slabel_s22_heap.h"
+#include "slabel_s22_sd_prefix.h"
+#include "slabel_s22_wifi_prefix.h"
+#include "slabel_comic_free_24.h"
+#include "slabel_comic_quad_24.h"
+#include "slabel_dict_not_found.h"
+#include "slabel_dict_dismiss.h"
+#include "slabel_last_read.h"
+#include "slabel_mchar_2014.h"
+#include "slabel_mchar_3002.h"
+#include "slabel_mchar_300c.h"
+#include "slabel_mchar_300d.h"
+#include "slabel_mchar_4e00.h"
+#include "slabel_mchar_4e0a.h"
+#include "slabel_mchar_4e0d.h"
+#include "slabel_mchar_4e2d.h"
+#include "slabel_mchar_4e3b.h"
+#include "slabel_mchar_4e5f.h"
+#include "slabel_mchar_4e86.h"
+#include "slabel_mchar_4e8b.h"
+#include "slabel_mchar_4eba.h"
+#include "slabel_mchar_4ec0.h"
+#include "slabel_mchar_4ed6.h"
+#include "slabel_mchar_4ee5.h"
+#include "slabel_mchar_4f19.h"
+#include "slabel_mchar_4f34.h"
+#include "slabel_mchar_4f46.h"
+#include "slabel_mchar_4f4d.h"
+#include "slabel_mchar_4f60.h"
+#include "slabel_mchar_4f86.h"
+#include "slabel_mchar_4fd7.h"
+#include "slabel_mchar_4fdd.h"
+#include "slabel_mchar_4fe1.h"
+#include "slabel_mchar_500b.h"
+#include "slabel_mchar_5019.h"
+#include "slabel_mchar_505a.h"
+#include "slabel_mchar_516c.h"
+#include "slabel_mchar_518d.h"
+#include "slabel_mchar_51fa.h"
+#include "slabel_mchar_5207.h"
+#include "slabel_mchar_5230.h"
+#include "slabel_mchar_5247.h"
+#include "slabel_mchar_5341.h"
+#include "slabel_mchar_5343.h"
+#include "slabel_mchar_53bb.h"
+#include "slabel_mchar_53c8.h"
+#include "slabel_mchar_53e5.h"
+#include "slabel_mchar_53ef.h"
+#include "slabel_mchar_5403.h"
+#include "slabel_mchar_5404.h"
+#include "slabel_mchar_540c.h"
+#include "slabel_mchar_5426.h"
+#include "slabel_mchar_5435.h"
+#include "slabel_mchar_548c.h"
+#include "slabel_mchar_5582.h"
+#include "slabel_mchar_570b.h"
+#include "slabel_mchar_5728.h"
+#include "slabel_mchar_5922.h"
+#include "slabel_mchar_5927.h"
+#include "slabel_mchar_5929.h"
+#include "slabel_mchar_597d.h"
+#include "slabel_mchar_5982.h"
+#include "slabel_mchar_5a18.h"
+#include "slabel_mchar_5b83.h"
+#include "slabel_mchar_5b88.h"
+#include "slabel_mchar_5b9a.h"
+#include "slabel_mchar_5beb.h"
+#include "slabel_mchar_5c01.h"
+#include "slabel_mchar_5c07.h"
+#include "slabel_mchar_5c0d.h"
+#include "slabel_mchar_5c0f.h"
+#include "slabel_mchar_5c31.h"
+#include "slabel_mchar_5c4e.h"
+#include "slabel_mchar_5df1.h"
+#include "slabel_mchar_5e74.h"
+#include "slabel_mchar_5e8f.h"
+#include "slabel_mchar_5efa.h"
+#include "slabel_mchar_5f88.h"
+#include "slabel_mchar_601d.h"
+#include "slabel_mchar_610f.h"
+#include "slabel_mchar_6200.h"
+#include "slabel_mchar_6211.h"
+#include "slabel_mchar_628a.h"
+#include "slabel_mchar_62c9.h"
+#include "slabel_mchar_6301.h"
+#include "slabel_mchar_6495.h"
+#include "slabel_mchar_6562.h"
+#include "slabel_mchar_65b9.h"
+#include "slabel_mchar_6625.h"
+#include "slabel_mchar_662f.h"
+#include "slabel_mchar_6642.h"
+#include "slabel_mchar_6700.h"
+#include "slabel_mchar_6703.h"
+#include "slabel_mchar_6709.h"
+#include "slabel_mchar_670d.h"
+#include "slabel_mchar_6751.h"
+#include "slabel_mchar_679c.h"
+#include "slabel_mchar_67b6.h"
+#include "slabel_mchar_6885.h"
+#include "slabel_mchar_689d.h"
+#include "slabel_mchar_6b7b.h"
+#include "slabel_mchar_6bd4.h"
+#include "slabel_mchar_6c11.h"
+#include "slabel_mchar_6c23.h"
+#include "slabel_mchar_6c92.h"
+#include "slabel_mchar_70ba.h"
+#include "slabel_mchar_71df.h"
+#include "slabel_mchar_7239.h"
+#include "slabel_mchar_729f.h"
+#include "slabel_mchar_72af.h"
+#include "slabel_mchar_731c.h"
+#include "slabel_mchar_74bd.h"
+#include "slabel_mchar_7684.h"
+#include "slabel_mchar_76ee.h"
+#include "slabel_mchar_771f.h"
+#include "slabel_mchar_79cb.h"
+#include "slabel_mchar_7a0b.h"
+#include "slabel_mchar_7d42.h"
+#include "slabel_mchar_7db2.h"
+#include "slabel_mchar_7f6a.h"
+#include "slabel_mchar_800c.h"
+#include "slabel_mchar_80fd.h"
+#include "slabel_mchar_81ea.h"
+#include "slabel_mchar_8207.h"
+#include "slabel_mchar_82f1.h"
+#include "slabel_mchar_842c.h"
+#include "slabel_mchar_8981.h"
+#include "slabel_mchar_8a0e.h"
+#include "slabel_mchar_8a18.h"
+#include "slabel_mchar_8a71.h"
+#include "slabel_mchar_8aaa.h"
+#include "slabel_mchar_8ad6.h"
+#include "slabel_mchar_8ff7.h"
+#include "slabel_mchar_9019.h"
+#include "slabel_mchar_9023.h"
+#include "slabel_mchar_903c.h"
+#include "slabel_mchar_904e.h"
+#include "slabel_mchar_9075.h"
+#include "slabel_mchar_90a3.h"
+#include "slabel_mchar_90fd.h"
+#include "slabel_mchar_9322.h"
+#include "slabel_mchar_958b.h"
+#include "slabel_mchar_95a3.h"
+#include "slabel_mchar_96c4.h"
+#include "slabel_mchar_990a.h"
+#include "slabel_mchar_9910.h"
+#include "slabel_mchar_9ebb.h"
+#include "slabel_mchar_9ebc.h"
+#include "slabel_mchar_ff01.h"
+#include "slabel_mchar_ff0c.h"
+#include "slabel_mchar_ff1a.h"
+#include "slabel_mchar_ff1f.h"
+#include "slabel_mchar_fe31.h"
+#include "slabel_mchar_fe41.h"
+#include "slabel_mchar_fe42.h"
 
 // Reuse LabelBitmap struct from label_bitmaps.h
-const int kSilverLabelBitmapCount = 1346;
+const int kSilverLabelBitmapCount = 1525;
 
 const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"電子書", 32, slabel_ebook_w, slabel_ebook_h, slabel_ebook_bitmap},
@@ -1369,6 +1548,7 @@ const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"觀音靈籖", 36, slabel_kuanyin_slips_w, slabel_kuanyin_slips_h, slabel_kuanyin_slips_bitmap},
   {"淺草寺靈籖", 36, slabel_sensoji_slips_w, slabel_sensoji_slips_h, slabel_sensoji_slips_bitmap},
   {"醒世格言", 28, slabel_sleep_motto_w, slabel_sleep_motto_h, slabel_sleep_motto_bitmap},
+  {"醒世格言", 36, slabel_sleep_motto_36_w, slabel_sleep_motto_36_h, slabel_sleep_motto_36_bitmap},
   {"誠心祝禱", 64, slabel_sincere_prayer_w, slabel_sincere_prayer_h, slabel_sincere_prayer_bitmap},
   {"輕搖求籖", 64, slabel_shake_to_draw_w, slabel_shake_to_draw_h, slabel_shake_to_draw_bitmap},
   {"誠", 64, slabel_char_cheng_w, slabel_char_cheng_h, slabel_char_cheng_bitmap},
@@ -1505,7 +1685,7 @@ const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"請在 /wallpapers 資料夾中", 24, slabel_add_wallpaper_hint_w, slabel_add_wallpaper_hint_h, slabel_add_wallpaper_hint_bitmap},
   {"添加圖片檔案", 24, slabel_add_image_files_w, slabel_add_image_files_h, slabel_add_image_files_bitmap},
   {"電子書列表", 36, slabel_booklist_title_w, slabel_booklist_title_h, slabel_booklist_title_bitmap},
-  {"觸控選擇書籍", 18, slabel_touch_select_w, slabel_touch_select_h, slabel_touch_select_bitmap},
+  {"觸控選擇書籍", 28, slabel_touch_select_w, slabel_touch_select_h, slabel_touch_select_bitmap},
   {"字-", 28, slabel_font_smaller_w, slabel_font_smaller_h, slabel_font_smaller_bitmap},
   {"字+", 28, slabel_font_larger_w, slabel_font_larger_h, slabel_font_larger_bitmap},
   {"字型", 20, slabel_font_type_w, slabel_font_type_h, slabel_font_type_bitmap},
@@ -2695,14 +2875,192 @@ const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"醒世", 32, slabel_s32_wake_w, slabel_s32_wake_h, slabel_s32_wake_bitmap},
   {"切換為 Silver", 36, slabel_s36_switch_silver_w, slabel_s36_switch_silver_h, slabel_s36_switch_silver_bitmap},
   {"切換為 源樣明體", 36, slabel_s36_switch_genyomin_w, slabel_s36_switch_genyomin_h, slabel_s36_switch_genyomin_bitmap},
+  {"AI智能整合中...", 36, slabel_s36_loading_w, slabel_s36_loading_h, slabel_s36_loading_bitmap},
+  {"AI智能排版中...", 36, slabel_s36_book_loading_w, slabel_s36_book_loading_h, slabel_s36_book_loading_bitmap},
   {"安全模式", 36, slabel_s36_safe_mode_w, slabel_s36_safe_mode_h, slabel_s36_safe_mode_bitmap},
   {"求籖", 36, slabel_s36_fortune_w, slabel_s36_fortune_h, slabel_s36_fortune_bitmap},
   {"選擇年月", 36, slabel_s36_select_ym_w, slabel_s36_select_ym_h, slabel_s36_select_ym_bitmap},
   {"系統字體", 40, slabel_s40_sys_font_w, slabel_s40_sys_font_h, slabel_s40_sys_font_bitmap},
   {"藍牙", 40, slabel_s40_bluetooth_w, slabel_s40_bluetooth_h, slabel_s40_bluetooth_bitmap},
+  {"設定", 40, slabel_s40_setup_w, slabel_s40_setup_h, slabel_s40_setup_bitmap},
+  {"選擇閱讀字型", 40, slabel_s40_select_font_w, slabel_s40_select_font_h, slabel_s40_select_font_bitmap},
+  {"關於", 40, slabel_s40_about_w, slabel_s40_about_h, slabel_s40_about_bitmap},
   {"未插入 SD 卡", 22, slabel_s22_no_sd_w, slabel_s22_no_sd_h, slabel_s22_no_sd_bitmap},
   {"未插入 SD 卡", 32, slabel_s32_no_sd_w, slabel_s32_no_sd_h, slabel_s32_no_sd_bitmap},
   {"請插入 SD 卡後重新啟動", 24, slabel_s24_insert_sd_w, slabel_s24_insert_sd_h, slabel_s24_insert_sd_bitmap},
+  {"自由", 24, slabel_s24_free_zoom_w, slabel_s24_free_zoom_h, slabel_s24_free_zoom_bitmap},
+  {"四分", 24, slabel_s24_quad_zoom_w, slabel_s24_quad_zoom_h, slabel_s24_quad_zoom_bitmap},
+  {"SD 卡：未插入", 22, slabel_s22_sd_absent_w, slabel_s22_sd_absent_h, slabel_s22_sd_absent_bitmap},
+  {"WiFi：未連接", 22, slabel_s22_wifi_disconn_w, slabel_s22_wifi_disconn_h, slabel_s22_wifi_disconn_bitmap},
+  {"版本資訊與裝置狀態", 22, slabel_s22_about_desc_w, slabel_s22_about_desc_h, slabel_s22_about_desc_bitmap},
+  {"硬體：M5Stack Paper S3 (ESP32-S3)", 22, slabel_s22_hw_info_w, slabel_s22_hw_info_h, slabel_s22_hw_info_bitmap},
+  {"螢幕：540 × 960  電子紙", 22, slabel_s22_screen_info_w, slabel_s22_screen_info_h, slabel_s22_screen_info_bitmap},
+  {"首行不縮進", 22, slabel_s22_no_indent_w, slabel_s22_no_indent_h, slabel_s22_no_indent_bitmap},
+  {"首行縮進（兩個全形空格）", 22, slabel_s22_indent_w, slabel_s22_indent_h, slabel_s22_indent_bitmap},
+  {"M5Stack Paper S3 中文電子書閱讀器", 28, slabel_s28_about_title_w, slabel_s28_about_title_h, slabel_s28_about_title_bitmap},
+  {"段落縮進", 32, slabel_s32_para_indent_w, slabel_s32_para_indent_h, slabel_s32_para_indent_bitmap},
+  {"關於", 32, slabel_s32_about_w, slabel_s32_about_h, slabel_s32_about_bitmap},
+  {"編譯日期：", 22, slabel_s22_build_date_w, slabel_s22_build_date_h, slabel_s22_build_date_bitmap},
+  {"CPU：", 22, slabel_s22_cpu_w, slabel_s22_cpu_h, slabel_s22_cpu_bitmap},
+  {"Flash：", 22, slabel_s22_flash_w, slabel_s22_flash_h, slabel_s22_flash_bitmap},
+  {"PSRAM：", 22, slabel_s22_psram_w, slabel_s22_psram_h, slabel_s22_psram_bitmap},
+  {"（剩餘 ", 22, slabel_s22_remain_w, slabel_s22_remain_h, slabel_s22_remain_bitmap},
+  {" KB）", 22, slabel_s22_kb_suffix_w, slabel_s22_kb_suffix_h, slabel_s22_kb_suffix_bitmap},
+  {"記憶體：剩餘 ", 22, slabel_s22_heap_w, slabel_s22_heap_h, slabel_s22_heap_bitmap},
+  {"SD 卡：", 22, slabel_s22_sd_prefix_w, slabel_s22_sd_prefix_h, slabel_s22_sd_prefix_bitmap},
+  {"WiFi：", 22, slabel_s22_wifi_prefix_w, slabel_s22_wifi_prefix_h, slabel_s22_wifi_prefix_bitmap},
+  {"自由", 24, slabel_comic_free_24_w, slabel_comic_free_24_h, slabel_comic_free_24_bitmap},
+  {"四分", 24, slabel_comic_quad_24_w, slabel_comic_quad_24_h, slabel_comic_quad_24_bitmap},
+  {"查無此字", 40, slabel_dict_not_found_w, slabel_dict_not_found_h, slabel_dict_not_found_bitmap},
+  {"輕觸關閉", 28, slabel_dict_dismiss_w, slabel_dict_dismiss_h, slabel_dict_dismiss_bitmap},
+  {"最後閱讀", 24, slabel_last_read_w, slabel_last_read_h, slabel_last_read_bitmap},
+  {"—", 48, slabel_mchar_2014_w, slabel_mchar_2014_h, slabel_mchar_2014_bitmap},
+  {"。", 48, slabel_mchar_3002_w, slabel_mchar_3002_h, slabel_mchar_3002_bitmap},
+  {"「", 48, slabel_mchar_300c_w, slabel_mchar_300c_h, slabel_mchar_300c_bitmap},
+  {"」", 48, slabel_mchar_300d_w, slabel_mchar_300d_h, slabel_mchar_300d_bitmap},
+  {"一", 48, slabel_mchar_4e00_w, slabel_mchar_4e00_h, slabel_mchar_4e00_bitmap},
+  {"上", 48, slabel_mchar_4e0a_w, slabel_mchar_4e0a_h, slabel_mchar_4e0a_bitmap},
+  {"不", 48, slabel_mchar_4e0d_w, slabel_mchar_4e0d_h, slabel_mchar_4e0d_bitmap},
+  {"中", 48, slabel_mchar_4e2d_w, slabel_mchar_4e2d_h, slabel_mchar_4e2d_bitmap},
+  {"主", 48, slabel_mchar_4e3b_w, slabel_mchar_4e3b_h, slabel_mchar_4e3b_bitmap},
+  {"也", 48, slabel_mchar_4e5f_w, slabel_mchar_4e5f_h, slabel_mchar_4e5f_bitmap},
+  {"了", 48, slabel_mchar_4e86_w, slabel_mchar_4e86_h, slabel_mchar_4e86_bitmap},
+  {"事", 48, slabel_mchar_4e8b_w, slabel_mchar_4e8b_h, slabel_mchar_4e8b_bitmap},
+  {"人", 48, slabel_mchar_4eba_w, slabel_mchar_4eba_h, slabel_mchar_4eba_bitmap},
+  {"什", 48, slabel_mchar_4ec0_w, slabel_mchar_4ec0_h, slabel_mchar_4ec0_bitmap},
+  {"他", 48, slabel_mchar_4ed6_w, slabel_mchar_4ed6_h, slabel_mchar_4ed6_bitmap},
+  {"以", 48, slabel_mchar_4ee5_w, slabel_mchar_4ee5_h, slabel_mchar_4ee5_bitmap},
+  {"伙", 48, slabel_mchar_4f19_w, slabel_mchar_4f19_h, slabel_mchar_4f19_bitmap},
+  {"伴", 48, slabel_mchar_4f34_w, slabel_mchar_4f34_h, slabel_mchar_4f34_bitmap},
+  {"但", 48, slabel_mchar_4f46_w, slabel_mchar_4f46_h, slabel_mchar_4f46_bitmap},
+  {"位", 48, slabel_mchar_4f4d_w, slabel_mchar_4f4d_h, slabel_mchar_4f4d_bitmap},
+  {"你", 48, slabel_mchar_4f60_w, slabel_mchar_4f60_h, slabel_mchar_4f60_bitmap},
+  {"來", 48, slabel_mchar_4f86_w, slabel_mchar_4f86_h, slabel_mchar_4f86_bitmap},
+  {"俗", 48, slabel_mchar_4fd7_w, slabel_mchar_4fd7_h, slabel_mchar_4fd7_bitmap},
+  {"保", 48, slabel_mchar_4fdd_w, slabel_mchar_4fdd_h, slabel_mchar_4fdd_bitmap},
+  {"信", 48, slabel_mchar_4fe1_w, slabel_mchar_4fe1_h, slabel_mchar_4fe1_bitmap},
+  {"個", 48, slabel_mchar_500b_w, slabel_mchar_500b_h, slabel_mchar_500b_bitmap},
+  {"候", 48, slabel_mchar_5019_w, slabel_mchar_5019_h, slabel_mchar_5019_bitmap},
+  {"做", 48, slabel_mchar_505a_w, slabel_mchar_505a_h, slabel_mchar_505a_bitmap},
+  {"公", 48, slabel_mchar_516c_w, slabel_mchar_516c_h, slabel_mchar_516c_bitmap},
+  {"再", 48, slabel_mchar_518d_w, slabel_mchar_518d_h, slabel_mchar_518d_bitmap},
+  {"出", 48, slabel_mchar_51fa_w, slabel_mchar_51fa_h, slabel_mchar_51fa_bitmap},
+  {"切", 48, slabel_mchar_5207_w, slabel_mchar_5207_h, slabel_mchar_5207_bitmap},
+  {"到", 48, slabel_mchar_5230_w, slabel_mchar_5230_h, slabel_mchar_5230_bitmap},
+  {"則", 48, slabel_mchar_5247_w, slabel_mchar_5247_h, slabel_mchar_5247_bitmap},
+  {"十", 48, slabel_mchar_5341_w, slabel_mchar_5341_h, slabel_mchar_5341_bitmap},
+  {"千", 48, slabel_mchar_5343_w, slabel_mchar_5343_h, slabel_mchar_5343_bitmap},
+  {"去", 48, slabel_mchar_53bb_w, slabel_mchar_53bb_h, slabel_mchar_53bb_bitmap},
+  {"又", 48, slabel_mchar_53c8_w, slabel_mchar_53c8_h, slabel_mchar_53c8_bitmap},
+  {"句", 48, slabel_mchar_53e5_w, slabel_mchar_53e5_h, slabel_mchar_53e5_bitmap},
+  {"可", 48, slabel_mchar_53ef_w, slabel_mchar_53ef_h, slabel_mchar_53ef_bitmap},
+  {"吃", 48, slabel_mchar_5403_w, slabel_mchar_5403_h, slabel_mchar_5403_bitmap},
+  {"各", 48, slabel_mchar_5404_w, slabel_mchar_5404_h, slabel_mchar_5404_bitmap},
+  {"同", 48, slabel_mchar_540c_w, slabel_mchar_540c_h, slabel_mchar_540c_bitmap},
+  {"否", 48, slabel_mchar_5426_w, slabel_mchar_5426_h, slabel_mchar_5426_bitmap},
+  {"吵", 48, slabel_mchar_5435_w, slabel_mchar_5435_h, slabel_mchar_5435_bitmap},
+  {"和", 48, slabel_mchar_548c_w, slabel_mchar_548c_h, slabel_mchar_548c_bitmap},
+  {"喂", 48, slabel_mchar_5582_w, slabel_mchar_5582_h, slabel_mchar_5582_bitmap},
+  {"國", 48, slabel_mchar_570b_w, slabel_mchar_570b_h, slabel_mchar_570b_bitmap},
+  {"在", 48, slabel_mchar_5728_w, slabel_mchar_5728_h, slabel_mchar_5728_bitmap},
+  {"夢", 48, slabel_mchar_5922_w, slabel_mchar_5922_h, slabel_mchar_5922_bitmap},
+  {"大", 48, slabel_mchar_5927_w, slabel_mchar_5927_h, slabel_mchar_5927_bitmap},
+  {"天", 48, slabel_mchar_5929_w, slabel_mchar_5929_h, slabel_mchar_5929_bitmap},
+  {"好", 48, slabel_mchar_597d_w, slabel_mchar_597d_h, slabel_mchar_597d_bitmap},
+  {"如", 48, slabel_mchar_5982_w, slabel_mchar_5982_h, slabel_mchar_5982_bitmap},
+  {"娘", 48, slabel_mchar_5a18_w, slabel_mchar_5a18_h, slabel_mchar_5a18_bitmap},
+  {"它", 48, slabel_mchar_5b83_w, slabel_mchar_5b83_h, slabel_mchar_5b83_bitmap},
+  {"守", 48, slabel_mchar_5b88_w, slabel_mchar_5b88_h, slabel_mchar_5b88_bitmap},
+  {"定", 48, slabel_mchar_5b9a_w, slabel_mchar_5b9a_h, slabel_mchar_5b9a_bitmap},
+  {"寫", 48, slabel_mchar_5beb_w, slabel_mchar_5beb_h, slabel_mchar_5beb_bitmap},
+  {"封", 48, slabel_mchar_5c01_w, slabel_mchar_5c01_h, slabel_mchar_5c01_bitmap},
+  {"將", 48, slabel_mchar_5c07_w, slabel_mchar_5c07_h, slabel_mchar_5c07_bitmap},
+  {"對", 48, slabel_mchar_5c0d_w, slabel_mchar_5c0d_h, slabel_mchar_5c0d_bitmap},
+  {"小", 48, slabel_mchar_5c0f_w, slabel_mchar_5c0f_h, slabel_mchar_5c0f_bitmap},
+  {"就", 48, slabel_mchar_5c31_w, slabel_mchar_5c31_h, slabel_mchar_5c31_bitmap},
+  {"屎", 48, slabel_mchar_5c4e_w, slabel_mchar_5c4e_h, slabel_mchar_5c4e_bitmap},
+  {"己", 48, slabel_mchar_5df1_w, slabel_mchar_5df1_h, slabel_mchar_5df1_bitmap},
+  {"年", 48, slabel_mchar_5e74_w, slabel_mchar_5e74_h, slabel_mchar_5e74_bitmap},
+  {"序", 48, slabel_mchar_5e8f_w, slabel_mchar_5e8f_h, slabel_mchar_5e8f_bitmap},
+  {"建", 48, slabel_mchar_5efa_w, slabel_mchar_5efa_h, slabel_mchar_5efa_bitmap},
+  {"很", 48, slabel_mchar_5f88_w, slabel_mchar_5f88_h, slabel_mchar_5f88_bitmap},
+  {"思", 48, slabel_mchar_601d_w, slabel_mchar_601d_h, slabel_mchar_601d_bitmap},
+  {"意", 48, slabel_mchar_610f_w, slabel_mchar_610f_h, slabel_mchar_610f_bitmap},
+  {"戀", 48, slabel_mchar_6200_w, slabel_mchar_6200_h, slabel_mchar_6200_bitmap},
+  {"我", 48, slabel_mchar_6211_w, slabel_mchar_6211_h, slabel_mchar_6211_bitmap},
+  {"把", 48, slabel_mchar_628a_w, slabel_mchar_628a_h, slabel_mchar_628a_bitmap},
+  {"拉", 48, slabel_mchar_62c9_w, slabel_mchar_62c9_h, slabel_mchar_62c9_bitmap},
+  {"持", 48, slabel_mchar_6301_w, slabel_mchar_6301_h, slabel_mchar_6301_bitmap},
+  {"撕", 48, slabel_mchar_6495_w, slabel_mchar_6495_h, slabel_mchar_6495_bitmap},
+  {"敢", 48, slabel_mchar_6562_w, slabel_mchar_6562_h, slabel_mchar_6562_bitmap},
+  {"方", 48, slabel_mchar_65b9_w, slabel_mchar_65b9_h, slabel_mchar_65b9_bitmap},
+  {"春", 48, slabel_mchar_6625_w, slabel_mchar_6625_h, slabel_mchar_6625_bitmap},
+  {"是", 48, slabel_mchar_662f_w, slabel_mchar_662f_h, slabel_mchar_662f_bitmap},
+  {"時", 48, slabel_mchar_6642_w, slabel_mchar_6642_h, slabel_mchar_6642_bitmap},
+  {"最", 48, slabel_mchar_6700_w, slabel_mchar_6700_h, slabel_mchar_6700_bitmap},
+  {"會", 48, slabel_mchar_6703_w, slabel_mchar_6703_h, slabel_mchar_6703_bitmap},
+  {"有", 48, slabel_mchar_6709_w, slabel_mchar_6709_h, slabel_mchar_6709_bitmap},
+  {"服", 48, slabel_mchar_670d_w, slabel_mchar_670d_h, slabel_mchar_670d_bitmap},
+  {"村", 48, slabel_mchar_6751_w, slabel_mchar_6751_h, slabel_mchar_6751_bitmap},
+  {"果", 48, slabel_mchar_679c_w, slabel_mchar_679c_h, slabel_mchar_679c_bitmap},
+  {"架", 48, slabel_mchar_67b6_w, slabel_mchar_67b6_h, slabel_mchar_67b6_bitmap},
+  {"梅", 48, slabel_mchar_6885_w, slabel_mchar_6885_h, slabel_mchar_6885_bitmap},
+  {"條", 48, slabel_mchar_689d_w, slabel_mchar_689d_h, slabel_mchar_689d_bitmap},
+  {"死", 48, slabel_mchar_6b7b_w, slabel_mchar_6b7b_h, slabel_mchar_6b7b_bitmap},
+  {"比", 48, slabel_mchar_6bd4_w, slabel_mchar_6bd4_h, slabel_mchar_6bd4_bitmap},
+  {"民", 48, slabel_mchar_6c11_w, slabel_mchar_6c11_h, slabel_mchar_6c11_bitmap},
+  {"氣", 48, slabel_mchar_6c23_w, slabel_mchar_6c23_h, slabel_mchar_6c23_bitmap},
+  {"沒", 48, slabel_mchar_6c92_w, slabel_mchar_6c92_h, slabel_mchar_6c92_bitmap},
+  {"為", 48, slabel_mchar_70ba_w, slabel_mchar_70ba_h, slabel_mchar_70ba_bitmap},
+  {"營", 48, slabel_mchar_71df_w, slabel_mchar_71df_h, slabel_mchar_71df_bitmap},
+  {"爹", 48, slabel_mchar_7239_w, slabel_mchar_7239_h, slabel_mchar_7239_bitmap},
+  {"犟", 48, slabel_mchar_729f_w, slabel_mchar_729f_h, slabel_mchar_729f_bitmap},
+  {"犯", 48, slabel_mchar_72af_w, slabel_mchar_72af_h, slabel_mchar_72af_bitmap},
+  {"猜", 48, slabel_mchar_731c_w, slabel_mchar_731c_h, slabel_mchar_731c_bitmap},
+  {"璽", 48, slabel_mchar_74bd_w, slabel_mchar_74bd_h, slabel_mchar_74bd_bitmap},
+  {"的", 48, slabel_mchar_7684_w, slabel_mchar_7684_h, slabel_mchar_7684_bitmap},
+  {"目", 48, slabel_mchar_76ee_w, slabel_mchar_76ee_h, slabel_mchar_76ee_bitmap},
+  {"真", 48, slabel_mchar_771f_w, slabel_mchar_771f_h, slabel_mchar_771f_bitmap},
+  {"秋", 48, slabel_mchar_79cb_w, slabel_mchar_79cb_h, slabel_mchar_79cb_bitmap},
+  {"程", 48, slabel_mchar_7a0b_w, slabel_mchar_7a0b_h, slabel_mchar_7a0b_bitmap},
+  {"終", 48, slabel_mchar_7d42_w, slabel_mchar_7d42_h, slabel_mchar_7d42_bitmap},
+  {"網", 48, slabel_mchar_7db2_w, slabel_mchar_7db2_h, slabel_mchar_7db2_bitmap},
+  {"罪", 48, slabel_mchar_7f6a_w, slabel_mchar_7f6a_h, slabel_mchar_7f6a_bitmap},
+  {"而", 48, slabel_mchar_800c_w, slabel_mchar_800c_h, slabel_mchar_800c_bitmap},
+  {"能", 48, slabel_mchar_80fd_w, slabel_mchar_80fd_h, slabel_mchar_80fd_bitmap},
+  {"自", 48, slabel_mchar_81ea_w, slabel_mchar_81ea_h, slabel_mchar_81ea_bitmap},
+  {"與", 48, slabel_mchar_8207_w, slabel_mchar_8207_h, slabel_mchar_8207_bitmap},
+  {"英", 48, slabel_mchar_82f1_w, slabel_mchar_82f1_h, slabel_mchar_82f1_bitmap},
+  {"萬", 48, slabel_mchar_842c_w, slabel_mchar_842c_h, slabel_mchar_842c_bitmap},
+  {"要", 48, slabel_mchar_8981_w, slabel_mchar_8981_h, slabel_mchar_8981_bitmap},
+  {"討", 48, slabel_mchar_8a0e_w, slabel_mchar_8a0e_h, slabel_mchar_8a0e_bitmap},
+  {"記", 48, slabel_mchar_8a18_w, slabel_mchar_8a18_h, slabel_mchar_8a18_bitmap},
+  {"話", 48, slabel_mchar_8a71_w, slabel_mchar_8a71_h, slabel_mchar_8a71_bitmap},
+  {"說", 48, slabel_mchar_8aaa_w, slabel_mchar_8aaa_h, slabel_mchar_8aaa_bitmap},
+  {"論", 48, slabel_mchar_8ad6_w, slabel_mchar_8ad6_h, slabel_mchar_8ad6_bitmap},
+  {"迷", 48, slabel_mchar_8ff7_w, slabel_mchar_8ff7_h, slabel_mchar_8ff7_bitmap},
+  {"這", 48, slabel_mchar_9019_w, slabel_mchar_9019_h, slabel_mchar_9019_bitmap},
+  {"連", 48, slabel_mchar_9023_w, slabel_mchar_9023_h, slabel_mchar_9023_bitmap},
+  {"逼", 48, slabel_mchar_903c_w, slabel_mchar_903c_h, slabel_mchar_903c_bitmap},
+  {"過", 48, slabel_mchar_904e_w, slabel_mchar_904e_h, slabel_mchar_904e_bitmap},
+  {"遵", 48, slabel_mchar_9075_w, slabel_mchar_9075_h, slabel_mchar_9075_bitmap},
+  {"那", 48, slabel_mchar_90a3_w, slabel_mchar_90a3_h, slabel_mchar_90a3_bitmap},
+  {"都", 48, slabel_mchar_90fd_w, slabel_mchar_90fd_h, slabel_mchar_90fd_bitmap},
+  {"錢", 48, slabel_mchar_9322_w, slabel_mchar_9322_h, slabel_mchar_9322_bitmap},
+  {"開", 48, slabel_mchar_958b_w, slabel_mchar_958b_h, slabel_mchar_958b_bitmap},
+  {"閣", 48, slabel_mchar_95a3_w, slabel_mchar_95a3_h, slabel_mchar_95a3_bitmap},
+  {"雄", 48, slabel_mchar_96c4_w, slabel_mchar_96c4_h, slabel_mchar_96c4_bitmap},
+  {"養", 48, slabel_mchar_990a_w, slabel_mchar_990a_h, slabel_mchar_990a_bitmap},
+  {"餐", 48, slabel_mchar_9910_w, slabel_mchar_9910_h, slabel_mchar_9910_bitmap},
+  {"麻", 48, slabel_mchar_9ebb_w, slabel_mchar_9ebb_h, slabel_mchar_9ebb_bitmap},
+  {"麼", 48, slabel_mchar_9ebc_w, slabel_mchar_9ebc_h, slabel_mchar_9ebc_bitmap},
+  {"！", 48, slabel_mchar_ff01_w, slabel_mchar_ff01_h, slabel_mchar_ff01_bitmap},
+  {"，", 48, slabel_mchar_ff0c_w, slabel_mchar_ff0c_h, slabel_mchar_ff0c_bitmap},
+  {"：", 48, slabel_mchar_ff1a_w, slabel_mchar_ff1a_h, slabel_mchar_ff1a_bitmap},
+  {"？", 48, slabel_mchar_ff1f_w, slabel_mchar_ff1f_h, slabel_mchar_ff1f_bitmap},
+  {"︱", 48, slabel_mchar_fe31_w, slabel_mchar_fe31_h, slabel_mchar_fe31_bitmap},
+  {"﹁", 48, slabel_mchar_fe41_w, slabel_mchar_fe41_h, slabel_mchar_fe41_bitmap},
+  {"﹂", 48, slabel_mchar_fe42_w, slabel_mchar_fe42_h, slabel_mchar_fe42_bitmap},
 };
 
 // Find a Silver pre-rendered label bitmap by text and font size.

@@ -16,13 +16,17 @@ These scripts convert assets into C headers or binary formats for embedding in t
 | `convert_sleeping.py` | Converts `assets/sleeping.jpg` sleep screen image to a C header (`src/sleeping_jpg.h`) |
 | `convert_icons.py` | Converts PNG icons in `assets/icons/` to C headers in `src/icons/` |
 | `convert_cangjie.py` | Converts `data/cangjie5.dict.yaml` to binary lookup format (`assets/cangjie5.bin`) |
-| `convert_ttf_to_bin.py` | Converts TTF fonts to pre-rendered BIN format for faster loading. Supports fallback font borrowing and render-size scaling (e.g. Silver at 61px → 44px grid). Auto-rotates horizontal bracket glyphs 90° CW to synthesize missing vertical forms. Each glyph is centered both horizontally and vertically within its em-square cell. Run with `--gui` for a graphical interface. |
+| `convert_ttf_to_bin.py` | Converts TTF fonts to pre-rendered BIN format for faster loading. Supports fallback font borrowing and render-size scaling (e.g. Silver at 61px → 44px grid). Auto-rotates horizontal bracket glyphs 90° CW to synthesize missing vertical forms. Each glyph is centered both horizontally and vertically within its em-square cell. Correctly reads cmap from TTC collection files. Run with `--gui` for a graphical interface. |
 
 ### Font Converter GUI
 
 ![Font Converter GUI](convert_ttf_to_bin-gui.png)
 
-Run `python3 convert_ttf_to_bin.py --gui` to launch the graphical converter. Supports EN/ZH language toggle, font preview, fallback font selection, and batch conversion.
+Run `python3 convert_ttf_to_bin.py --gui` to launch the graphical converter. Supports EN/ZH language toggle, font preview, fallback font selection, and batch conversion. Features include:
+- **CJK-only font filtering** — English-only fonts are automatically hidden from the font list
+- **Scrollable font list** — Handles large font collections with a scrollable area and mouse wheel support
+- **Fallback glyph warning** — Alerts when >50% of glyphs come from the fallback font (indicates a font reading issue)
+- **macOS app** — Build a standalone `.app` and `.dmg` with `bash scripts/build_mac_app.sh`
 
 | Script | Description |
 |--------|-------------|

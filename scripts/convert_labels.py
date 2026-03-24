@@ -54,6 +54,7 @@ LABELS = [
     ("觀音靈籖",     36, "kuanyin_slips"),
     ("淺草寺靈籖",   36, "sensoji_slips"),
     ("醒世格言",     28, "sleep_motto"),
+    ("醒世格言",     36, "sleep_motto_36"),
 
     # ── Fortune Slips shake screen labels (Kai font) ──
     ("誠心祝禱",     64, "sincere_prayer", KAI_FONT_PATH),
@@ -221,8 +222,8 @@ LABELS = [
     ("添加圖片檔案", 24, "add_image_files"),    # wallpaper.cpp: empty state
 
     # ── Book reader (actual sizes from book_reader.cpp) ──
-    ("電子書列表",   36, "booklist_title"),     # book_reader.cpp L370: size 36
-    ("觸控選擇書籍", 18, "touch_select"),       # book_reader.cpp L386: size 18
+    ("電子書列表",   36, "booklist_title"),     # book_reader.cpp drawBookList: size 36
+    ("觸控選擇書籍", 28, "touch_select"),       # book_reader.cpp drawBookList: size 28
     ("字-",          28, "font_smaller"),       # book_reader.cpp L591: default size 28
     ("字+",          28, "font_larger"),        # book_reader.cpp L601: default size 28
     ("字型",         20, "font_type"),          # book_reader.cpp L605: size 20
@@ -1427,17 +1428,100 @@ LABELS = [
     # Size 36
     ("切換為 Silver", 36, "s36_switch_silver"),
     ("切換為 源樣明體", 36, "s36_switch_genyomin"),
+    ("AI智能整合中...", 36, "s36_loading"),
+    ("AI智能排版中...", 36, "s36_book_loading"),
     ("安全模式", 36, "s36_safe_mode"),
     ("求籖", 36, "s36_fortune"),
     ("選擇年月", 36, "s36_select_ym"),
     # Size 40
     ("系統字體", 40, "s40_sys_font"),
     ("藍牙", 40, "s40_bluetooth"),
+    ("設定", 40, "s40_setup"),
+    ("選擇閱讀字型", 40, "s40_select_font"),
+    ("關於", 40, "s40_about"),
     # SD card absent labels
     ("未插入 SD 卡", 22, "s22_no_sd"),
     ("未插入 SD 卡", 32, "s32_no_sd"),
     ("請插入 SD 卡後重新啟動", 24, "s24_insert_sd"),
+    # ── Comic zoom mode labels ──
+    ("自由", 24, "s24_free_zoom"),
+    ("四分", 24, "s24_quad_zoom"),
+    # ── Settings page labels ──
+    ("SD 卡：未插入", 22, "s22_sd_absent"),
+    ("WiFi：未連接", 22, "s22_wifi_disconn"),
+    ("版本資訊與裝置狀態", 22, "s22_about_desc"),
+    ("硬體：M5Stack Paper S3 (ESP32-S3)", 22, "s22_hw_info"),
+    ("螢幕：540 × 960  電子紙", 22, "s22_screen_info"),
+    ("首行不縮進", 22, "s22_no_indent"),
+    ("首行縮進（兩個全形空格）", 22, "s22_indent"),
+    ("M5Stack Paper S3 中文電子書閱讀器", 28, "s28_about_title"),
+    ("段落縮進", 32, "s32_para_indent"),
+    ("關於", 32, "s32_about"),
+    # ── About page dynamic string prefixes ──
+    ("編譯日期：", 22, "s22_build_date"),
+    ("CPU：", 22, "s22_cpu"),
+    ("Flash：", 22, "s22_flash"),
+    ("PSRAM：", 22, "s22_psram"),
+    ("（剩餘 ", 22, "s22_remain"),
+    (" KB）", 22, "s22_kb_suffix"),
+    ("記憶體：剩餘 ", 22, "s22_heap"),
+    ("SD 卡：", 22, "s22_sd_prefix"),
+    ("WiFi：", 22, "s22_wifi_prefix"),
+
+    # ── Comic zoom mode toggle button (comic_reader.cpp) ──
+    ("自由", 24, "comic_free_24"),
+    ("四分", 24, "comic_quad_24"),
+
+    # ── Dictionary popup (dictionary.cpp / main.cpp) ──
+    ("查無此字", 40, "dict_not_found"),
+    ("輕觸關閉", 28, "dict_dismiss"),
+
+    # ── Book list (book_reader.cpp) ──
+    ("最後閱讀", 24, "last_read"),
 ]
+
+# ── Built-in motto characters (auto-generated per-character labels) ──────────
+# These allow rendering the 10 built-in mottos without SD card / TTF font.
+BUILTIN_MOTTOS = [
+    "自戀的人會把自己的話寫到程序中去，比如這一條。——梅璽閣主",
+    "再好的AI，如果你喂它吃的是屎，你猜它能拉出什麼來？——梅璽閣主",
+    "如果一個罪犯，他犯的事沒人敢說，也不能公開討論，那麼他一定是個英雄。——梅璽閣主",
+    "如果有人說「我又不是為了錢」，那麼他一定是為了錢，否則的話，他連這句話都不會說的。——梅璽閣主",
+    "一切民俗，如果那十年也遵守也保持，那就是民俗，否則就是封建迷信。——梅璽閣主",
+    "各位小伙伴一定要切記，在網上撕逼的最終目的是：氣死對方，而不是說服對方！——梅璽閣主",
+    "可以與爹犟，可以和娘犟，但是千萬不能同麻將犟。——梅璽閣主",
+    "中餐很好吃，但是你要說營養，它真的沒什麼營養。——梅璽閣主",
+    "人可以做春夢，也可以在秋天做夢，但是不要做春秋大夢。——梅璽閣主",
+    "有時候，「不要和沒有出過村的人吵架」與「不要和沒有出過國的人吵架」，是同一個意思。——梅璽閣主",
+]
+
+# Extract unique non-ASCII characters and add as per-character labels at size 48 (Kai font)
+_motto_chars = set()
+for _m in BUILTIN_MOTTOS:
+    for _ch in _m:
+        if ord(_ch) > 127:
+            _motto_chars.add(_ch)
+
+for _ch in sorted(_motto_chars):
+    LABELS.append((_ch, 48, f"mchar_{ord(_ch):04x}", KAI_FONT_PATH))
+
+# Also add vertical-form targets from toVerticalPunct() used during rendering
+_VERT_PUNCT_MAP = {
+    0x300C: 0xFE41, 0x300D: 0xFE42, 0x201C: 0xFE41, 0x201D: 0xFE42,
+    0x3008: 0xFE3F, 0x3009: 0xFE40, 0x300E: 0xFE43, 0x300F: 0xFE44,
+    0x300A: 0xFE3D, 0x300B: 0xFE3E, 0x3010: 0xFE3B, 0x3011: 0xFE3C,
+    0xFF08: 0xFE35, 0xFF09: 0xFE36, 0x3016: 0xFE17, 0x3017: 0xFE18,
+    0x3014: 0xFE39, 0x3015: 0xFE3A, 0xFF5B: 0xFE37, 0xFF5D: 0xFE38,
+    0xFF3B: 0xFE47, 0xFF3D: 0xFE48, 0x2026: 0xFE19, 0x2025: 0xFE30,
+    0x2014: 0xFE31, 0xFE4F: 0xFE34,
+}
+_vert_targets = set()
+for _ch in _motto_chars:
+    _cp = ord(_ch)
+    if _cp in _VERT_PUNCT_MAP:
+        _vert_targets.add(_VERT_PUNCT_MAP[_cp])
+for _tcp in sorted(_vert_targets):
+    LABELS.append((chr(_tcp), 48, f"mchar_{_tcp:04x}", KAI_FONT_PATH))
 
 
 def render_label(text, font_size, font):

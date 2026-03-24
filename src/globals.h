@@ -83,7 +83,8 @@ static const int PROGRESS_BAR_Y = 900;
 static const int MIN_READING_FONT_SIZE = 20;
 static const int MAX_READING_FONT_SIZE = 64;
 static const int FONT_SIZE_STEP        = 4;
-static const int DEFAULT_READING_FONT_SIZE = 30;
+static const int DEFAULT_READING_FONT_SIZE = 44;
+static const int DEFAULT_ENGLISH_READING_FONT_SIZE = 36;
 
 // Timeouts (milliseconds)
 static const unsigned long WEATHER_STALE_TIMEOUT   = 600000UL;
@@ -110,6 +111,7 @@ extern bool pendingNavTouch;
 extern int pendingTouchX;
 extern int pendingTouchY;
 extern unsigned long lastTouchProcessedTime;
+extern bool loadBookCrashed;
 bool checkNavTouch();  // Poll touch during rendering; returns true if nav button touched
 
 // ==================== Enums ====================
@@ -144,7 +146,8 @@ enum Mode {
   MODE_TOOLS_MENU,
   MODE_MED_REMINDER,
   MODE_MED_PASSCODE,
-  MODE_ABOUT
+  MODE_ABOUT,
+  MODE_DICT_POPUP
 };
 
 // ==================== Struct Definitions ====================
@@ -360,7 +363,11 @@ extern String fontDisplayNames[MAX_FONT_FILES];
 extern String fontBinFiles[MAX_FONT_FILES][MAX_BIN_PER_FONT];  // Paired .bin files per font
 extern uint8_t fontBinSizes[MAX_FONT_FILES][MAX_BIN_PER_FONT]; // Font size from each .bin header
 extern int fontBinCount[MAX_FONT_FILES];                       // Number of paired .bin files
+extern bool fontIsCJK[MAX_FONT_FILES];                         // true = CJK font, false = English/Latin font
+extern String fontStyleFiles[MAX_FONT_FILES][4];               // Style variants: [0]=Regular [1]=Italic [2]=Bold [3]=BoldItalic
 extern int fontFileCount;
+extern int fontMenuFilteredMap[MAX_FONT_FILES]; // Maps visual slot → real fontFileList index
+extern int fontMenuFilteredCount;               // Number of entries in filtered map
 
 // Mode
 extern Mode currentMode;
@@ -411,6 +418,12 @@ extern size_t epubFullTextLen;
 
 // EPUB persistent ZIP info (for on-demand image/chapter extraction)
 static const char EPUB_IMG_MARKER = '\x01';
+static const char STYLE_ITALIC_ON  = '\x02';
+static const char STYLE_ITALIC_OFF = '\x03';
+static const char STYLE_BOLD_ON    = '\x04';
+static const char STYLE_BOLD_OFF   = '\x05';
+static const char STYLE_UNDERLINE_ON  = '\x06';
+static const char STYLE_UNDERLINE_OFF = '\x07';
 extern String epubFilePath;
 extern ZipEntry* epubZipEntries;
 extern int epubZipEntryCount;
@@ -431,6 +444,7 @@ extern String epubBasePath;          // OPF base path for resolving references
 extern size_t epubEstimatedTotalBytes; // Estimated total text across all chapters
 extern bool epubIsImageBased;         // True for manga/image-only EPUBs (1 chapter = 1 page)
 extern bool epubHasMultiImageChapters;  // Warning flag: some chapters have multiple images
+extern bool epubIsHorizontal;          // True for English/Latin EPUBs → horizontal LTR rendering
 
 // EPUB Table of Contents
 static const int MAX_TOC_ENTRIES = 200;
@@ -502,6 +516,10 @@ extern String medPasscodeFirst;      // first entry when setting new code
 // Fortune Slips
 extern int fortuneSlipCategory;   // 0=kuanyin, 1=senso-ji
 extern int fortuneSlipNumber;     // slip number to display (0-99)
+extern int sensoji_wording_page;  // 0=first page, 1+=continuation
+extern bool sensoji_hasMore;      // true if sensoji wording has more pages
+extern int kuanyin_story_page;    // page index for kuanyin story
+extern bool kuanyin_story_hasMore; // true if story has more pages
 
 // WiFi / Config / Time
 extern WiFiConfig wifiConfig;
@@ -562,12 +580,19 @@ extern SDLabelEntry* sdLabelEntries;
 // font_manager
 void scanFontFiles();
 bool loadBinaryFont(const char* fontPath);
+void unloadBinaryFont();
+void resetToSystemFont();
 GlyphIndex* findGlyph(uint32_t unicode);
 bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color = TFT_BLACK, float scale = 1.0f);
 void clearGlyphCache();
+void freeGlyphCache();
 int drawBinFontString(const String &text, int x, int y, int charSpacing);
 int drawBinFontStringScaled(const String &text, int x, int y, float scale, bool noYOffset = false);
 bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontSize);
+int getCharAdvanceW(uint32_t unicode, int fontSize);
+int drawOFRCharHoriz(uint32_t unicode, int cursorX, int y, uint16_t color, int fontSize);
+void clearAdvanceCache();
+bool loadEmbeddedETBook(int size = 36);
 bool loadTTFFont(const char* fontPath, int size = 30);
 bool loadSystemFont();
 bool loadReadingFont();
@@ -630,6 +655,8 @@ extern int pageRefreshMode;    // 0=system default, 1=every page, 2=every 10 pag
 extern bool paragraphIndent;   // true=首行縮進(2 chars), false=首行不縮進
 extern int pagesSinceFullRefresh;
 void scanBooks();
+bool isChineseBookName(const String& filename);
+bool bookIsEnglishMode(int bookIndex);
 void saveReadingPosition();
 int loadReadingPosition();
 void saveBookmarks();
@@ -640,12 +667,25 @@ void toggleBookmark();
 void updateBytesPerPage();
 void recalculatePages();
 bool loadCurrentPage();
-bool loadBook(int bookIndex);
+bool loadBook(int bookIndex, bool forceChinese = false);
+bool openBookFromList(int bookIndex, bool openAsChinese = false);
 void drawBookList();
 void drawReading();
+void drawComicReading();
+void drawEnglishReading();
+void drawChineseReading();
+bool isReadingFontSilver();
+epd_mode_t getReadingEpdMode();
 void drawPageJumpPopup();
 bool handlePageJumpTouch(int x, int y);
 void drawTocList();
+
+// dictionary
+void drawDictPopup(const char* word, const char* definition);
+bool dictLookup(const char* word, char* definition, int maxLen);
+void engClearWords();
+void engRecordWord(int x, int y, int w, int h, const char* word);
+int engFindWordAt(int tx, int ty);
 
 // ui_drawing
 bool drawNavIcon(const char* iconName, int x, int y);
@@ -653,6 +693,7 @@ void drawReturnButton();
 void drawPageButtons(bool showPrev, bool showNext);
 void drawNavBar(bool showPrev, bool showNext);
 void drawVerticalNavBar(bool hasPrev, bool hasNext);
+void drawHorizontalNavBar(bool hasPrev, bool hasNext);
 bool touchedReturnButton(int x, int y);
 bool touchedPrevPage(int x, int y);
 bool touchedNextPage(int x, int y);
@@ -663,6 +704,7 @@ int silverScaledSize(int size);
 int silverNominalSize(int scaledSize);
 void drawSystemTextCentered(const char* text, int centerX, int y, int size = 28, uint16_t color = TFT_BLACK, uint16_t bg = TFT_WHITE);
 void updateLoadProgress(int percent);
+void resetLoadProgress();
 int drawVerticalMixedText(String text, int x, int startY, int charSpacing = 30);
 
 // weather
@@ -695,6 +737,9 @@ void enterDeepSleep();
 void loadMottos();
 void drawMottoOnSleep();
 void drawMottoScreen();
+void drawMottoBuiltinPage();
+void mottoBuiltinNext();
+void mottoBuiltinPrev();
 
 // tools menu
 void drawToolsMenu();

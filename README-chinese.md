@@ -226,5 +226,8 @@ python3 scripts/convert_ttf_to_bin.py sd_card/fonts/MingLiU.ttf sd_card/fonts/Mi
 - **備用字型借取** — 缺失的字形（如直排標點符號）會自動從 GenYoMinTW 借取
 - **直排括號旋轉** — 水平括號字形會順時針旋轉 90° 以合成缺失的直排形式
 - **渲染尺寸縮放** — Silver 等字型可以較大尺寸渲染（如 61px），同時在標頭中儲存較小的方格尺寸（44px），以達到視覺大小匹配
+- **TTC 合集支援** — 正確讀取 TrueType Collection（.ttc）檔案的 cmap，指定字型面索引
+- **GUI 模式** — 使用 `--gui` 啟動圖形介面，具備 CJK 字型篩選、可捲動字型清單、備用字形數量警告及批次轉換
+- **macOS 應用程式** — 預建的 `FontConverterBIN.app` 和 `.dmg` 位於 `dist/`；使用 `bash scripts/build_mac_app.sh` 建置
 
 詳見 [`scripts/README-chinese.md`](scripts/README-chinese.md) 了解所有可用腳本。

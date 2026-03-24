@@ -576,14 +576,21 @@ static String* readWordingFields(int slipIdx, int& numFields) {
 }
 
 // Draw horizontally-wrapped Chinese text. Returns y after last line.
+// If outCharPos is non-null, stores the byte position where rendering stopped
+// (for pagination when text doesn't fit on one page).
 static int drawWrappedText(const char* text, int startX, int y, int maxW,
-                           int fontSize, uint16_t color = TFT_BLACK, int maxY = 870) {
+                           int fontSize, uint16_t color = TFT_BLACK, int maxY = 870,
+                           int startCharPos = 0, int* outCharPos = nullptr) {
   String str(text);
   int lineH = fontSize + 6;
-  int charsPerLine = maxW / fontSize;
+  // Measure actual CJK character width from the font
+  int charW = getSystemTextWidth("國", fontSize);
+  if (charW < 1) charW = fontSize;  // fallback
+  int charsPerLine = maxW / charW;
   if (charsPerLine < 1) charsPerLine = 1;
 
-  int pos = 0;
+  // Skip to startCharPos
+  int pos = startCharPos;
   while (pos < (int)str.length()) {
     int lineStart = pos;
     int charCount = 0;
@@ -592,12 +599,17 @@ static int drawWrappedText(const char* text, int startX, int y, int maxW,
       pos += (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
       charCount++;
     }
-    if (y > maxY) break; // don't overrun nav bar
+    if (y > maxY) {
+      // Text overflowed — record position for next page
+      if (outCharPos) *outCharPos = lineStart;
+      return y;
+    }
     String line = str.substring(lineStart, pos);
     drawSystemText(line.c_str(), startX, y, fontSize, color);
     y += lineH;
     delay(1);
   }
+  if (outCharPos) *outCharPos = (int)str.length();  // all text rendered
   return y;
 }
 
@@ -641,129 +653,257 @@ void drawFortuneSlipWording() {
     // Fields: 0=籤號, 1=等級, 2=詩曰, 3=詩意,
     //         4=願望, 5=疾病, 6=遺失物, 7=盼望的人, 8=蓋新居搬家, 9=結婚交往, 10=旅行
 
-    // --- Title: 籤號 + 等級 ---
-    String title = fields[0] + "  " + fields[1];
-    drawSystemTextCentered(title.c_str(), DISPLAY_WIDTH / 2, 45, 32);
-    M5.Display.drawLine(40, 82, 500, 82, EPD_LIGHT_GRAY);
+    // Silver uses larger fonts; may need two pages
+    bool isSilver = (systemFontChoice == 1);
+    int textSize = 26;
+    int catSize = 24;
+    int catCellH = 32;
+    int labelSize = 26;
+    int sectionGap = 32;
+    int textMargin = 30;
+    int textMaxW = 480;
 
-    // --- Poem: vertical columns, right-to-left, Kai font ---
-    String poemLines[8];
-    int lineCount = 0;
-    {
-      const String& poem = fields[2];
-      int start = 0;
-      for (int i = 0; i <= (int)poem.length() && lineCount < 8; i++) {
-        if (i == (int)poem.length() || poem.charAt(i) == '\n') {
-          if (i > start) poemLines[lineCount++] = poem.substring(start, i);
-          start = i + 1;
+    if (sensoji_wording_page == 0) {
+      // ---- Page 1: Title + Poem + 詩意 (start) ----
+
+      // --- Title: 籤號 + 等級 ---
+      String title = fields[0] + "  " + fields[1];
+      drawSystemTextCentered(title.c_str(), DISPLAY_WIDTH / 2, 45, 32);
+      M5.Display.drawLine(40, 82, 500, 82, EPD_LIGHT_GRAY);
+
+      // --- Poem: vertical columns, right-to-left, Kai font ---
+      String poemLines[8];
+      int lineCount = 0;
+      {
+        const String& poem = fields[2];
+        int start = 0;
+        for (int i = 0; i <= (int)poem.length() && lineCount < 8; i++) {
+          if (i == (int)poem.length() || poem.charAt(i) == '\n') {
+            if (i > start) poemLines[lineCount++] = poem.substring(start, i);
+            start = i + 1;
+          }
         }
       }
-    }
 
-    int maxChars = 0;
-    for (int i = 0; i < lineCount; i++) {
-      int cnt = 0, j = 0;
-      while (j < (int)poemLines[i].length()) {
-        unsigned char c = poemLines[i].charAt(j);
-        j += (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
-        cnt++;
+      int maxChars = 0;
+      for (int i = 0; i < lineCount; i++) {
+        int cnt = 0, j = 0;
+        while (j < (int)poemLines[i].length()) {
+          unsigned char c = poemLines[i].charAt(j);
+          j += (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+          cnt++;
+        }
+        if (cnt > maxChars) maxChars = cnt;
       }
-      if (cnt > maxChars) maxChars = cnt;
-    }
-    if (maxChars < 1) maxChars = 7;
+      if (maxChars < 1) maxChars = 7;
 
-    int charSize = 48;
-    int charSpacing = 52;
-    int colSpacing = 56;
-    int poemH = maxChars * charSpacing;
-    int poemW = lineCount * colSpacing;
-    int poemStartY = 88;
-    int poemLeftEdge = (DISPLAY_WIDTH - poemW) / 2;
+      int charSize = 48;
+      int charSpacing = 52;
+      int colSpacing = 56;
+      int poemH = maxChars * charSpacing;
+      int poemW = lineCount * colSpacing;
+      int poemStartY = 88;
+      int poemLeftEdge = (DISPLAY_WIDTH - poemW) / 2;
 
-    // Decorative frame
-    int frameX = poemLeftEdge - 18;
-    int frameY = poemStartY - 12;
-    int frameW = poemW + 36;
-    int frameH = poemH + 24;
-    M5.Display.drawRoundRect(frameX, frameY, frameW, frameH, 8, EPD_LIGHT_GRAY);
-
-    // Load Kai font for poem
-    String prevFontFile = currentFontFile;
-    bool prevOfrLoaded = ofrFontLoaded;
-    bool kaiFontLoaded = false;
-    if (sdCardAvailable) {
-      kaiFontLoaded = loadTTFFont("/fonts/TW-Kai-98_1.ttf", charSize);
-    }
-    delay(1);
-
-    for (int col = 0; col < lineCount; col++) {
-      int cx = poemLeftEdge + poemW - colSpacing / 2 - col * colSpacing;
-      int j = 0, row = 0;
-      while (j < (int)poemLines[col].length()) {
-        String ch = utf8ExtractChar(poemLines[col], j);
-        {
-          int tmp = 0;
-          uint32_t cp = utf8Decode(ch, tmp);
-          uint32_t mapped = toVerticalPunct(cp);
-          if (mapped != cp) { ch = ""; utf8Encode(mapped, ch); }
-        }
-        int cy = poemStartY + row * charSpacing + charSpacing / 2;
-        if (kaiFontLoaded) {
-          ofr.setFontSize(charSize);
-          ofr.setFontColor(TFT_BLACK, TFT_WHITE);
-          ofr.cdrawString(ch.c_str(), cx, cy, TFT_BLACK, TFT_WHITE);
-        } else {
-          drawSystemText(ch.c_str(), cx - charSize / 2, cy - charSize / 2, charSize);
-        }
-        row++;
+      // Load Kai font for poem
+      String prevFontFile = currentFontFile;
+      bool prevOfrLoaded = ofrFontLoaded;
+      bool kaiFontLoaded = false;
+      if (sdCardAvailable) {
+        kaiFontLoaded = loadTTFFont("/fonts/TW-Kai-98_1.ttf", charSize);
       }
       delay(1);
-    }
 
-    // Restore font state
-    if (kaiFontLoaded && prevOfrLoaded && prevFontFile.length() > 0) {
-      loadTTFFont(prevFontFile.c_str(), 30);
-    }
-    delay(1);
+      for (int col = 0; col < lineCount; col++) {
+        int cx = poemLeftEdge + poemW - colSpacing / 2 - col * colSpacing;
+        int j = 0, row = 0;
+        while (j < (int)poemLines[col].length()) {
+          String ch = utf8ExtractChar(poemLines[col], j);
+          {
+            int tmp = 0;
+            uint32_t cp = utf8Decode(ch, tmp);
+            uint32_t mapped = toVerticalPunct(cp);
+            if (mapped != cp) { ch = ""; utf8Encode(mapped, ch); }
+          }
+          int cy = poemStartY + row * charSpacing + charSpacing / 2;
+          if (kaiFontLoaded) {
+            ofr.setFontSize(charSize);
+            ofr.setFontColor(TFT_BLACK, TFT_WHITE);
+            ofr.cdrawString(ch.c_str(), cx, cy, TFT_BLACK, TFT_WHITE);
+          } else {
+            drawSystemText(ch.c_str(), cx - charSize / 2, cy - charSize / 2, charSize);
+          }
+          row++;
+        }
+        delay(1);
+      }
 
-    // --- 詩意 section ---
-    int sectionY = poemStartY + poemH + 20;
-    M5.Display.drawLine(40, sectionY, 500, sectionY, EPD_LIGHT_GRAY);
-    sectionY += 8;
-    drawSystemText("【詩意】", 30, sectionY, 26, EPD_DARK_GRAY);
-    sectionY += 32;
-    sectionY = drawWrappedText(fields[3].c_str(), 30, sectionY, 480, 26);
-    sectionY += 4;
-    delay(1);
+      // Restore font state
+      if (kaiFontLoaded && prevOfrLoaded && prevFontFile.length() > 0) {
+        loadTTFFont(prevFontFile.c_str(), 30);
+      }
+      delay(1);
 
-    // --- 聖意 grid (sensoji categories) ---
-    if (numFields > 4) {
+      // --- 詩意 section ---
+      int sectionY = poemStartY + poemH + 20;
       M5.Display.drawLine(40, sectionY, 500, sectionY, EPD_LIGHT_GRAY);
       sectionY += 8;
+      drawSystemText("【詩意】", textMargin, sectionY, labelSize, EPD_DARK_GRAY);
+      sectionY += sectionGap;
+      int textEndPos = 0;
+      sectionY = drawWrappedText(fields[3].c_str(), textMargin, sectionY, textMaxW, textSize,
+                                  TFT_BLACK, 855, 0, &textEndPos);
+      bool hasMore = (textEndPos < (int)fields[3].length());
+      sectionY += 4;
+      delay(1);
 
-      static const char* sensLabels[] = {
-        "願望", "疾病", "遺失物", "盼望的人", "蓋新居搬家",
-        "結婚交往", "旅行"
-      };
-      int catCount = 7;
-      int gridX = 30;
-      int cellH = 32;
+      // --- 聖意 grid (sensoji categories) --- only if text fit
+      if (!hasMore && numFields > 4) {
+        M5.Display.drawLine(40, sectionY, 500, sectionY, EPD_LIGHT_GRAY);
+        sectionY += 8;
 
-      for (int i = 0; i < catCount && (4 + i) < numFields; i++) {
-        int y = sectionY + i * cellH;
-        if (y > 855) break;
-        const String& val = fields[4 + i];
-        if (val.length() > 0) {
-          String cell = String(sensLabels[i]) + "：" + val;
-          drawSystemText(cell.c_str(), gridX, y, 24, TFT_BLACK);
+        static const char* sensLabels[] = {
+          "願望", "疾病", "遺失物", "盼望的人", "蓋新居搬家",
+          "結婚交往", "旅行"
+        };
+        int catCount = 7;
+        int gridX = textMargin;
+
+        for (int i = 0; i < catCount && (4 + i) < numFields; i++) {
+          int y = sectionY + i * catCellH;
+          if (y > 855) break;
+          const String& val = fields[4 + i];
+          if (val.length() > 0) {
+            String cell = String(sensLabels[i]) + "：" + val;
+            drawSystemText(cell.c_str(), gridX, y, catSize, TFT_BLACK);
+          }
         }
       }
+
+      sensoji_hasMore = hasMore;
+
+    } else {
+      // ---- Page 2+: continued 詩意 + 聖意 categories ----
+
+      // --- Title (compact) ---
+      String title = fields[0] + "  " + fields[1];
+      drawSystemTextCentered(title.c_str(), DISPLAY_WIDTH / 2, 45, 32);
+      M5.Display.drawLine(40, 82, 500, 82, EPD_LIGHT_GRAY);
+
+      int sectionY = 90;
+
+      // Calculate where page 1 詩意 rendering stopped
+      int charW = getSystemTextWidth("國", textSize);
+      if (charW < 1) charW = textSize;
+      int lineH = textSize + 6;
+      int charsPerLine = textMaxW / charW;
+      if (charsPerLine < 1) charsPerLine = 1;
+
+      // Poem area height (same as page 1)
+      String poemLines[8];
+      int lineCount = 0;
+      {
+        const String& poem = fields[2];
+        int start = 0;
+        for (int i = 0; i <= (int)poem.length() && lineCount < 8; i++) {
+          if (i == (int)poem.length() || poem.charAt(i) == '\n') {
+            if (i > start) poemLines[lineCount++] = poem.substring(start, i);
+            start = i + 1;
+          }
+        }
+      }
+      int maxChars = 0;
+      for (int i = 0; i < lineCount; i++) {
+        int cnt = 0, j = 0;
+        while (j < (int)poemLines[i].length()) {
+          unsigned char c = poemLines[i].charAt(j);
+          j += (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+          cnt++;
+        }
+        if (cnt > maxChars) maxChars = cnt;
+      }
+      if (maxChars < 1) maxChars = 7;
+      int poemH = maxChars * 52;
+      int p1TextStartY = 88 + poemH + 20 + 8 + sectionGap;
+
+      // Simulate rendering all previous pages to find the start offset for this page
+      int startPos = 0;
+      {
+        String str(fields[3]);
+        int simY = p1TextStartY;  // page 1 starts after poem
+        int pos = 0;
+        int pagesSkipped = 0;
+        while (pos < (int)str.length() && pagesSkipped < sensoji_wording_page) {
+          int lineStart = pos;
+          int charCount = 0;
+          while (pos < (int)str.length() && charCount < charsPerLine) {
+            unsigned char c = str.charAt(pos);
+            pos += (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+            charCount++;
+          }
+          simY += lineH;
+          if (simY > 855) {
+            pagesSkipped++;
+            simY = 90;  // continuation pages start at y=90
+            startPos = pos;
+          }
+        }
+      }
+
+      // Continue 詩意 from where previous page stopped
+      int textEndPos = 0;
+      if (startPos < (int)fields[3].length()) {
+        drawSystemText("【詩意】", textMargin, sectionY, labelSize, EPD_DARK_GRAY);
+        sectionY += sectionGap;
+        sectionY = drawWrappedText(fields[3].c_str(), textMargin, sectionY, textMaxW, textSize,
+                                    TFT_BLACK, 855, startPos, &textEndPos);
+        sectionY += 4;
+        delay(1);
+      } else {
+        textEndPos = (int)fields[3].length();
+      }
+
+      bool hasMore = (textEndPos < (int)fields[3].length());
+
+      // --- 聖意 grid (sensoji categories) --- only if all text rendered
+      if (!hasMore && numFields > 4 && sectionY < 850) {
+        M5.Display.drawLine(40, sectionY, 500, sectionY, EPD_LIGHT_GRAY);
+        sectionY += 8;
+
+        static const char* sensLabels[] = {
+          "願望", "疾病", "遺失物", "盼望的人", "蓋新居搬家",
+          "結婚交往", "旅行"
+        };
+        int catCount = 7;
+        int gridX = textMargin;
+
+        for (int i = 0; i < catCount && (4 + i) < numFields; i++) {
+          int y = sectionY + i * catCellH;
+          if (y > 855) break;
+          const String& val = fields[4 + i];
+          if (val.length() > 0) {
+            String cell = String(sensLabels[i]) + "：" + val;
+            drawSystemText(cell.c_str(), gridX, y, catSize, TFT_BLACK);
+          }
+        }
+      }
+
+      sensoji_hasMore = hasMore;
     }
 
   } else {
     // ---- Kuanyin wording layout (original) ----
     // Field indices: 0=籤號, 1=等級, 2=宮位, 3=詩曰一, 4=詩意, 5=解曰,
     //                6=故事, 7=故事內容, 8-22=聖意
+
+    bool isSilver = (systemFontChoice == 1);
+    int textSize = 26;
+    int labelSize = 26;
+    int catSize = 24;
+    int catCellH = 32;
+    int sectionGap = 32;
+    int textMargin = 30;
+    int textMaxW = 480;
 
     if (numFields < 8) {
       drawSystemTextCentered("無法讀取籖文", DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2, 28);
@@ -813,13 +953,6 @@ void drawFortuneSlipWording() {
     int poemStartY = 88;
     int poemLeftEdge = (DISPLAY_WIDTH - poemW) / 2;
 
-    // Decorative frame
-    int frameX = poemLeftEdge - 18;
-    int frameY = poemStartY - 12;
-    int frameW = poemW + 36;
-    int frameH = poemH + 24;
-    M5.Display.drawRoundRect(frameX, frameY, frameW, frameH, 8, EPD_LIGHT_GRAY);
-
     // Load Kai font for poem
     String prevFontFile = currentFontFile;
     bool prevOfrLoaded = ofrFontLoaded;
@@ -863,18 +996,18 @@ void drawFortuneSlipWording() {
     int sectionY = poemStartY + poemH + 20;
     M5.Display.drawLine(40, sectionY, 500, sectionY, EPD_LIGHT_GRAY);
     sectionY += 8;
-    drawSystemText("【詩意】", 30, sectionY, 26, EPD_DARK_GRAY);
-    sectionY += 32;
-    sectionY = drawWrappedText(fields[4].c_str(), 30, sectionY, 480, 26);
+    drawSystemText("【詩意】", textMargin, sectionY, labelSize, EPD_DARK_GRAY);
+    sectionY += sectionGap;
+    sectionY = drawWrappedText(fields[4].c_str(), textMargin, sectionY, textMaxW, textSize);
     sectionY += 4;
     delay(1);
 
     // --- 解曰 section ---
     M5.Display.drawLine(40, sectionY, 500, sectionY, EPD_LIGHT_GRAY);
     sectionY += 8;
-    drawSystemText("【解曰】", 30, sectionY, 26, EPD_DARK_GRAY);
-    sectionY += 32;
-    sectionY = drawWrappedText(fields[5].c_str(), 30, sectionY, 480, 26);
+    drawSystemText("【解曰】", textMargin, sectionY, labelSize, EPD_DARK_GRAY);
+    sectionY += sectionGap;
+    sectionY = drawWrappedText(fields[5].c_str(), textMargin, sectionY, textMaxW, textSize);
     sectionY += 4;
     delay(1);
 
@@ -890,9 +1023,9 @@ void drawFortuneSlipWording() {
       };
       int gridCols = 3;
       int gridRows = 5;
-      int cellW = 170;
-      int cellH = 32;
-      int gridX = 30;
+      int cellW = isSilver ? 175 : 170;
+      int cellH = catCellH;
+      int gridX = textMargin;
 
       for (int i = 0; i < 15 && (8 + i) < numFields; i++) {
         int gc = i / gridRows;
@@ -903,13 +1036,22 @@ void drawFortuneSlipWording() {
         const String& val = fields[8 + i];
         if (val.length() > 0) {
           String cell = String(sacredLabels[i]) + "：" + val;
-          drawSystemText(cell.c_str(), x, y, 24, TFT_BLACK);
+          drawSystemText(cell.c_str(), x, y, catSize, TFT_BLACK);
         }
       }
     }
   }
 
-  drawReturnButton();
+  // Navigation buttons
+  if (fortuneSlipCategory == 1) {
+    // Sensoji: arrows for multi-page
+    bool showNext = sensoji_hasMore;  // left arrow → next page
+    bool showPrev = (sensoji_wording_page > 0);  // right arrow → prev page
+    drawNavBar(showPrev, showNext);
+  } else {
+    // Kuanyin: left arrow always → go to story
+    drawNavBar(false, true);
+  }
   M5.Display.endWrite();
   M5.Display.display();
 
@@ -943,18 +1085,199 @@ void drawFortuneSlipStory() {
   const String& storyTitle = fields[6];
   const String& storyBody  = fields[7];
 
-  // --- Title ---
-  drawSystemTextCentered(storyTitle.c_str(), DISPLAY_WIDTH / 2, 45, 32);
-  M5.Display.drawLine(40, 82, 500, 82, EPD_LIGHT_GRAY);
-  delay(1);
+  // --- Vertical text layout (like epub reading) ---
+  const int fontSize = 44;
+  int renderSize = (systemFontChoice == 1) ? silverScaledSize(fontSize) : fontSize;
+  int charHeight = fontSize + fontSize / 5;  // 52 (1.2x)
+  int columnSpacing = charHeight;
+  int rdLeft = READING_AREA_LEFT;   // 20
+  int rdRight = READING_AREA_RIGHT; // 530
+  int rdTop = READING_AREA_TOP;     // 65
+  int rdMaxY = READING_AREA_BOTTOM; // 878
 
-  // --- Story body with wrapping (use system font to avoid reloading 52MB Kai) ---
-  drawWrappedText(storyBody.c_str(), 30, 95, 480, 28);
+  // Squeeze extra column if leftover >= 40% of column width
+  {
+    int availW = rdRight - rdLeft;
+    int nc = availW / columnSpacing;
+    int leftover = availW - nc * columnSpacing;
+    if (nc > 0 && leftover * 5 >= columnSpacing * 2) {
+      nc++;
+      columnSpacing = availW / nc;
+    }
+  }
+  int charsPerColumn = (rdMaxY - rdTop) / charHeight;
+  if (rdTop + charsPerColumn * charHeight > rdMaxY)
+    charsPerColumn--;
+  if (charsPerColumn < 1) charsPerColumn = 1;
+  int numCols = (rdRight - rdLeft) / columnSpacing;
 
-  drawReturnButton();
+  // Multi-page: simulate previous pages to find start byte offset
+  int startPos = 0;
+  if (kuanyin_story_page > 0) {
+    int pos = 0;
+    int pagesSkipped = 0;
+    int colX = rdRight - columnSpacing;  // page 0: rightmost column is title
+    int curY = rdTop;
+    int charIdx = 0;
+    while (pos < (int)storyBody.length() && pagesSkipped < kuanyin_story_page) {
+      int charStart = pos;
+      unsigned char c = storyBody.charAt(pos);
+      int cLen = (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+      uint32_t unicode = utf8Decode(storyBody, pos);
+      if (unicode == '\r') continue;
+      if (unicode < 0x20 && unicode != '\n') continue;
+      if (unicode == '\n') {
+        if (charIdx > 0) {
+          colX -= columnSpacing;
+          curY = rdTop;
+          charIdx = 0;
+          if (colX - columnSpacing / 2 < rdLeft) {
+            pagesSkipped++;
+            colX = rdRight;
+            startPos = pos;
+          }
+        }
+        continue;
+      }
+      curY += charHeight;
+      charIdx++;
+      if (charIdx >= charsPerColumn || curY > rdMaxY) {
+        colX -= columnSpacing;
+        curY = rdTop;
+        charIdx = 0;
+        if (colX - columnSpacing / 2 < rdLeft) {
+          pagesSkipped++;
+          colX = rdRight;
+          startPos = pos;
+        }
+      }
+    }
+  }
+
+  // Ensure system font is active
+  if (ofrFontLoaded && systemFontFile.length() > 0 && currentFontFile != systemFontFile) {
+    loadSystemFont();
+  }
+
+  // --- Page 0: draw title vertically in rightmost column, centered ---
+  int columnX = rdRight - columnSpacing / 2;  // rightmost column center
+  if (kuanyin_story_page == 0) {
+    // Count title characters
+    int titleCharCount = 0;
+    {
+      int ti = 0;
+      while (ti < (int)storyTitle.length()) {
+        unsigned char c = storyTitle.charAt(ti);
+        ti += (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+        titleCharCount++;
+      }
+    }
+    int titleH = titleCharCount * charHeight;
+    int titleStartY = rdTop + (rdMaxY - rdTop - titleH) / 2;
+    if (titleStartY < rdTop) titleStartY = rdTop;
+    int ti = 0;
+    while (ti < (int)storyTitle.length()) {
+      uint32_t unicode = utf8Decode(storyTitle, ti);
+      unicode = halfToFullWidth(unicode);
+      unicode = toVerticalPunct(unicode);
+      int vOffset = (charHeight - fontSize) / 2;
+      if (ofrFontLoaded) {
+        drawOFRCharCached(unicode, columnX - renderSize / 2, titleStartY + vOffset, TFT_BLACK, renderSize);
+      }
+      titleStartY += charHeight;
+    }
+    // Draw vertical divider line to the left of title column
+    int divX = columnX - columnSpacing / 2 - 4;
+    M5.Display.drawLine(divX, rdTop, divX, rdMaxY, EPD_LIGHT_GRAY);
+    columnX -= columnSpacing;  // body starts in next column left
+  }
+
+  // --- Render vertical columns ---
+  int currentY = rdTop;
+  int charIndex = 0;
+  int renderStopByte = (int)storyBody.length();
+  int pos = startPos;
+
+  while (pos < (int)storyBody.length()) {
+    int charStart = pos;
+    uint32_t unicode = utf8Decode(storyBody, pos);
+
+    if (unicode == '\r') continue;
+    if (unicode < 0x20 && unicode != '\n') continue;
+
+    // Newline → new column
+    if (unicode == '\n') {
+      if (charIndex > 0) {
+        columnX -= columnSpacing;
+        currentY = rdTop;
+        charIndex = 0;
+        if (columnX - columnSpacing / 2 < rdLeft) {
+          renderStopByte = pos;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // Skip space at column start (paragraph indent)
+    if ((unicode == 0x3000 || unicode == ' ') && charIndex == 0) continue;
+
+    // Convert punctuation for vertical
+    unicode = halfToFullWidth(unicode);
+    unicode = toVerticalPunct(unicode);
+
+    // Draw character
+    int vOffset = (charHeight - fontSize) / 2;
+    if (ofrFontLoaded) {
+      int drawX = columnX - renderSize / 2;
+      int drawY = currentY + vOffset;
+      drawOFRCharCached(unicode, drawX, drawY, TFT_BLACK, renderSize);
+    }
+
+    currentY += charHeight;
+    charIndex++;
+
+    // Column overflow → next column left
+    if (charIndex >= charsPerColumn || currentY + charHeight > rdMaxY) {
+      // Kinsoku: check if next char is start-prohibited punctuation
+      if (pos < (int)storyBody.length()) {
+        int peekI = pos;
+        uint32_t peekUnicode = utf8Decode(storyBody, peekI);
+        uint32_t mappedPeek = toVerticalPunct(peekUnicode);
+        if (isColumnStartProhibited(peekUnicode) || isColumnStartProhibited(mappedPeek)) {
+          // Draw prohibited char in overflow slot
+          mappedPeek = halfToFullWidth(peekUnicode);
+          mappedPeek = toVerticalPunct(mappedPeek);
+          if (ofrFontLoaded) {
+            int drawX = columnX - renderSize / 2;
+            int drawY = currentY + vOffset;
+            drawOFRCharCached(mappedPeek, drawX, drawY, TFT_BLACK, renderSize);
+          }
+          pos = peekI;
+        }
+      }
+
+      columnX -= columnSpacing;
+      currentY = rdTop;
+      charIndex = 0;
+      if (columnX - columnSpacing / 2 < rdLeft) {
+        renderStopByte = pos;
+        break;
+      }
+    }
+
+    delay(0);  // yield
+  }
+
+  kuanyin_story_hasMore = (renderStopByte < (int)storyBody.length());
+
+  // Navigation: right arrow always shown (back to explanation or prev page), left arrow if more pages
+  bool showPrev = true;
+  bool showNext = kuanyin_story_hasMore;
+  drawNavBar(showPrev, showNext);
   M5.Display.endWrite();
   M5.Display.display();
 
   delete[] fields;
-  Serial.printf("Fortune story displayed: slip=%d\n", fortuneSlipNumber + 1);
+  Serial.printf("Fortune story displayed: slip=%d, page=%d\n", fortuneSlipNumber + 1, kuanyin_story_page + 1);
 }

@@ -1,4 +1,5 @@
 #include "globals.h"
+#include "esp_task_wdt.h"
 
 // Web server file manager functions
 String formatBytes(size_t bytes) {
@@ -10,10 +11,10 @@ String formatBytes(size_t bytes) {
 String urlDecode(String str) {
   String decoded = "";
   char c;
-  for (int i = 0; i < str.length(); i++) {
+  for (int i = 0; i < (int)str.length(); i++) {
     c = str.charAt(i);
     if (c == '+') decoded += ' ';
-    else if (c == '%') {
+    else if (c == '%' && i + 2 < (int)str.length()) {
       char hex[3] = {str.charAt(i+1), str.charAt(i+2), 0};
       decoded += (char)strtol(hex, NULL, 16);
       i += 2;
@@ -150,17 +151,18 @@ void handleFileUpload() {
     uploadPath = uploadDir + upload.filename;
     Serial.printf("Upload Start: [%s] (%d chars)\n", uploadPath.c_str(), uploadPath.length());
     
-    {
-      ScopedSDLock lock;
-      // Remove existing file first to ensure clean write
-      if (SD.exists(uploadPath)) {
-        SD.remove(uploadPath);
-        Serial.printf("Removed existing file: %s\n", uploadPath.c_str());
-      }
-      uploadFile = SD.open(uploadPath, FILE_WRITE);
+    // Hold SD mutex for the entire upload duration (open → write → close)
+    // to prevent other tasks from accessing SD and corrupting the write.
+    if (sdMutex) xSemaphoreTake(sdMutex, portMAX_DELAY);
+    // Remove existing file first to ensure clean write
+    if (SD.exists(uploadPath)) {
+      SD.remove(uploadPath);
+      Serial.printf("Removed existing file: %s\n", uploadPath.c_str());
     }
+    uploadFile = SD.open(uploadPath, FILE_WRITE);
     if (!uploadFile) {
       Serial.printf("Failed to open file for writing: %s\n", uploadPath.c_str());
+      if (sdMutex) xSemaphoreGive(sdMutex);
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (uploadFile) {
@@ -172,21 +174,18 @@ void handleFileUpload() {
   } else if (upload.status == UPLOAD_FILE_END) {
     if (uploadFile) {
       uploadFile.flush();
+      size_t finalSize = uploadFile.size();
       uploadFile.close();
-      Serial.printf("Upload Complete: %s, %u bytes\n", uploadPath.c_str(), upload.totalSize);
-      // Verify the file was written correctly
-      {
-        ScopedSDLock lock;
-        File verify = SD.open(uploadPath);
-        if (verify) {
-          Serial.printf("Upload verify: %s exists, %u bytes on SD\n", uploadPath.c_str(), verify.size());
-          verify.close();
-        } else {
-          Serial.printf("Upload verify FAILED: %s not found on SD!\n", uploadPath.c_str());
-        }
+      Serial.printf("Upload Complete: %s, %u bytes (on SD: %u)\n",
+                    uploadPath.c_str(), upload.totalSize, finalSize);
+      if (finalSize != upload.totalSize) {
+        Serial.printf("Upload SIZE MISMATCH: expected %u, got %u on SD!\n",
+                      upload.totalSize, finalSize);
       }
+      if (sdMutex) xSemaphoreGive(sdMutex);
     } else {
       Serial.println("Upload END but file was not open");
+      // Mutex was already released in UPLOAD_FILE_START on open failure
     }
   }
 }
@@ -307,76 +306,127 @@ void handleScreenshot() {
   int headerSize = 14 + 40;   // BMP file header + DIB header
   int fileSize = headerSize + paletteSize + imageSize;
 
-  // Build BMP file header (14 bytes)
-  uint8_t bmpHeader[14 + 40];
-  memset(bmpHeader, 0, sizeof(bmpHeader));
+  size_t freeHeap = ESP.getFreeHeap();
+  size_t freePsram = ESP.getFreePsram();
+  Serial.printf("Screenshot: freeHeap=%u, freePsram=%u\n", (unsigned)freeHeap, (unsigned)freePsram);
 
-  // -- File header --
-  bmpHeader[0] = 'B'; bmpHeader[1] = 'M';
-  *((uint32_t*)&bmpHeader[2])  = fileSize;
-  *((uint32_t*)&bmpHeader[10]) = headerSize + paletteSize;  // pixel data offset
-
-  // -- DIB header (BITMAPINFOHEADER, 40 bytes) --
-  *((uint32_t*)&bmpHeader[14]) = 40;          // DIB header size
-  *((int32_t*)&bmpHeader[18])  = w;           // width
-  *((int32_t*)&bmpHeader[22])  = h;           // height (positive = bottom-up)
-  *((uint16_t*)&bmpHeader[26]) = 1;           // color planes
-  *((uint16_t*)&bmpHeader[28]) = 8;           // bits per pixel (grayscale)
-  *((uint32_t*)&bmpHeader[30]) = 0;           // compression (none)
-  *((uint32_t*)&bmpHeader[34]) = imageSize;   // image data size
-  *((int32_t*)&bmpHeader[38])  = 2835;        // X pixels per meter (~72 DPI)
-  *((int32_t*)&bmpHeader[42])  = 2835;        // Y pixels per meter
-  *((uint32_t*)&bmpHeader[46]) = 256;         // colors in palette
-  *((uint32_t*)&bmpHeader[50]) = 0;           // important colors (all)
-
-  // Build grayscale palette (256 entries × 4 bytes)
-  uint8_t palette[256 * 4];
-  for (int i = 0; i < 256; i++) {
-    palette[i * 4 + 0] = i;  // Blue
-    palette[i * 4 + 1] = i;  // Green
-    palette[i * 4 + 2] = i;  // Red
-    palette[i * 4 + 3] = 0;  // Reserved
+  if (freeHeap < 8192) {
+    Serial.printf("Screenshot: insufficient heap (%u bytes), aborting\n", (unsigned)freeHeap);
+    webServer->send(503, "text/plain", "Screenshot: insufficient memory, try again later");
+    return;
   }
 
-  // Send headers for chunked transfer
+  // Allocate full grayscale image buffer in PSRAM (~520KB for 540x960)
+  uint8_t* imgBuf = (uint8_t*)ps_malloc(imageSize);
+  if (!imgBuf) {
+    Serial.println("Screenshot: PSRAM allocation failed");
+    webServer->send(503, "text/plain", "Screenshot: PSRAM allocation failed");
+    return;
+  }
+  memset(imgBuf, 0xFF, imageSize);  // default white
+
+  // Allocate RGB chunk buffer in PSRAM (multiple rows at once)
+  const int READ_CHUNK = 32;
+  uint8_t* rgbChunk = (uint8_t*)ps_malloc(w * 3 * READ_CHUNK);
+  if (!rgbChunk) {
+    free(imgBuf);
+    webServer->send(503, "text/plain", "Screenshot: row buffer allocation failed");
+    return;
+  }
+
+  // Wait for e-ink refresh to complete before reading the framebuffer
+  {
+    unsigned long busyStart = millis();
+    while (M5.Display.displayBusy()) {
+      delay(50);
+      esp_task_wdt_reset();
+      if (millis() - busyStart > 8000) {
+        Serial.println("Screenshot: display busy timeout, proceeding anyway");
+        break;
+      }
+    }
+  }
+
+  // ── Phase 1: Read display into PSRAM buffer in multi-row chunks ──
+  // Each readRectRGB call reads READ_CHUNK rows in a single readRect call,
+  // which only allocates/frees IT8951 buffers once per chunk (~30 times total
+  // instead of 960 single-row calls).
+  Serial.println("Screenshot: reading display...");
+  unsigned long readStart = millis();
+  bool readOK = true;
+  for (int y = 0; y < h; y += READ_CHUNK) {
+    int rows = min(READ_CHUNK, h - y);
+    M5.Display.readRectRGB(0, y, w, rows, rgbChunk);
+    // Convert RGB to grayscale in BMP bottom-up order
+    for (int r = 0; r < rows; r++) {
+      int srcRow = r;
+      int bmpRow = h - 1 - (y + r);
+      uint8_t* src = rgbChunk + srcRow * w * 3;
+      uint8_t* dst = imgBuf + bmpRow * rowStride;
+      for (int x = 0; x < w; x++) {
+        dst[x] = (uint8_t)((src[x * 3] * 77 + src[x * 3 + 1] * 150 + src[x * 3 + 2] * 29) >> 8);
+      }
+    }
+    esp_task_wdt_reset();
+    yield();
+    // Abort if reading takes too long (prevent system halt)
+    if (millis() - readStart > 30000) {
+      Serial.printf("Screenshot: read timeout at row %d, aborting\n", y);
+      readOK = false;
+      break;
+    }
+  }
+  free(rgbChunk);
+  Serial.printf("Screenshot: display read %s in %lu ms\n",
+                readOK ? "complete" : "partial", millis() - readStart);
+
+  // ── Phase 2: Build and send BMP over WiFi (no SPI needed) ──
+  uint8_t bmpHeader[14 + 40];
+  memset(bmpHeader, 0, sizeof(bmpHeader));
+  bmpHeader[0] = 'B'; bmpHeader[1] = 'M';
+  *((uint32_t*)&bmpHeader[2])  = fileSize;
+  *((uint32_t*)&bmpHeader[10]) = headerSize + paletteSize;
+  *((uint32_t*)&bmpHeader[14]) = 40;
+  *((int32_t*)&bmpHeader[18])  = w;
+  *((int32_t*)&bmpHeader[22])  = h;
+  *((uint16_t*)&bmpHeader[26]) = 1;
+  *((uint16_t*)&bmpHeader[28]) = 8;
+  *((uint32_t*)&bmpHeader[30]) = 0;
+  *((uint32_t*)&bmpHeader[34]) = imageSize;
+  *((int32_t*)&bmpHeader[38])  = 2835;
+  *((int32_t*)&bmpHeader[42])  = 2835;
+  *((uint32_t*)&bmpHeader[46]) = 256;
+  *((uint32_t*)&bmpHeader[50]) = 0;
+
+  uint8_t palette[256 * 4];
+  for (int i = 0; i < 256; i++) {
+    palette[i * 4 + 0] = i;
+    palette[i * 4 + 1] = i;
+    palette[i * 4 + 2] = i;
+    palette[i * 4 + 3] = 0;
+  }
+
   webServer->setContentLength(fileSize);
   webServer->send(200, "image/bmp", "");
 
-  // Send BMP headers + palette
   WiFiClient client = webServer->client();
   client.write(bmpHeader, sizeof(bmpHeader));
   client.write(palette, sizeof(palette));
 
-  // Allocate row buffers: RGB888 source + grayscale output
-  uint8_t* rgbRow = (uint8_t*)malloc(w * 3);
-  uint8_t* grayRow = (uint8_t*)malloc(rowStride);
-  if (!rgbRow || !grayRow) {
-    Serial.println("Screenshot: malloc failed");
-    free(rgbRow);
-    free(grayRow);
-    return;
-  }
-  memset(grayRow, 0xFF, rowStride);  // pad bytes = white
-
-  // Stream pixel data row by row (BMP is bottom-up)
-  for (int y = h - 1; y >= 0; y--) {
-    // Read entire row as RGB888 in one call (much faster than per-pixel)
-    M5.Display.readRectRGB(0, y, w, 1, rgbRow);
-
-    for (int x = 0; x < w; x++) {
-      uint8_t r = rgbRow[x * 3 + 0];
-      uint8_t g = rgbRow[x * 3 + 1];
-      uint8_t b = rgbRow[x * 3 + 2];
-      // Luminance-weighted grayscale
-      grayRow[x] = (uint8_t)((r * 77 + g * 150 + b * 29) >> 8);
+  // Send image data in chunks with WDT feeds
+  const int CHUNK_ROWS = 64;
+  for (int startRow = 0; startRow < h; startRow += CHUNK_ROWS) {
+    if (!client.connected()) {
+      Serial.printf("Screenshot: client disconnected at row %d\n", startRow);
+      break;
     }
-    client.write(grayRow, rowStride);
-    // Yield every 64 rows to prevent watchdog timeout
-    if ((y & 0x3F) == 0) yield();
+    int rows = min(CHUNK_ROWS, h - startRow);
+    client.write(imgBuf + startRow * rowStride, rows * rowStride);
+    esp_task_wdt_reset();
+    yield();
   }
 
-  free(rgbRow);
-  free(grayRow);
+  free(imgBuf);
   Serial.println("Screenshot sent successfully");
 }
 

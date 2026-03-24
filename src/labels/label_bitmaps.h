@@ -18,6 +18,7 @@
 #include "label_kuanyin_slips.h"
 #include "label_sensoji_slips.h"
 #include "label_sleep_motto.h"
+#include "label_sleep_motto_36.h"
 #include "label_sincere_prayer.h"
 #include "label_shake_to_draw.h"
 #include "label_char_cheng.h"
@@ -1344,14 +1345,192 @@
 #include "label_s32_wake.h"
 #include "label_s36_switch_silver.h"
 #include "label_s36_switch_genyomin.h"
+#include "label_s36_loading.h"
+#include "label_s36_book_loading.h"
 #include "label_s36_safe_mode.h"
 #include "label_s36_fortune.h"
 #include "label_s36_select_ym.h"
 #include "label_s40_sys_font.h"
 #include "label_s40_bluetooth.h"
+#include "label_s40_setup.h"
+#include "label_s40_select_font.h"
+#include "label_s40_about.h"
 #include "label_s22_no_sd.h"
 #include "label_s32_no_sd.h"
 #include "label_s24_insert_sd.h"
+#include "label_s24_free_zoom.h"
+#include "label_s24_quad_zoom.h"
+#include "label_s22_sd_absent.h"
+#include "label_s22_wifi_disconn.h"
+#include "label_s22_about_desc.h"
+#include "label_s22_hw_info.h"
+#include "label_s22_screen_info.h"
+#include "label_s22_no_indent.h"
+#include "label_s22_indent.h"
+#include "label_s28_about_title.h"
+#include "label_s32_para_indent.h"
+#include "label_s32_about.h"
+#include "label_s22_build_date.h"
+#include "label_s22_cpu.h"
+#include "label_s22_flash.h"
+#include "label_s22_psram.h"
+#include "label_s22_remain.h"
+#include "label_s22_kb_suffix.h"
+#include "label_s22_heap.h"
+#include "label_s22_sd_prefix.h"
+#include "label_s22_wifi_prefix.h"
+#include "label_comic_free_24.h"
+#include "label_comic_quad_24.h"
+#include "label_dict_not_found.h"
+#include "label_dict_dismiss.h"
+#include "label_last_read.h"
+#include "label_mchar_2014.h"
+#include "label_mchar_3002.h"
+#include "label_mchar_300c.h"
+#include "label_mchar_300d.h"
+#include "label_mchar_4e00.h"
+#include "label_mchar_4e0a.h"
+#include "label_mchar_4e0d.h"
+#include "label_mchar_4e2d.h"
+#include "label_mchar_4e3b.h"
+#include "label_mchar_4e5f.h"
+#include "label_mchar_4e86.h"
+#include "label_mchar_4e8b.h"
+#include "label_mchar_4eba.h"
+#include "label_mchar_4ec0.h"
+#include "label_mchar_4ed6.h"
+#include "label_mchar_4ee5.h"
+#include "label_mchar_4f19.h"
+#include "label_mchar_4f34.h"
+#include "label_mchar_4f46.h"
+#include "label_mchar_4f4d.h"
+#include "label_mchar_4f60.h"
+#include "label_mchar_4f86.h"
+#include "label_mchar_4fd7.h"
+#include "label_mchar_4fdd.h"
+#include "label_mchar_4fe1.h"
+#include "label_mchar_500b.h"
+#include "label_mchar_5019.h"
+#include "label_mchar_505a.h"
+#include "label_mchar_516c.h"
+#include "label_mchar_518d.h"
+#include "label_mchar_51fa.h"
+#include "label_mchar_5207.h"
+#include "label_mchar_5230.h"
+#include "label_mchar_5247.h"
+#include "label_mchar_5341.h"
+#include "label_mchar_5343.h"
+#include "label_mchar_53bb.h"
+#include "label_mchar_53c8.h"
+#include "label_mchar_53e5.h"
+#include "label_mchar_53ef.h"
+#include "label_mchar_5403.h"
+#include "label_mchar_5404.h"
+#include "label_mchar_540c.h"
+#include "label_mchar_5426.h"
+#include "label_mchar_5435.h"
+#include "label_mchar_548c.h"
+#include "label_mchar_5582.h"
+#include "label_mchar_570b.h"
+#include "label_mchar_5728.h"
+#include "label_mchar_5922.h"
+#include "label_mchar_5927.h"
+#include "label_mchar_5929.h"
+#include "label_mchar_597d.h"
+#include "label_mchar_5982.h"
+#include "label_mchar_5a18.h"
+#include "label_mchar_5b83.h"
+#include "label_mchar_5b88.h"
+#include "label_mchar_5b9a.h"
+#include "label_mchar_5beb.h"
+#include "label_mchar_5c01.h"
+#include "label_mchar_5c07.h"
+#include "label_mchar_5c0d.h"
+#include "label_mchar_5c0f.h"
+#include "label_mchar_5c31.h"
+#include "label_mchar_5c4e.h"
+#include "label_mchar_5df1.h"
+#include "label_mchar_5e74.h"
+#include "label_mchar_5e8f.h"
+#include "label_mchar_5efa.h"
+#include "label_mchar_5f88.h"
+#include "label_mchar_601d.h"
+#include "label_mchar_610f.h"
+#include "label_mchar_6200.h"
+#include "label_mchar_6211.h"
+#include "label_mchar_628a.h"
+#include "label_mchar_62c9.h"
+#include "label_mchar_6301.h"
+#include "label_mchar_6495.h"
+#include "label_mchar_6562.h"
+#include "label_mchar_65b9.h"
+#include "label_mchar_6625.h"
+#include "label_mchar_662f.h"
+#include "label_mchar_6642.h"
+#include "label_mchar_6700.h"
+#include "label_mchar_6703.h"
+#include "label_mchar_6709.h"
+#include "label_mchar_670d.h"
+#include "label_mchar_6751.h"
+#include "label_mchar_679c.h"
+#include "label_mchar_67b6.h"
+#include "label_mchar_6885.h"
+#include "label_mchar_689d.h"
+#include "label_mchar_6b7b.h"
+#include "label_mchar_6bd4.h"
+#include "label_mchar_6c11.h"
+#include "label_mchar_6c23.h"
+#include "label_mchar_6c92.h"
+#include "label_mchar_70ba.h"
+#include "label_mchar_71df.h"
+#include "label_mchar_7239.h"
+#include "label_mchar_729f.h"
+#include "label_mchar_72af.h"
+#include "label_mchar_731c.h"
+#include "label_mchar_74bd.h"
+#include "label_mchar_7684.h"
+#include "label_mchar_76ee.h"
+#include "label_mchar_771f.h"
+#include "label_mchar_79cb.h"
+#include "label_mchar_7a0b.h"
+#include "label_mchar_7d42.h"
+#include "label_mchar_7db2.h"
+#include "label_mchar_7f6a.h"
+#include "label_mchar_800c.h"
+#include "label_mchar_80fd.h"
+#include "label_mchar_81ea.h"
+#include "label_mchar_8207.h"
+#include "label_mchar_82f1.h"
+#include "label_mchar_842c.h"
+#include "label_mchar_8981.h"
+#include "label_mchar_8a0e.h"
+#include "label_mchar_8a18.h"
+#include "label_mchar_8a71.h"
+#include "label_mchar_8aaa.h"
+#include "label_mchar_8ad6.h"
+#include "label_mchar_8ff7.h"
+#include "label_mchar_9019.h"
+#include "label_mchar_9023.h"
+#include "label_mchar_903c.h"
+#include "label_mchar_904e.h"
+#include "label_mchar_9075.h"
+#include "label_mchar_90a3.h"
+#include "label_mchar_90fd.h"
+#include "label_mchar_9322.h"
+#include "label_mchar_958b.h"
+#include "label_mchar_95a3.h"
+#include "label_mchar_96c4.h"
+#include "label_mchar_990a.h"
+#include "label_mchar_9910.h"
+#include "label_mchar_9ebb.h"
+#include "label_mchar_9ebc.h"
+#include "label_mchar_ff01.h"
+#include "label_mchar_ff0c.h"
+#include "label_mchar_ff1a.h"
+#include "label_mchar_ff1f.h"
+#include "label_mchar_fe31.h"
+#include "label_mchar_fe41.h"
+#include "label_mchar_fe42.h"
 
 // Label bitmap entry for lookup
 struct LabelBitmap {
@@ -1362,7 +1541,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1346;
+const int kLabelBitmapCount = 1525;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -1377,6 +1556,7 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"觀音靈籖", 36, label_kuanyin_slips_w, label_kuanyin_slips_h, label_kuanyin_slips_bitmap},
   {"淺草寺靈籖", 36, label_sensoji_slips_w, label_sensoji_slips_h, label_sensoji_slips_bitmap},
   {"醒世格言", 28, label_sleep_motto_w, label_sleep_motto_h, label_sleep_motto_bitmap},
+  {"醒世格言", 36, label_sleep_motto_36_w, label_sleep_motto_36_h, label_sleep_motto_36_bitmap},
   {"誠心祝禱", 64, label_sincere_prayer_w, label_sincere_prayer_h, label_sincere_prayer_bitmap},
   {"輕搖求籖", 64, label_shake_to_draw_w, label_shake_to_draw_h, label_shake_to_draw_bitmap},
   {"誠", 64, label_char_cheng_w, label_char_cheng_h, label_char_cheng_bitmap},
@@ -1513,7 +1693,7 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"請在 /wallpapers 資料夾中", 24, label_add_wallpaper_hint_w, label_add_wallpaper_hint_h, label_add_wallpaper_hint_bitmap},
   {"添加圖片檔案", 24, label_add_image_files_w, label_add_image_files_h, label_add_image_files_bitmap},
   {"電子書列表", 36, label_booklist_title_w, label_booklist_title_h, label_booklist_title_bitmap},
-  {"觸控選擇書籍", 18, label_touch_select_w, label_touch_select_h, label_touch_select_bitmap},
+  {"觸控選擇書籍", 28, label_touch_select_w, label_touch_select_h, label_touch_select_bitmap},
   {"字-", 28, label_font_smaller_w, label_font_smaller_h, label_font_smaller_bitmap},
   {"字+", 28, label_font_larger_w, label_font_larger_h, label_font_larger_bitmap},
   {"字型", 20, label_font_type_w, label_font_type_h, label_font_type_bitmap},
@@ -2703,14 +2883,192 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"醒世", 32, label_s32_wake_w, label_s32_wake_h, label_s32_wake_bitmap},
   {"切換為 Silver", 36, label_s36_switch_silver_w, label_s36_switch_silver_h, label_s36_switch_silver_bitmap},
   {"切換為 源樣明體", 36, label_s36_switch_genyomin_w, label_s36_switch_genyomin_h, label_s36_switch_genyomin_bitmap},
+  {"AI智能整合中...", 36, label_s36_loading_w, label_s36_loading_h, label_s36_loading_bitmap},
+  {"AI智能排版中...", 36, label_s36_book_loading_w, label_s36_book_loading_h, label_s36_book_loading_bitmap},
   {"安全模式", 36, label_s36_safe_mode_w, label_s36_safe_mode_h, label_s36_safe_mode_bitmap},
   {"求籖", 36, label_s36_fortune_w, label_s36_fortune_h, label_s36_fortune_bitmap},
   {"選擇年月", 36, label_s36_select_ym_w, label_s36_select_ym_h, label_s36_select_ym_bitmap},
   {"系統字體", 40, label_s40_sys_font_w, label_s40_sys_font_h, label_s40_sys_font_bitmap},
   {"藍牙", 40, label_s40_bluetooth_w, label_s40_bluetooth_h, label_s40_bluetooth_bitmap},
+  {"設定", 40, label_s40_setup_w, label_s40_setup_h, label_s40_setup_bitmap},
+  {"選擇閱讀字型", 40, label_s40_select_font_w, label_s40_select_font_h, label_s40_select_font_bitmap},
+  {"關於", 40, label_s40_about_w, label_s40_about_h, label_s40_about_bitmap},
   {"未插入 SD 卡", 22, label_s22_no_sd_w, label_s22_no_sd_h, label_s22_no_sd_bitmap},
   {"未插入 SD 卡", 32, label_s32_no_sd_w, label_s32_no_sd_h, label_s32_no_sd_bitmap},
   {"請插入 SD 卡後重新啟動", 24, label_s24_insert_sd_w, label_s24_insert_sd_h, label_s24_insert_sd_bitmap},
+  {"自由", 24, label_s24_free_zoom_w, label_s24_free_zoom_h, label_s24_free_zoom_bitmap},
+  {"四分", 24, label_s24_quad_zoom_w, label_s24_quad_zoom_h, label_s24_quad_zoom_bitmap},
+  {"SD 卡：未插入", 22, label_s22_sd_absent_w, label_s22_sd_absent_h, label_s22_sd_absent_bitmap},
+  {"WiFi：未連接", 22, label_s22_wifi_disconn_w, label_s22_wifi_disconn_h, label_s22_wifi_disconn_bitmap},
+  {"版本資訊與裝置狀態", 22, label_s22_about_desc_w, label_s22_about_desc_h, label_s22_about_desc_bitmap},
+  {"硬體：M5Stack Paper S3 (ESP32-S3)", 22, label_s22_hw_info_w, label_s22_hw_info_h, label_s22_hw_info_bitmap},
+  {"螢幕：540 × 960  電子紙", 22, label_s22_screen_info_w, label_s22_screen_info_h, label_s22_screen_info_bitmap},
+  {"首行不縮進", 22, label_s22_no_indent_w, label_s22_no_indent_h, label_s22_no_indent_bitmap},
+  {"首行縮進（兩個全形空格）", 22, label_s22_indent_w, label_s22_indent_h, label_s22_indent_bitmap},
+  {"M5Stack Paper S3 中文電子書閱讀器", 28, label_s28_about_title_w, label_s28_about_title_h, label_s28_about_title_bitmap},
+  {"段落縮進", 32, label_s32_para_indent_w, label_s32_para_indent_h, label_s32_para_indent_bitmap},
+  {"關於", 32, label_s32_about_w, label_s32_about_h, label_s32_about_bitmap},
+  {"編譯日期：", 22, label_s22_build_date_w, label_s22_build_date_h, label_s22_build_date_bitmap},
+  {"CPU：", 22, label_s22_cpu_w, label_s22_cpu_h, label_s22_cpu_bitmap},
+  {"Flash：", 22, label_s22_flash_w, label_s22_flash_h, label_s22_flash_bitmap},
+  {"PSRAM：", 22, label_s22_psram_w, label_s22_psram_h, label_s22_psram_bitmap},
+  {"（剩餘 ", 22, label_s22_remain_w, label_s22_remain_h, label_s22_remain_bitmap},
+  {" KB）", 22, label_s22_kb_suffix_w, label_s22_kb_suffix_h, label_s22_kb_suffix_bitmap},
+  {"記憶體：剩餘 ", 22, label_s22_heap_w, label_s22_heap_h, label_s22_heap_bitmap},
+  {"SD 卡：", 22, label_s22_sd_prefix_w, label_s22_sd_prefix_h, label_s22_sd_prefix_bitmap},
+  {"WiFi：", 22, label_s22_wifi_prefix_w, label_s22_wifi_prefix_h, label_s22_wifi_prefix_bitmap},
+  {"自由", 24, label_comic_free_24_w, label_comic_free_24_h, label_comic_free_24_bitmap},
+  {"四分", 24, label_comic_quad_24_w, label_comic_quad_24_h, label_comic_quad_24_bitmap},
+  {"查無此字", 40, label_dict_not_found_w, label_dict_not_found_h, label_dict_not_found_bitmap},
+  {"輕觸關閉", 28, label_dict_dismiss_w, label_dict_dismiss_h, label_dict_dismiss_bitmap},
+  {"最後閱讀", 24, label_last_read_w, label_last_read_h, label_last_read_bitmap},
+  {"—", 48, label_mchar_2014_w, label_mchar_2014_h, label_mchar_2014_bitmap},
+  {"。", 48, label_mchar_3002_w, label_mchar_3002_h, label_mchar_3002_bitmap},
+  {"「", 48, label_mchar_300c_w, label_mchar_300c_h, label_mchar_300c_bitmap},
+  {"」", 48, label_mchar_300d_w, label_mchar_300d_h, label_mchar_300d_bitmap},
+  {"一", 48, label_mchar_4e00_w, label_mchar_4e00_h, label_mchar_4e00_bitmap},
+  {"上", 48, label_mchar_4e0a_w, label_mchar_4e0a_h, label_mchar_4e0a_bitmap},
+  {"不", 48, label_mchar_4e0d_w, label_mchar_4e0d_h, label_mchar_4e0d_bitmap},
+  {"中", 48, label_mchar_4e2d_w, label_mchar_4e2d_h, label_mchar_4e2d_bitmap},
+  {"主", 48, label_mchar_4e3b_w, label_mchar_4e3b_h, label_mchar_4e3b_bitmap},
+  {"也", 48, label_mchar_4e5f_w, label_mchar_4e5f_h, label_mchar_4e5f_bitmap},
+  {"了", 48, label_mchar_4e86_w, label_mchar_4e86_h, label_mchar_4e86_bitmap},
+  {"事", 48, label_mchar_4e8b_w, label_mchar_4e8b_h, label_mchar_4e8b_bitmap},
+  {"人", 48, label_mchar_4eba_w, label_mchar_4eba_h, label_mchar_4eba_bitmap},
+  {"什", 48, label_mchar_4ec0_w, label_mchar_4ec0_h, label_mchar_4ec0_bitmap},
+  {"他", 48, label_mchar_4ed6_w, label_mchar_4ed6_h, label_mchar_4ed6_bitmap},
+  {"以", 48, label_mchar_4ee5_w, label_mchar_4ee5_h, label_mchar_4ee5_bitmap},
+  {"伙", 48, label_mchar_4f19_w, label_mchar_4f19_h, label_mchar_4f19_bitmap},
+  {"伴", 48, label_mchar_4f34_w, label_mchar_4f34_h, label_mchar_4f34_bitmap},
+  {"但", 48, label_mchar_4f46_w, label_mchar_4f46_h, label_mchar_4f46_bitmap},
+  {"位", 48, label_mchar_4f4d_w, label_mchar_4f4d_h, label_mchar_4f4d_bitmap},
+  {"你", 48, label_mchar_4f60_w, label_mchar_4f60_h, label_mchar_4f60_bitmap},
+  {"來", 48, label_mchar_4f86_w, label_mchar_4f86_h, label_mchar_4f86_bitmap},
+  {"俗", 48, label_mchar_4fd7_w, label_mchar_4fd7_h, label_mchar_4fd7_bitmap},
+  {"保", 48, label_mchar_4fdd_w, label_mchar_4fdd_h, label_mchar_4fdd_bitmap},
+  {"信", 48, label_mchar_4fe1_w, label_mchar_4fe1_h, label_mchar_4fe1_bitmap},
+  {"個", 48, label_mchar_500b_w, label_mchar_500b_h, label_mchar_500b_bitmap},
+  {"候", 48, label_mchar_5019_w, label_mchar_5019_h, label_mchar_5019_bitmap},
+  {"做", 48, label_mchar_505a_w, label_mchar_505a_h, label_mchar_505a_bitmap},
+  {"公", 48, label_mchar_516c_w, label_mchar_516c_h, label_mchar_516c_bitmap},
+  {"再", 48, label_mchar_518d_w, label_mchar_518d_h, label_mchar_518d_bitmap},
+  {"出", 48, label_mchar_51fa_w, label_mchar_51fa_h, label_mchar_51fa_bitmap},
+  {"切", 48, label_mchar_5207_w, label_mchar_5207_h, label_mchar_5207_bitmap},
+  {"到", 48, label_mchar_5230_w, label_mchar_5230_h, label_mchar_5230_bitmap},
+  {"則", 48, label_mchar_5247_w, label_mchar_5247_h, label_mchar_5247_bitmap},
+  {"十", 48, label_mchar_5341_w, label_mchar_5341_h, label_mchar_5341_bitmap},
+  {"千", 48, label_mchar_5343_w, label_mchar_5343_h, label_mchar_5343_bitmap},
+  {"去", 48, label_mchar_53bb_w, label_mchar_53bb_h, label_mchar_53bb_bitmap},
+  {"又", 48, label_mchar_53c8_w, label_mchar_53c8_h, label_mchar_53c8_bitmap},
+  {"句", 48, label_mchar_53e5_w, label_mchar_53e5_h, label_mchar_53e5_bitmap},
+  {"可", 48, label_mchar_53ef_w, label_mchar_53ef_h, label_mchar_53ef_bitmap},
+  {"吃", 48, label_mchar_5403_w, label_mchar_5403_h, label_mchar_5403_bitmap},
+  {"各", 48, label_mchar_5404_w, label_mchar_5404_h, label_mchar_5404_bitmap},
+  {"同", 48, label_mchar_540c_w, label_mchar_540c_h, label_mchar_540c_bitmap},
+  {"否", 48, label_mchar_5426_w, label_mchar_5426_h, label_mchar_5426_bitmap},
+  {"吵", 48, label_mchar_5435_w, label_mchar_5435_h, label_mchar_5435_bitmap},
+  {"和", 48, label_mchar_548c_w, label_mchar_548c_h, label_mchar_548c_bitmap},
+  {"喂", 48, label_mchar_5582_w, label_mchar_5582_h, label_mchar_5582_bitmap},
+  {"國", 48, label_mchar_570b_w, label_mchar_570b_h, label_mchar_570b_bitmap},
+  {"在", 48, label_mchar_5728_w, label_mchar_5728_h, label_mchar_5728_bitmap},
+  {"夢", 48, label_mchar_5922_w, label_mchar_5922_h, label_mchar_5922_bitmap},
+  {"大", 48, label_mchar_5927_w, label_mchar_5927_h, label_mchar_5927_bitmap},
+  {"天", 48, label_mchar_5929_w, label_mchar_5929_h, label_mchar_5929_bitmap},
+  {"好", 48, label_mchar_597d_w, label_mchar_597d_h, label_mchar_597d_bitmap},
+  {"如", 48, label_mchar_5982_w, label_mchar_5982_h, label_mchar_5982_bitmap},
+  {"娘", 48, label_mchar_5a18_w, label_mchar_5a18_h, label_mchar_5a18_bitmap},
+  {"它", 48, label_mchar_5b83_w, label_mchar_5b83_h, label_mchar_5b83_bitmap},
+  {"守", 48, label_mchar_5b88_w, label_mchar_5b88_h, label_mchar_5b88_bitmap},
+  {"定", 48, label_mchar_5b9a_w, label_mchar_5b9a_h, label_mchar_5b9a_bitmap},
+  {"寫", 48, label_mchar_5beb_w, label_mchar_5beb_h, label_mchar_5beb_bitmap},
+  {"封", 48, label_mchar_5c01_w, label_mchar_5c01_h, label_mchar_5c01_bitmap},
+  {"將", 48, label_mchar_5c07_w, label_mchar_5c07_h, label_mchar_5c07_bitmap},
+  {"對", 48, label_mchar_5c0d_w, label_mchar_5c0d_h, label_mchar_5c0d_bitmap},
+  {"小", 48, label_mchar_5c0f_w, label_mchar_5c0f_h, label_mchar_5c0f_bitmap},
+  {"就", 48, label_mchar_5c31_w, label_mchar_5c31_h, label_mchar_5c31_bitmap},
+  {"屎", 48, label_mchar_5c4e_w, label_mchar_5c4e_h, label_mchar_5c4e_bitmap},
+  {"己", 48, label_mchar_5df1_w, label_mchar_5df1_h, label_mchar_5df1_bitmap},
+  {"年", 48, label_mchar_5e74_w, label_mchar_5e74_h, label_mchar_5e74_bitmap},
+  {"序", 48, label_mchar_5e8f_w, label_mchar_5e8f_h, label_mchar_5e8f_bitmap},
+  {"建", 48, label_mchar_5efa_w, label_mchar_5efa_h, label_mchar_5efa_bitmap},
+  {"很", 48, label_mchar_5f88_w, label_mchar_5f88_h, label_mchar_5f88_bitmap},
+  {"思", 48, label_mchar_601d_w, label_mchar_601d_h, label_mchar_601d_bitmap},
+  {"意", 48, label_mchar_610f_w, label_mchar_610f_h, label_mchar_610f_bitmap},
+  {"戀", 48, label_mchar_6200_w, label_mchar_6200_h, label_mchar_6200_bitmap},
+  {"我", 48, label_mchar_6211_w, label_mchar_6211_h, label_mchar_6211_bitmap},
+  {"把", 48, label_mchar_628a_w, label_mchar_628a_h, label_mchar_628a_bitmap},
+  {"拉", 48, label_mchar_62c9_w, label_mchar_62c9_h, label_mchar_62c9_bitmap},
+  {"持", 48, label_mchar_6301_w, label_mchar_6301_h, label_mchar_6301_bitmap},
+  {"撕", 48, label_mchar_6495_w, label_mchar_6495_h, label_mchar_6495_bitmap},
+  {"敢", 48, label_mchar_6562_w, label_mchar_6562_h, label_mchar_6562_bitmap},
+  {"方", 48, label_mchar_65b9_w, label_mchar_65b9_h, label_mchar_65b9_bitmap},
+  {"春", 48, label_mchar_6625_w, label_mchar_6625_h, label_mchar_6625_bitmap},
+  {"是", 48, label_mchar_662f_w, label_mchar_662f_h, label_mchar_662f_bitmap},
+  {"時", 48, label_mchar_6642_w, label_mchar_6642_h, label_mchar_6642_bitmap},
+  {"最", 48, label_mchar_6700_w, label_mchar_6700_h, label_mchar_6700_bitmap},
+  {"會", 48, label_mchar_6703_w, label_mchar_6703_h, label_mchar_6703_bitmap},
+  {"有", 48, label_mchar_6709_w, label_mchar_6709_h, label_mchar_6709_bitmap},
+  {"服", 48, label_mchar_670d_w, label_mchar_670d_h, label_mchar_670d_bitmap},
+  {"村", 48, label_mchar_6751_w, label_mchar_6751_h, label_mchar_6751_bitmap},
+  {"果", 48, label_mchar_679c_w, label_mchar_679c_h, label_mchar_679c_bitmap},
+  {"架", 48, label_mchar_67b6_w, label_mchar_67b6_h, label_mchar_67b6_bitmap},
+  {"梅", 48, label_mchar_6885_w, label_mchar_6885_h, label_mchar_6885_bitmap},
+  {"條", 48, label_mchar_689d_w, label_mchar_689d_h, label_mchar_689d_bitmap},
+  {"死", 48, label_mchar_6b7b_w, label_mchar_6b7b_h, label_mchar_6b7b_bitmap},
+  {"比", 48, label_mchar_6bd4_w, label_mchar_6bd4_h, label_mchar_6bd4_bitmap},
+  {"民", 48, label_mchar_6c11_w, label_mchar_6c11_h, label_mchar_6c11_bitmap},
+  {"氣", 48, label_mchar_6c23_w, label_mchar_6c23_h, label_mchar_6c23_bitmap},
+  {"沒", 48, label_mchar_6c92_w, label_mchar_6c92_h, label_mchar_6c92_bitmap},
+  {"為", 48, label_mchar_70ba_w, label_mchar_70ba_h, label_mchar_70ba_bitmap},
+  {"營", 48, label_mchar_71df_w, label_mchar_71df_h, label_mchar_71df_bitmap},
+  {"爹", 48, label_mchar_7239_w, label_mchar_7239_h, label_mchar_7239_bitmap},
+  {"犟", 48, label_mchar_729f_w, label_mchar_729f_h, label_mchar_729f_bitmap},
+  {"犯", 48, label_mchar_72af_w, label_mchar_72af_h, label_mchar_72af_bitmap},
+  {"猜", 48, label_mchar_731c_w, label_mchar_731c_h, label_mchar_731c_bitmap},
+  {"璽", 48, label_mchar_74bd_w, label_mchar_74bd_h, label_mchar_74bd_bitmap},
+  {"的", 48, label_mchar_7684_w, label_mchar_7684_h, label_mchar_7684_bitmap},
+  {"目", 48, label_mchar_76ee_w, label_mchar_76ee_h, label_mchar_76ee_bitmap},
+  {"真", 48, label_mchar_771f_w, label_mchar_771f_h, label_mchar_771f_bitmap},
+  {"秋", 48, label_mchar_79cb_w, label_mchar_79cb_h, label_mchar_79cb_bitmap},
+  {"程", 48, label_mchar_7a0b_w, label_mchar_7a0b_h, label_mchar_7a0b_bitmap},
+  {"終", 48, label_mchar_7d42_w, label_mchar_7d42_h, label_mchar_7d42_bitmap},
+  {"網", 48, label_mchar_7db2_w, label_mchar_7db2_h, label_mchar_7db2_bitmap},
+  {"罪", 48, label_mchar_7f6a_w, label_mchar_7f6a_h, label_mchar_7f6a_bitmap},
+  {"而", 48, label_mchar_800c_w, label_mchar_800c_h, label_mchar_800c_bitmap},
+  {"能", 48, label_mchar_80fd_w, label_mchar_80fd_h, label_mchar_80fd_bitmap},
+  {"自", 48, label_mchar_81ea_w, label_mchar_81ea_h, label_mchar_81ea_bitmap},
+  {"與", 48, label_mchar_8207_w, label_mchar_8207_h, label_mchar_8207_bitmap},
+  {"英", 48, label_mchar_82f1_w, label_mchar_82f1_h, label_mchar_82f1_bitmap},
+  {"萬", 48, label_mchar_842c_w, label_mchar_842c_h, label_mchar_842c_bitmap},
+  {"要", 48, label_mchar_8981_w, label_mchar_8981_h, label_mchar_8981_bitmap},
+  {"討", 48, label_mchar_8a0e_w, label_mchar_8a0e_h, label_mchar_8a0e_bitmap},
+  {"記", 48, label_mchar_8a18_w, label_mchar_8a18_h, label_mchar_8a18_bitmap},
+  {"話", 48, label_mchar_8a71_w, label_mchar_8a71_h, label_mchar_8a71_bitmap},
+  {"說", 48, label_mchar_8aaa_w, label_mchar_8aaa_h, label_mchar_8aaa_bitmap},
+  {"論", 48, label_mchar_8ad6_w, label_mchar_8ad6_h, label_mchar_8ad6_bitmap},
+  {"迷", 48, label_mchar_8ff7_w, label_mchar_8ff7_h, label_mchar_8ff7_bitmap},
+  {"這", 48, label_mchar_9019_w, label_mchar_9019_h, label_mchar_9019_bitmap},
+  {"連", 48, label_mchar_9023_w, label_mchar_9023_h, label_mchar_9023_bitmap},
+  {"逼", 48, label_mchar_903c_w, label_mchar_903c_h, label_mchar_903c_bitmap},
+  {"過", 48, label_mchar_904e_w, label_mchar_904e_h, label_mchar_904e_bitmap},
+  {"遵", 48, label_mchar_9075_w, label_mchar_9075_h, label_mchar_9075_bitmap},
+  {"那", 48, label_mchar_90a3_w, label_mchar_90a3_h, label_mchar_90a3_bitmap},
+  {"都", 48, label_mchar_90fd_w, label_mchar_90fd_h, label_mchar_90fd_bitmap},
+  {"錢", 48, label_mchar_9322_w, label_mchar_9322_h, label_mchar_9322_bitmap},
+  {"開", 48, label_mchar_958b_w, label_mchar_958b_h, label_mchar_958b_bitmap},
+  {"閣", 48, label_mchar_95a3_w, label_mchar_95a3_h, label_mchar_95a3_bitmap},
+  {"雄", 48, label_mchar_96c4_w, label_mchar_96c4_h, label_mchar_96c4_bitmap},
+  {"養", 48, label_mchar_990a_w, label_mchar_990a_h, label_mchar_990a_bitmap},
+  {"餐", 48, label_mchar_9910_w, label_mchar_9910_h, label_mchar_9910_bitmap},
+  {"麻", 48, label_mchar_9ebb_w, label_mchar_9ebb_h, label_mchar_9ebb_bitmap},
+  {"麼", 48, label_mchar_9ebc_w, label_mchar_9ebc_h, label_mchar_9ebc_bitmap},
+  {"！", 48, label_mchar_ff01_w, label_mchar_ff01_h, label_mchar_ff01_bitmap},
+  {"，", 48, label_mchar_ff0c_w, label_mchar_ff0c_h, label_mchar_ff0c_bitmap},
+  {"：", 48, label_mchar_ff1a_w, label_mchar_ff1a_h, label_mchar_ff1a_bitmap},
+  {"？", 48, label_mchar_ff1f_w, label_mchar_ff1f_h, label_mchar_ff1f_bitmap},
+  {"︱", 48, label_mchar_fe31_w, label_mchar_fe31_h, label_mchar_fe31_bitmap},
+  {"﹁", 48, label_mchar_fe41_w, label_mchar_fe41_h, label_mchar_fe41_bitmap},
+  {"﹂", 48, label_mchar_fe42_w, label_mchar_fe42_h, label_mchar_fe42_bitmap},
 };
 
 // Find a pre-rendered label bitmap by text and font size.

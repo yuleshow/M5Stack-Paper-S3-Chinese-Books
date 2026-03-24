@@ -44,7 +44,7 @@ def get_common_chinese_chars():
     ]
     
     for start, end in common_ranges:
-        chars.update(chr(i) for i in range(start, end))
+        chars.update(chr(i) for i in range(start, end + 1))
     
     return sorted(list(chars), key=lambda x: ord(x))
 
@@ -87,25 +87,20 @@ def render_glyph(font, char, font_size):
 
 def bitmap_to_bytes(img):
     """Convert PIL 1-bit image to packed bytes"""
-    width, height = img.size
-    bits = []
-    
-    for y in range(height):
-        for x in range(width):
-            pixel = img.getpixel((x, y))
-            bits.append(1 if pixel == 0 else 0)  # Black = 1, White = 0
+    # Use getdata() for bulk pixel access (much faster than per-pixel getpixel)
+    pixels = img.getdata()
+    bits = [1 if p == 0 else 0 for p in pixels]  # Black = 1, White = 0
     
     # Pad to byte boundary
-    while len(bits) % 8 != 0:
-        bits.append(0)
+    pad = (8 - len(bits) % 8) % 8
+    bits.extend([0] * pad)
     
     # Pack into bytes
     bytes_data = bytearray()
     for i in range(0, len(bits), 8):
         byte = 0
         for j in range(8):
-            if i + j < len(bits):
-                byte |= (bits[i + j] << (7 - j))
+            byte |= (bits[i + j] << (7 - j))
         bytes_data.append(byte)
     
     return bytes(bytes_data)
@@ -210,7 +205,7 @@ def get_font_display_name(font_path):
                                 font_family = decoded
                         elif font_family_en is None:
                             font_family_en = decoded
-                except:
+                except Exception:
                     pass
         tt.close()
         if font_family:
@@ -222,7 +217,7 @@ def get_font_display_name(font_path):
                 'Noto Serif TC': '思源宋體',
             }
             return _NAME_OVERRIDES.get(font_family_en, font_family_en)
-    except:
+    except Exception:
         pass
     return os.path.splitext(os.path.basename(font_path))[0]
 
@@ -247,7 +242,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
     font_family = get_font_display_name(ttf_path)
     primary_cmap = set()
     try:
-        tt = TTFont(ttf_path)
+        tt = TTFont(ttf_path, fontNumber=0)
         for table in tt['cmap'].tables:
             primary_cmap.update(table.cmap.keys())
         tt.close()
@@ -297,7 +292,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
                 fallback_font = ImageFont.truetype(auto_fallback, fallback_render_size)
                 auto_fallback_path = auto_fallback
                 print(f"Auto-detected fallback font: {auto_fallback}")
-            except:
+            except Exception:
                 pass
     
     # Build fallback cmap so we can skip chars the fallback also lacks
@@ -305,12 +300,12 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
     fb_cmap_path = fallback_path or auto_fallback_path
     if fallback_font and fb_cmap_path:
         try:
-            tt_fb = TTFont(fb_cmap_path)
+            tt_fb = TTFont(fb_cmap_path, fontNumber=0)
             for table in tt_fb['cmap'].tables:
                 fallback_cmap.update(table.cmap.keys())
             tt_fb.close()
             print(f"Fallback font cmap: {len(fallback_cmap)} codepoints")
-        except:
+        except Exception:
             pass
     
     # Get character set
@@ -385,6 +380,9 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
         })
     
     print(f"Successfully rendered {len(index_entries)} glyphs ({rotated_count} rotated, {fallback_count} from fallback)")
+    if fallback_count > len(index_entries) * 0.5:
+        print(f"⚠ WARNING: {fallback_count}/{len(index_entries)} glyphs ({100*fallback_count//len(index_entries)}%) came from fallback font!")
+        print(f"  This usually means the primary font's cmap could not be read (e.g. TTC without fontNumber).")
     
     # Second pass: calculate correct offsets and build bitmap data
     print("Calculating offsets...")
@@ -434,8 +432,9 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
     print(f"  Characters: {char_count}")
     print(f"  Index size: {char_count * 20:,} bytes")
     print(f"  Bitmap size: {len(bitmap_data):,} bytes")
+    print(f"  Fallback glyphs: {fallback_count}")
     
-    return True
+    return (True, fallback_count, char_count)
 
 # Silver font scale table (same as device-side silverScaleTable in ui_drawing.cpp)
 # Maps nominal readingFontSize → actual render size needed
@@ -603,10 +602,28 @@ if __name__ == '__main__':
                 ttk.Checkbutton(frame_opts, text=self._t('force_punct'),
                                 variable=self.force_fallback_punct).pack(anchor="w")
 
-                # --- Font list ---
-                self.frame_fonts = ttk.LabelFrame(self.root, text=self._t('fonts'), padding=8)
+                # --- Font list (scrollable) ---
+                self.frame_fonts = ttk.LabelFrame(self.root, text=self._t('fonts'), padding=4)
                 self.frame_fonts.pack(fill="x", padx=10, pady=4)
-                self._build_font_list(self.frame_fonts)
+                self._font_canvas = tk.Canvas(self.frame_fonts, height=200, highlightthickness=0)
+                self._font_scrollbar = ttk.Scrollbar(self.frame_fonts, orient="vertical", command=self._font_canvas.yview)
+                self._font_inner = ttk.Frame(self._font_canvas)
+                self._font_inner.bind("<Configure>", lambda e: self._font_canvas.configure(scrollregion=self._font_canvas.bbox("all")))
+                self._font_canvas.create_window((0, 0), window=self._font_inner, anchor="nw")
+                self._font_canvas.configure(yscrollcommand=self._font_scrollbar.set)
+                self._font_canvas.pack(side="left", fill="both", expand=True)
+                self._font_scrollbar.pack(side="right", fill="y")
+                # Mouse wheel scrolling (scoped to font canvas area)
+                def _on_mousewheel(event):
+                    # Only scroll font list when cursor is over it
+                    w = event.widget
+                    while w:
+                        if w is self._font_canvas or w is self._font_inner:
+                            self._font_canvas.yview_scroll(-1 * (event.delta // 120 or (-1 if event.delta < 0 else 1)), "units")
+                            break
+                        w = w.master
+                self.root.bind_all("<MouseWheel>", _on_mousewheel)
+                self._build_font_list(self._font_inner)
 
                 # --- Sizes ---
                 frame_sizes = ttk.LabelFrame(self.root, text=self._t('sizes'), padding=8)
@@ -652,7 +669,7 @@ if __name__ == '__main__':
                 d = filedialog.askdirectory(title=self._t('browse_source'), initialdir=self.input_dir.get())
                 if d:
                     self.input_dir.set(d)
-                    self._build_font_list(self.frame_fonts)
+                    self._build_font_list(self._font_inner)
 
             def _browse_output(self):
                 d = filedialog.askdirectory(title=self._t('browse_target'), initialdir=self.output_dir.get())
@@ -677,12 +694,55 @@ if __name__ == '__main__':
                 ttf_files = sorted(
                     f for f in os.listdir(fonts_dir)
                     if f.lower().endswith(('.ttf', '.ttc', '.otf'))
-                    and f.lower() != 'ebgaramond-regular.ttf'
                 )
-                for i, fname in enumerate(ttf_files):
+                # Filter to CJK fonts and get display names in a single pass
+                cjk_fonts = []  # list of (filename, display_name)
+                for f in ttf_files:
+                    path = os.path.join(fonts_dir, f)
+                    try:
+                        tt = TTFont(path, fontNumber=0)
+                        has_cjk = any(
+                            0x4E00 <= cp <= 0x9FFF
+                            for table in tt['cmap'].tables
+                            for cp in table.cmap.keys()
+                        )
+                        if not has_cjk:
+                            tt.close()
+                            continue
+                        # Extract display name from the already-open font
+                        display = None
+                        display_en = None
+                        name_table = tt['name']
+                        tc_lang_ids = {1028, 3076}
+                        cjk_lang_ids = {1028, 2052, 3076, 1041, 1042}
+                        for record in name_table.names:
+                            if record.nameID == 1:
+                                try:
+                                    decoded = record.toUnicode()
+                                    if decoded:
+                                        if record.platformID == 3 and record.langID in tc_lang_ids:
+                                            display = decoded
+                                            break
+                                        elif record.platformID == 3 and record.langID in cjk_lang_ids:
+                                            if not display:
+                                                display = decoded
+                                        elif record.platformID == 1 and record.platEncID == 2:
+                                            if not display:
+                                                display = decoded
+                                        elif display_en is None:
+                                            display_en = decoded
+                                except Exception:
+                                    pass
+                        tt.close()
+                        if not display:
+                            _NAME_OVERRIDES = {'Noto Sans TC': '思源黑體', 'Noto Serif TC': '思源宋體'}
+                            display = _NAME_OVERRIDES.get(display_en, display_en) if display_en else os.path.splitext(f)[0]
+                        cjk_fonts.append((f, display))
+                    except Exception:
+                        pass
+                for i, (fname, display) in enumerate(cjk_fonts):
                     var = tk.BooleanVar(value=False)
                     path = os.path.join(fonts_dir, fname)
-                    display = get_font_display_name(path)
                     label = f"{display}  ({fname})"
                     ttk.Checkbutton(parent, text=label, variable=var).grid(
                         row=i, column=0, sticky="w", padx=4, pady=1)
@@ -701,13 +761,12 @@ if __name__ == '__main__':
                 if not path:
                     return
                 var = tk.BooleanVar(value=True)
+                row = len(self.font_vars)
                 self.font_vars[path] = var
-                row = len(self.font_vars) // 2
-                col = (len(self.font_vars) - 1) % 2
                 display = get_font_display_name(path)
                 label = f"{display}  ({os.path.basename(path)})"
-                ttk.Checkbutton(self.frame_fonts, text=label, variable=var).grid(
-                    row=row, column=col, sticky="w", padx=4, pady=1)
+                ttk.Checkbutton(self._font_inner, text=label, variable=var).grid(
+                    row=row, column=0, sticky="w", padx=4, pady=1)
 
             def _log(self, msg):
                 self.log_text.configure(state="normal")
@@ -756,9 +815,14 @@ if __name__ == '__main__':
                     self._log_from_thread(f"[{i}/{total}] {os.path.basename(font_path)} @ {size}pt → {os.path.basename(output_path)}")
                     self._log_from_thread(f"{'='*60}")
                     try:
-                        ok = convert_ttf_to_bin(font_path, output_path, size, fallback, render_size, target_size, force_fallback_punct=force_punct)
+                        result = convert_ttf_to_bin(font_path, output_path, size, fallback, render_size, target_size, force_fallback_punct=force_punct)
+                        ok = result[0] if isinstance(result, tuple) else result
                         if ok:
                             success += 1
+                            if isinstance(result, tuple) and len(result) >= 3:
+                                fb_count, total_glyphs = result[1], result[2]
+                                if total_glyphs > 0 and fb_count > total_glyphs * 0.5:
+                                    self._log_from_thread(f"⚠ WARNING: {fb_count}/{total_glyphs} glyphs ({100*fb_count//total_glyphs}%) from fallback — font may not look correct!")
                         else:
                             failed += 1
                             self._log_from_thread(f"✗ Failed: {os.path.basename(font_path)} @ {size}pt")
@@ -793,5 +857,6 @@ if __name__ == '__main__':
             print(f"Error: Font file not found: {ttf_path}")
             sys.exit(1)
         
-        success = convert_ttf_to_bin(ttf_path, output_path, font_size, fallback_path, render_size, target_size)
-        sys.exit(0 if success else 1)
+        result = convert_ttf_to_bin(ttf_path, output_path, font_size, fallback_path, render_size, target_size)
+        ok = result[0] if isinstance(result, tuple) else result
+        sys.exit(0 if ok else 1)

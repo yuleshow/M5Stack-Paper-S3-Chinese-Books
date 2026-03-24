@@ -318,6 +318,9 @@ Features of the converter:
 - **Fallback font borrowing** — Missing glyphs (e.g. vertical punctuation) are automatically borrowed from GenYoMinTW if available
 - **Vertical bracket rotation** — Horizontal bracket characters are rotated 90° CW to synthesize missing vertical forms
 - **Render-size scaling** — Fonts like Silver can be rendered at a larger size (e.g. 61px) while storing a smaller grid size (44px) in the header for visual size matching
+- **TTC collection support** — Correctly reads cmap from TrueType Collection (.ttc) files by specifying the font face index
+- **GUI mode** — Run with `--gui` for a graphical interface with CJK-only font filtering, scrollable font list, fallback glyph count warnings, and batch conversion
+- **macOS app** — Pre-built `FontConverterBIN.app` and `.dmg` available in `dist/`; build with `bash scripts/build_mac_app.sh`
 
 See [`scripts/README.md`](scripts/README.md) for all available scripts.
 

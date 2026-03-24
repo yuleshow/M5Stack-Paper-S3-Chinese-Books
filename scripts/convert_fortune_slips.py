@@ -79,7 +79,6 @@ CATEGORIES = [
         "cover": "assets/Fortune_Slips/senso-ji/cover.jpeg",
         "wording_csv": "assets/Fortune_Slips/senso-ji/sensoji.csv",
         "wording_field_indices": SENSOJI_FIELD_INDICES,
-        "wording_as_image": True,
         "pattern": None,  # Use sorted directory listing
         "count": 100,
         "start": 0,
@@ -192,12 +191,6 @@ def _draw_vertical_poem(draw, poem_text, poem_font, start_y, W,
     poem_h = max_chars * char_spacing
     poem_w = len(poem_lines) * col_spacing
     poem_left = (W - poem_w) // 2
-
-    # Decorative frame
-    fx, fy = poem_left - 18, start_y - 12
-    fw, fh = poem_w + 36, poem_h + 24
-    draw.rounded_rectangle([fx, fy, fx + fw, fy + fh], radius=8,
-                           outline=LIGHT_GRAY)
 
     for col_idx, line in enumerate(poem_lines):
         cx = poem_left + poem_w - col_spacing // 2 - col_idx * col_spacing
@@ -646,6 +639,12 @@ def main():
     # Combine into single pack file
     combined_output = "sd_card/fortune_slips/fortune_slips.bin"
     combine_bins(CATEGORIES, combined_output)
+
+    # Remove intermediate per-category .bin files (only combined pack is needed)
+    for cat in CATEGORIES:
+        if os.path.exists(cat["output"]) and cat["output"] != combined_output:
+            os.remove(cat["output"])
+            print(f"Removed intermediate: {cat['output']}")
 
     print(f"\nCopy to SD card:")
     if os.path.exists(combined_output):
