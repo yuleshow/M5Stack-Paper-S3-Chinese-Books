@@ -61,7 +61,7 @@ void drawComicReading() {
   }
 
   // Overlay chrome on top of image — no startWrite active, so SD access for icons is safe
-  drawReturnButton();
+  drawReadingReturnButton();
   {
     bool hasPrev = (currentPage > 0);
     bool hasNext = (currentPage < totalPages - 1);

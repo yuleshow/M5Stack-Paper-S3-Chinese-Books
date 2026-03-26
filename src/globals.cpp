@@ -2,6 +2,11 @@
 
 // ==================== Global Variable Definitions ====================
 
+// Web server
+WebServer* webServer = nullptr;
+bool webServerEnabled = false;
+bool webServerRunning = false;
+
 // Core / System
 USBMSC msc;
 sdmmc_card_t* sdCard = nullptr;
@@ -9,9 +14,6 @@ Preferences prefs;
 String currentBook = "";
 unsigned long lastActivityTime = 0;
 const unsigned long IDLE_SLEEP_TIMEOUT = 10 * 60 * 1000;  // 10 minutes
-WebServer* webServer = nullptr;
-bool webServerEnabled = false;
-bool webServerRunning = false;
 bool autoSleepEnabled = false;  // Start with auto-sleep disabled (user can enable in settings)
 
 // Pending nav touch (for mid-render touch detection)
@@ -70,7 +72,8 @@ void startBLE() {
   
   BLEDevice::init("M5Paper-BLE");
   pBLEServer = BLEDevice::createServer();
-  pBLEServer->setCallbacks(new BLEServerCallbackHandler());
+  static BLEServerCallbackHandler serverCb;
+  pBLEServer->setCallbacks(&serverCb);
   
   BLEService* pService = pBLEServer->createService(BLE_SERVICE_UUID);
   
@@ -84,7 +87,8 @@ void startBLE() {
     BLE_CHARACTERISTIC_RX,
     BLECharacteristic::PROPERTY_WRITE
   );
-  pRxCharacteristic->setCallbacks(new BLERxCallbackHandler());
+  static BLERxCallbackHandler rxCb;
+  pRxCharacteristic->setCallbacks(&rxCb);
   
   pService->start();
   pBLEServer->getAdvertising()->start();
@@ -190,7 +194,8 @@ void connectBLEDevice(int index) {
   }
   
   pBLEClient = BLEDevice::createClient();
-  pBLEClient->setClientCallbacks(new BLEClientCallbackHandler());
+  static BLEClientCallbackHandler clientCb;
+  pBLEClient->setClientCallbacks(&clientCb);
   
   BLEAddress addr(bleDevices[index].address.c_str());
   
@@ -252,8 +257,11 @@ bool sdCardAvailable = false;
 bool sdCardChecked = false;
 String bookList[MAX_BOOKS];
 String bookDisplayName[MAX_BOOKS];
+BookCategory bookCategory[MAX_BOOKS];
 int bookCount = 0;
 int bookListPage = 0;
+int bookViewMode = 0;  // 0=list, 1=grid
+int bookConvMode = 0;   // 0=original, 1=simplified, 2=traditional
 String currentBookPath = "";
 String currentPageContent = "";
 int currentPage = 0;
@@ -264,6 +272,8 @@ int bytesPerPage = 750;
 size_t* pageByteOffsets = nullptr;
 int pageOffsetsCount = 0;
 size_t currentPageByteOffset = 0;  // Actual byte offset used for current page
+size_t lastRenderedNextOffset = 0;
+int lastRenderedForPage = -1;
 Bookmark bookmarks[5];
 int bookmarkCount = 0;
 String pageJumpInput = "";
@@ -294,6 +304,8 @@ TocEntry* epubTocEntries = nullptr;
 int epubTocCount = 0;
 int tocListPage = 0;
 int tocTab = 0;
+InlineLink inlineLinks[MAX_INLINE_LINKS];
+int inlineLinkCount = 0;
 int comicZoomQuadrant = -1;
 int comicZoomMode = 0;
 float comicZoomCX = 0.5f;
@@ -431,5 +443,6 @@ const int NAV_Y = 886;
 const int NAV_PREV_X = 10;
 const int NAV_NEXT_X = 84;
 const int NAV_RETURN_X = 466;
+const int NAV_SLEEP_X = 270;
 const int NAV_TOUCH_Y_MIN = 870;
 const int NAV_TOUCH_Y_MAX = 960;

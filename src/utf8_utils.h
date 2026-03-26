@@ -43,22 +43,27 @@ inline uint32_t utf8Decode(const String &text, int &pos) {
 }
 
 // Decode a UTF-8 character from a raw char buffer at position `pos`.
-// Returns the Unicode codepoint and advances `pos` past the character.
+// The buffer must be null-terminated. Returns the Unicode codepoint and
+// advances `pos` past the character. Returns U+FFFD on truncated sequences.
 inline uint32_t utf8Decode(const char *buf, int &pos) {
   unsigned char c = (unsigned char)buf[pos];
+  if (c == 0) { pos++; return 0xFFFD; }
   uint32_t cp;
   if (c < 0x80) {
     cp = c;
     pos += 1;
   } else if (c < 0xE0) {
+    if (buf[pos + 1] == 0) { pos++; return 0xFFFD; }
     cp = ((c & 0x1F) << 6) | ((unsigned char)buf[pos + 1] & 0x3F);
     pos += 2;
   } else if (c < 0xF0) {
+    if (buf[pos + 1] == 0 || buf[pos + 2] == 0) { pos++; return 0xFFFD; }
     cp = ((c & 0x0F) << 12) |
          (((unsigned char)buf[pos + 1] & 0x3F) << 6) |
          ((unsigned char)buf[pos + 2] & 0x3F);
     pos += 3;
   } else {
+    if (buf[pos + 1] == 0 || buf[pos + 2] == 0 || buf[pos + 3] == 0) { pos++; return 0xFFFD; }
     cp = ((c & 0x07) << 18) |
          (((unsigned char)buf[pos + 1] & 0x3F) << 12) |
          (((unsigned char)buf[pos + 2] & 0x3F) << 6) |

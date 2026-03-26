@@ -25,12 +25,15 @@ static uint32_t decodeUTF8(const String &s, int &pos) {
 // Called from drawReading() after common preamble (screen clear, status bar).
 // Expects: startWrite() already called, screen cleared, status bar drawn.
 void drawEnglishReading() {
-  // Nav bar: LTR layout (← = prev, → = next)
+  // Page nav arrows at bottom: LTR layout (← = prev, → = next)
   {
     bool hasPrev = (currentPage > 0);
     bool hasNext = (currentPage < totalPages - 1);
-    drawHorizontalNavBar(hasPrev, hasNext);
+    if (hasPrev) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
+    if (hasNext) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
   }
+  // Return button at top-middle
+  drawReadingReturnButton();
 
   // Load OFR font for rendering
   bool silverReading = isReadingFontSilver();
@@ -72,11 +75,19 @@ void drawEnglishReading() {
   }
   int currentStyle = 0; // bit 0 = italic, bit 1 = bold
   bool underlineActive = false;
+  String currentLinkHref = "";   // Current link href being rendered
 
-  // Determine initial style by scanning text before current page
-  if (epubFullText && currentPageByteOffset > 0) {
-    size_t scanLimit = (currentPageByteOffset > 10000) ? currentPageByteOffset - 10000 : 0;
-    for (size_t j = scanLimit; j < currentPageByteOffset; j++) {
+  // Clear inline link table for this page
+  inlineLinkCount = 0;
+
+  // Determine initial style by scanning text before current page.
+  // Use buffer-relative offset: epubFullText starts at epubLoadedBaseOffset,
+  // so the byte at virtual offset V is at index (V - epubLoadedBaseOffset).
+  if (epubFullText && currentPageByteOffset > epubLoadedBaseOffset) {
+    size_t relOffset = currentPageByteOffset - epubLoadedBaseOffset;
+    if (relOffset > epubFullTextLen) relOffset = epubFullTextLen;  // safety clamp
+    size_t scanStart = (relOffset > 10000) ? relOffset - 10000 : 0;
+    for (size_t j = scanStart; j < relOffset; j++) {
       char c = epubFullText[j];
       if (c == STYLE_ITALIC_ON) currentStyle |= 1;
       else if (c == STYLE_ITALIC_OFF) currentStyle &= ~1;
@@ -139,6 +150,7 @@ void drawEnglishReading() {
 
   // Helper lambda: draw a line of text char-by-char via glyph cache,
   // handling style markers to switch fonts for italic/bold spans.
+  int linkStartX = -1;  // X position where current underlined link started
   auto drawLineCached = [&](const String &line, int x, int y) {
     int cx = x;
     int c = 0;
@@ -149,8 +161,24 @@ void drawEnglishReading() {
       if (lc == STYLE_ITALIC_OFF) { currentStyle &= ~1; switchStyleFont(currentStyle); c++; continue; }
       if (lc == STYLE_BOLD_ON)    { currentStyle |= 2; switchStyleFont(currentStyle); c++; continue; }
       if (lc == STYLE_BOLD_OFF)   { currentStyle &= ~2; switchStyleFont(currentStyle); c++; continue; }
-      if (lc == STYLE_UNDERLINE_ON)  { underlineActive = true;  c++; continue; }
-      if (lc == STYLE_UNDERLINE_OFF) { underlineActive = false; c++; continue; }
+      if (lc == STYLE_UNDERLINE_ON)  { underlineActive = true; linkStartX = cx; c++; continue; }
+      if (lc == STYLE_UNDERLINE_OFF) {
+        // Save link bounding box
+        if (currentLinkHref.length() > 0 && linkStartX >= 0 && inlineLinkCount < MAX_INLINE_LINKS) {
+          InlineLink& lnk = inlineLinks[inlineLinkCount++];
+          lnk.href = currentLinkHref;
+          lnk.x = linkStartX;
+          lnk.y = y;
+          lnk.w = cx - linkStartX;
+          lnk.h = lineHeight;
+          if (lnk.w < 10) lnk.w = 10;
+        }
+        underlineActive = false;
+        currentLinkHref = "";
+        linkStartX = -1;
+        c++;
+        continue;
+      }
       uint32_t cp = decodeUTF8(line, c);
       int advance = drawOFRCharHoriz(cp, cx, y, TFT_BLACK, fontSizePt);
       if (underlineActive) {
@@ -166,6 +194,19 @@ void drawEnglishReading() {
     // Skip carriage returns
     if (ch == '\r') { i++; continue; }
 
+    // Handle EPUB link markers: \x08href\x08 — skip href data, keep for tap detection
+    if (ch == EPUB_LINK_MARKER) {
+      int pathStart = i + 1;
+      int pathEnd = displayText.indexOf(EPUB_LINK_MARKER, pathStart);
+      if (pathEnd > pathStart) {
+        currentLinkHref = displayText.substring(pathStart, pathEnd);
+        i = pathEnd + 1;
+      } else {
+        i++;
+      }
+      continue;
+    }
+
     // Handle EPUB image markers
     if (ch == EPUB_IMG_MARKER && currentBookIsEpub) {
       if (currentLine.length() > 0) {
@@ -174,15 +215,22 @@ void drawEnglishReading() {
         currentLine = "";
         currentLineW = 0;
         pendingSpace = false;
+        currentY += lineHeight;
       }
       int pathStart = i + 1;
       int pathEnd = displayText.indexOf(EPUB_IMG_MARKER, pathStart);
       if (pathEnd > pathStart) {
         String imgPath = displayText.substring(pathStart, pathEnd);
         i = pathEnd + 1;
+        int imgAvailH = rdBottom - currentY;
+        if (imgAvailH < lineHeight * 2) {
+          // Not enough room — push image to next page
+          renderStopByte = i - (pathEnd - pathStart + 2);  // rewind to before marker
+          goto endHorizPage;
+        }
         M5.Display.endWrite();
         esp_task_wdt_reset();
-        bool imgDrawn = epubExtractAndDrawImage(imgPath, rdLeft, rdTop, availW, rdBottom - rdTop);
+        bool imgDrawn = epubExtractAndDrawImage(imgPath, rdLeft, currentY, availW, imgAvailH);
         esp_task_wdt_reset();
         M5.Display.startWrite();
         if (imgDrawn) {
@@ -249,27 +297,10 @@ void drawEnglishReading() {
         if      ((wc & 0xE0) == 0xC0) seqLen = 2;
         else if ((wc & 0xF0) == 0xE0) seqLen = 3;
         else if ((wc & 0xF8) == 0xF0) seqLen = 4;
-        // Convert UTF-8 smart quotes/dashes to ASCII equivalents
-        if (wc == 0xE2 && seqLen == 3 && i + 2 < (int)displayText.length() &&
-            (unsigned char)displayText.charAt(i + 1) == 0x80) {
-          unsigned char b3 = (unsigned char)displayText.charAt(i + 2);
-          if (b3 == 0x98 || b3 == 0x99) {       // \u2018 \u2019 → '
-            word += '\''; i += 3;
-          } else if (b3 == 0x9C || b3 == 0x9D) { // \u201C \u201D → "
-            word += '"'; i += 3;
-          } else if (b3 == 0x93 || b3 == 0x94) { // \u2013 \u2014 → --
-            word += '-'; word += '-'; i += 3;
-          } else if (b3 == 0xA6) {               // \u2026 → ...
-            word += '.'; word += '.'; word += '.'; i += 3;
-          } else {
-            for (int b = 0; b < seqLen && i < (int)displayText.length(); b++) {
-              word += displayText.charAt(i); i++;
-            }
-          }
-        } else {
-          for (int b = 0; b < seqLen && i < (int)displayText.length(); b++) {
-            word += displayText.charAt(i); i++;
-          }
+        // Keep original Unicode characters — ET Book supports curly quotes,
+        // en/em dashes, ellipsis, etc. natively with proper kerning.
+        for (int b = 0; b < seqLen && i < (int)displayText.length(); b++) {
+          word += displayText.charAt(i); i++;
         }
       } else {
         word += (char)wc;
@@ -334,8 +365,13 @@ void drawEnglishReading() {
   endHorizPage:
 
   // Page offset correction (same logic as vertical)
-  if (renderStopByte < (int)displayText.length() && pageByteOffsets) {
+  if (renderStopByte <= (int)displayText.length()) {
     size_t correctedNextStart = currentPageByteOffset + renderStopByte;
+    // Always track the precise next-page offset (works beyond MAX_PAGE_OFFSETS)
+    lastRenderedNextOffset = correctedNextStart;
+    lastRenderedForPage = currentPage;
+
+    if (!pageByteOffsets || renderStopByte >= (int)displayText.length()) goto skipEnglishOffsetTracking;
     if (currentPage + 1 < pageOffsetsCount) {
       if (correctedNextStart != pageByteOffsets[currentPage + 1]) {
         pageByteOffsets[currentPage + 1] = correctedNextStart;
@@ -352,6 +388,7 @@ void drawEnglishReading() {
       pageOffsetsCount = currentPage + 2;
     }
   }
+  skipEnglishOffsetTracking:
 
   // Progress bar
   {

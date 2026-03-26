@@ -452,6 +452,7 @@ int drawVerticalMixedText(String text, int x, int startY, int charSpacing) {
         int rotatedH = textW + 4;
         
         LGFX_Sprite sprite(&M5.Display);
+        sprite.setPsram(true);
         if (!sprite.createSprite(textW + 4, textH)) {
           y += rotatedH;
           wordIdx++;
@@ -818,6 +819,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             int rotatedH = textW + 4;
             
             LGFX_Sprite sprite(&M5.Display);
+            sprite.setPsram(true);
             if (!sprite.createSprite(textW + 4, textH)) {
               y += rotatedH;
               wordIdx++;
@@ -980,6 +982,7 @@ bgWidth, groupTextHeight + bgPadding * 2,
             }
             
             LGFX_Sprite sprite(&M5.Display);
+            sprite.setPsram(true);
             if (!sprite.createSprite(textW + 4, textH)) {
               y += rotatedH;
               wordIdx++;

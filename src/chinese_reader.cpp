@@ -6,12 +6,15 @@
 // Expects: startWrite() already called, screen cleared, status bar drawn.
 // Reading font already loaded via loadReadingFont() before startWrite().
 void drawChineseReading() {
-  // Nav bar
+  // Page nav arrows at bottom
   {
     bool hasPrev = (currentPage > 0);
     bool hasNext = (currentPage < totalPages - 1);
-    drawVerticalNavBar(hasPrev, hasNext);
+    if (hasNext) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
+    if (hasPrev) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
   }
+  // Return button at top-middle
+  drawReadingReturnButton();
   
   // Determine which font renderer to use based on user's font selection
   // (not ofrFontLoaded, since OFR may also hold a Latin font like EBGaramond)
@@ -139,6 +142,13 @@ void drawChineseReading() {
   bool lastWasSpace = true;   // Start true to skip leading spaces/U+3000 (paragraph indent)
   bool pageHasImage = false;  // Track if this page rendered a cover/inline image
   int indentCount = 0;        // Track paragraph indent spaces rendered (for paragraphIndent mode)
+  bool underlineActive = false;  // For EPUB <a> link underline rendering
+  String currentLinkHref = "";   // Current link href being rendered
+  int linkStartY = -1;           // Y of first underlined char in current link
+  int linkColumnX = -1;          // Column of current link start
+  
+  // Clear inline link table for this page
+  inlineLinkCount = 0;
   
   Serial.printf("Font renderer: %d, fontSize: %d, charHeight: %d, silverReading: %d\n", renderer, fontSizePt, charHeight, silverReading);
   Serial.printf("Layout: rdLeft=%d rdRight=%d rdTop=%d rdMaxY=%d charsPerCol=%d columnX=%d\n",
@@ -179,7 +189,50 @@ void drawChineseReading() {
     
     // Skip carriage returns and control characters
     if (unicode == '\r') continue;
-    if (unicode < 0x20 && unicode != '\n' && unicode != EPUB_IMG_MARKER) continue;
+    if (unicode < 0x20 && unicode != '\n' && unicode != EPUB_IMG_MARKER &&
+        unicode != STYLE_UNDERLINE_ON && unicode != STYLE_UNDERLINE_OFF &&
+        unicode != EPUB_LINK_MARKER) continue;
+
+    // Handle EPUB link marker: \x08href\x08 — extract href for tap navigation
+    if (unicode == EPUB_LINK_MARKER) {
+      int pathStart = i;
+      while (i < (int)sampleText.length() && sampleText.charAt(i) != EPUB_LINK_MARKER) i++;
+      if (i < (int)sampleText.length()) {
+        currentLinkHref = sampleText.substring(pathStart, i);
+        i++;  // Skip closing marker
+        linkStartY = currentY;
+        linkColumnX = columnX;
+      }
+      continue;
+    }
+
+    // Handle underline style markers (from <a> tags)
+    if (unicode == STYLE_UNDERLINE_ON)  { underlineActive = true;  continue; }
+    if (unicode == STYLE_UNDERLINE_OFF) {
+      // Save link bounding box for tap detection
+      if (currentLinkHref.length() > 0 && linkColumnX >= 0 && inlineLinkCount < MAX_INLINE_LINKS) {
+        InlineLink& lnk = inlineLinks[inlineLinkCount++];
+        lnk.href = currentLinkHref;
+        if (linkColumnX == columnX) {
+          // Link within one column
+          lnk.x = columnX - fontSizePt / 2 - 2;
+          lnk.y = linkStartY;
+          lnk.w = fontSizePt + 4;
+          lnk.h = currentY - linkStartY;
+        } else {
+          // Link spans columns — use full reading area width for simplicity
+          lnk.x = columnX - fontSizePt / 2 - 2;
+          lnk.y = rdTop;
+          lnk.w = linkColumnX - columnX + fontSizePt + 4;
+          lnk.h = rdMaxY - rdTop;
+        }
+        if (lnk.h < charHeight) lnk.h = charHeight;
+      }
+      underlineActive = false;
+      currentLinkHref = "";
+      linkColumnX = -1;
+      continue;
+    }
     // Collapse consecutive spaces into one; render as blank cell
     if (unicode == 0x3000 || unicode == ' ') {
       // When paragraphIndent is enabled, allow up to 2 U+3000 at paragraph start
@@ -544,6 +597,12 @@ void drawChineseReading() {
       charIndex++;
     }
     
+    // Draw vertical sideline (underline equivalent for vertical text) for <a> links
+    if (underlineActive) {
+      int lineX = columnX + fontSizePt / 2 + 2;
+      M5.Display.drawFastVLine(lineX, currentY - charHeight, charHeight, TFT_BLACK);
+    }
+    
     // Move to next column when column is full
     if (charIndex >= charsPerColumn || currentY > rdMaxY) {
       // Kinsoku (禁則處理): peek at next character — if it's a punctuation mark
@@ -618,8 +677,13 @@ void drawChineseReading() {
   // Correct next page byte offset based on actual bytes rendered
   // This prevents text from being skipped between pages
   // Skip for image-based EPUBs (they use chapter-index pagination instead of byte offsets)
-  if (!epubIsImageBased && renderStopByte < (int)sampleText.length() && pageByteOffsets) {
+  if (!epubIsImageBased) {
     size_t correctedNextStart = currentPageByteOffset + renderStopByte;
+    // Always track the precise next-page offset (works beyond MAX_PAGE_OFFSETS)
+    lastRenderedNextOffset = correctedNextStart;
+    lastRenderedForPage = currentPage;
+
+    if (!pageByteOffsets || renderStopByte >= (int)sampleText.length()) goto skipOffsetTracking;
     
     // Always store/extend the corrected offset for the next page
     if (currentPage + 1 < pageOffsetsCount) {
@@ -661,6 +725,7 @@ void drawChineseReading() {
                     currentPage + 1, (int)correctedNextStart);
     }
   }
+  skipOffsetTracking:
   
   // Reading progress bar (thin bar above buttons)
   {

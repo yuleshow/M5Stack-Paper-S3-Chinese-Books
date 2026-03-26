@@ -1,4 +1,5 @@
 #include "globals.h"
+#include "conv_table.h"
 #include "esp_task_wdt.h"
 
 // Save current reading position to SD card (.pos file)
@@ -144,104 +145,122 @@ void scanBooks() {
     return;
   }
   
-  Serial.println("Scanning /books directory...");
+  Serial.println("Scanning /books directory and subfolders...");
   
   yield();
-  
-  File booksDir;
-  
-  // Use mutex to protect SD.open() call
-  if (sdMutex != NULL) {
-    xSemaphoreTake(sdMutex, portMAX_DELAY);
-    booksDir = SD.open("/books");
-    xSemaphoreGive(sdMutex);
-  } else {
-    booksDir = SD.open("/books");
-  }
-  
-  if (!booksDir) {
-    Serial.println("Could not open /books directory");
-    return;
-  }
-  
-  Serial.println("Reading entries...");
-  
-  int count = 0;
-  File entry = booksDir.openNextFile();
-  
-  while (entry && bookCount < MAX_BOOKS) {
-    const char* name = entry.name();
-    if (name) {
-      String filename = String(name);
-      Serial.printf("[%d] %s\n", count, name);
-      
-      // Skip dot files (e.g. ._mybook.epub from macOS AppleDouble)
-      if (filename.startsWith(".") || filename.startsWith("._")) {
-        Serial.printf("  Skipping dot file: %s\n", filename.c_str());
-      } else if (filename.endsWith(".txt") || filename.endsWith(".TXT") ||
-          filename.endsWith(".epub") || filename.endsWith(".EPUB")) {
-        if (bookCount >= MAX_BOOKS) { Serial.println("Book list full, skipping remaining"); break; }
-        bookList[bookCount] = filename;
-        // Set display name: for EPUB extract embedded title, for TXT strip extension
-        String lowerName = filename;
-        lowerName.toLowerCase();
-        if (lowerName.endsWith(".epub")) {
-          // Sanity check: skip very large EPUBs during boot scan (title extraction)
-          File epubCheck;
-          String epubCheckPath = "/books/" + filename;
-          if (sdMutex) { xSemaphoreTake(sdMutex, portMAX_DELAY); epubCheck = SD.open(epubCheckPath.c_str()); xSemaphoreGive(sdMutex); }
-          else { epubCheck = SD.open(epubCheckPath.c_str()); }
-          bool skipTitle = false;
-          if (epubCheck) {
-            size_t epubSize = epubCheck.size();
-            epubCheck.close();
-            if (epubSize < 100 || epubSize > 100UL * 1024 * 1024) {
-              Serial.printf("  Skipping title extraction: file size %u too large/small\n", epubSize);
-              skipTitle = true;
+
+  // Subfolder → category mapping
+  struct SubfolderEntry { const char* name; BookCategory cat; };
+  static const SubfolderEntry subfolders[] = {
+    {"en",    CAT_EN},
+    {"cn",    CAT_CN},
+    {"comic", CAT_COMIC},
+  };
+  static const int numSubfolders = sizeof(subfolders) / sizeof(subfolders[0]);
+
+  // Helper lambda: scan one directory and add matching files
+  auto scanDir = [&](const char* dirPath, const char* prefix, BookCategory cat) {
+    File dir;
+    {
+      ScopedSDLock lock;
+      dir = SD.open(dirPath);
+    }
+    if (!dir || !dir.isDirectory()) return;
+
+    File entry = dir.openNextFile();
+    int count = 0;
+    while (entry && bookCount < MAX_BOOKS) {
+      const char* name = entry.name();
+      if (name) {
+        String filename = String(name);
+        // ESP32 SD returns full path — extract just the filename
+        int lastSlash = filename.lastIndexOf('/');
+        if (lastSlash >= 0) filename = filename.substring(lastSlash + 1);
+        // Skip dot files (macOS AppleDouble)
+        if (!filename.startsWith(".") && !filename.startsWith("._")) {
+          String lowerName = filename;
+          lowerName.toLowerCase();
+          if (lowerName.endsWith(".txt") || lowerName.endsWith(".epub")) {
+            // Build relative path from /books/: e.g. "en/mybook.epub" or just "mybook.epub"
+            String relPath = (prefix[0] != '\0') ? (String(prefix) + "/" + filename) : filename;
+            bookList[bookCount] = relPath;
+            bookCategory[bookCount] = cat;
+
+            // Set display name
+            if (lowerName.endsWith(".epub")) {
+              String fullPath = String("/books/") + relPath;
+              // Skip title extraction for very large/small EPUBs
+              File epubCheck;
+              { ScopedSDLock lock; epubCheck = SD.open(fullPath.c_str()); }
+              bool skipTitle = false;
+              if (epubCheck) {
+                size_t epubSize = epubCheck.size();
+                epubCheck.close();
+                if (epubSize < 100 || epubSize > 100UL * 1024 * 1024) skipTitle = true;
+              } else {
+                skipTitle = true;
+              }
+              String epubTitle = "";
+              if (!skipTitle) epubTitle = epubGetTitle(fullPath);
+              if (epubTitle.length() > 0) {
+                bookDisplayName[bookCount] = epubTitle;
+              } else {
+                bookDisplayName[bookCount] = filename.substring(0, filename.length() - 5);
+              }
+            } else {
+              int dotPos = filename.lastIndexOf('.');
+              bookDisplayName[bookCount] = (dotPos > 0) ? filename.substring(0, dotPos) : filename;
             }
-          } else {
-            skipTitle = true;
+            Serial.printf("  [%d] %s -> \"%s\" (cat=%d)\n", bookCount, relPath.c_str(),
+                          bookDisplayName[bookCount].c_str(), (int)cat);
+            bookCount++;
           }
-          String epubTitle = "";
-          if (!skipTitle) {
-            epubTitle = epubGetTitle("/books/" + filename);
-          }
-          if (epubTitle.length() > 0) {
-            bookDisplayName[bookCount] = epubTitle;
-          } else {
-            // Fallback: filename without extension
-            bookDisplayName[bookCount] = filename.substring(0, filename.length() - 5);
-          }
-        } else {
-          // TXT: strip extension
-          int dotPos = filename.lastIndexOf('.');
-          bookDisplayName[bookCount] = (dotPos > 0) ? filename.substring(0, dotPos) : filename;
         }
-        Serial.printf("  Display name: %s\n", bookDisplayName[bookCount].c_str());
-        bookCount++;
       }
+      entry.close();
+      entry = dir.openNextFile();
+      if (++count % 10 == 0) yield();
     }
-    
-    entry.close();
-    entry = booksDir.openNextFile();
-    count++;
-    
-    // Periodic yield to let system handle interrupts
-    if (count % 10 == 0) {
-      yield();
-    }
+    dir.close();
+  };
+
+  // 1. Scan recognized subfolders first
+  for (int s = 0; s < numSubfolders; s++) {
+    String subPath = String("/books/") + subfolders[s].name;
+    scanDir(subPath.c_str(), subfolders[s].name, subfolders[s].cat);
+    yield();
+    esp_task_wdt_reset();
   }
-  
-  booksDir.close();
-  
-  // Sort books by display name (case-insensitive)
+
+  // 2. Scan /books/ root for backward compatibility (files not in subfolders)
+  scanDir("/books", "", CAT_AUTO);
+
+  // Sort books: Chinese first, then Comics, then English, then Auto.
+  // Within each group, sort by display name (case-insensitive).
+  auto catOrder = [](BookCategory c) -> int {
+    switch (c) {
+      case CAT_CN:    return 0;
+      case CAT_COMIC: return 1;
+      case CAT_EN:    return 2;
+      default:        return 3; // CAT_AUTO
+    }
+  };
   for (int i = 0; i < bookCount - 1; i++) {
     for (int j = i + 1; j < bookCount; j++) {
-      String a = bookDisplayName[i]; a.toLowerCase();
-      String b = bookDisplayName[j]; b.toLowerCase();
-      if (a > b) {
+      int oi = catOrder(bookCategory[i]);
+      int oj = catOrder(bookCategory[j]);
+      bool shouldSwap = false;
+      if (oi > oj) {
+        shouldSwap = true;
+      } else if (oi == oj) {
+        String a = bookDisplayName[i]; a.toLowerCase();
+        String b = bookDisplayName[j]; b.toLowerCase();
+        if (a > b) shouldSwap = true;
+      }
+      if (shouldSwap) {
         String tmp = bookList[i]; bookList[i] = bookList[j]; bookList[j] = tmp;
         tmp = bookDisplayName[i]; bookDisplayName[i] = bookDisplayName[j]; bookDisplayName[j] = tmp;
+        BookCategory tc = bookCategory[i]; bookCategory[i] = bookCategory[j]; bookCategory[j] = tc;
       }
     }
   }
@@ -249,25 +268,18 @@ void scanBooks() {
   Serial.printf("Found %d books (sorted)\n", bookCount);
 }
 
-// Check if a filename contains Chinese/CJK characters (any byte >= 0x80 in UTF-8)
-bool isChineseBookName(const String& filename) {
-  for (int i = 0; i < (int)filename.length(); i++) {
-    if ((uint8_t)filename[i] >= 0x80) return true;
-  }
-  return false;
-}
-
-// Check if a book should be opened in English (horizontal) mode
-// EPUB: check the display title (embedded metadata title)
-// TXT: check the filename
+// Check if a book should be opened in English (horizontal) mode.
+// Determined by subfolder: en/ → English (horizontal), everything else → Chinese (vertical).
 bool bookIsEnglishMode(int bookIndex) {
   if (bookIndex < 0 || bookIndex >= bookCount) return false;
-  String fname = bookList[bookIndex];
-  fname.toLowerCase();
-  if (fname.endsWith(".epub")) {
-    return !isChineseBookName(bookDisplayName[bookIndex]);
-  }
-  return !isChineseBookName(bookList[bookIndex]);
+  return bookCategory[bookIndex] == CAT_EN;
+}
+
+// Check if a book is a comic (image-based EPUB).
+// Determined entirely by subfolder: comic/ → true.
+bool bookIsComic(int bookIndex) {
+  if (bookIndex < 0 || bookIndex >= bookCount) return false;
+  return bookCategory[bookIndex] == CAT_COMIC;
 }
 
 // Check if the current reading font is Silver
@@ -350,6 +362,7 @@ void recalculatePages() {
     pageByteOffsets[0] = 0;  // First page always starts at byte 0
     pageOffsetsCount = 1;
   }
+  lastRenderedForPage = -1;  // Reset precise offset chain
 }
 
 bool loadCurrentPage() {
@@ -379,6 +392,13 @@ bool loadCurrentPage() {
   size_t pageOffset;
   if (pageByteOffsets && currentPage < pageOffsetsCount) {
     pageOffset = pageByteOffsets[currentPage];
+  } else if (currentPage == lastRenderedForPage + 1 && lastRenderedForPage >= 0) {
+    // Precise offset from previous page's render (works beyond MAX_PAGE_OFFSETS)
+    pageOffset = lastRenderedNextOffset;
+    Serial.printf("Using precise rendered offset for page %d: %u\n", currentPage, (unsigned)pageOffset);
+  } else if (currentPage == lastRenderedForPage && lastRenderedForPage >= 0) {
+    // Re-loading the same page — use currentPageByteOffset
+    pageOffset = currentPageByteOffset;
   } else {
     pageOffset = (size_t)currentPage * bytesPerPage;
   }
@@ -518,6 +538,7 @@ bool loadCurrentPage() {
     epubFullText[localOffset + safeEnd] = '\0';
     currentPageContent = String(epubFullText + localOffset);
     epubFullText[localOffset + safeEnd] = saved;
+    if (bookConvMode != CONV_ORIGINAL) applyConversion(currentPageContent, (ConvMode)bookConvMode);
     
     // Track next page's actual byte offset (using virtual/absolute offset)
     size_t virtualNextOffset = pageOffset + safeEnd;
@@ -543,7 +564,7 @@ bool loadCurrentPage() {
   // Plain text: read from SD card file
   // Read page content (extra bytes to avoid cutting UTF-8 chars)
   size_t bytesToRead = min((size_t)(bytesPerPage + UTF8_READ_PADDING), totalBookBytes - pageOffset);
-  char* buffer = (char*)malloc(bytesToRead + 1);
+  char* buffer = (char*)ps_malloc(bytesToRead + 1);
   if (!buffer) {
     Serial.println("Failed to allocate page buffer");
     return false;
@@ -581,6 +602,7 @@ bool loadCurrentPage() {
   buffer[safeEnd] = '\0';
   currentPageContent = String(buffer);
   free(buffer);
+  if (bookConvMode != CONV_ORIGINAL) applyConversion(currentPageContent, (ConvMode)bookConvMode);
   
   // Track next page's actual byte offset (only when extending sequentially)
   if (pageByteOffsets && currentPage + 1 == pageOffsetsCount && pageOffsetsCount < MAX_PAGE_OFFSETS) {
@@ -602,10 +624,12 @@ bool loadCurrentPage() {
 
 String lastLoadError = "";  // Stores the specific failure reason for on-screen display
 
-bool loadBook(int bookIndex, bool forceChinese) {
+bool loadBook(int bookIndex) {
   lastLoadError = "";
   Serial.printf("\n=== loadBook(%d) === Free heap: %u, Free PSRAM: %u, OFR files: %d\n",
                 bookIndex, ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofr_file_list.size());
+  sdLog("loadBook: START idx=%d '%s' WiFi=%d heap=%u psram=%u",
+        bookIndex, bookList[bookIndex].c_str(), (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
   if (!sdCardAvailable || bookIndex >= bookCount) {
     Serial.printf("loadBook: early exit - sdCardAvailable=%d, bookIndex=%d, bookCount=%d\n",
                   sdCardAvailable, bookIndex, bookCount);
@@ -618,6 +642,10 @@ bool loadBook(int bookIndex, bool forceChinese) {
   Serial.printf("loadBook: cleanup - epubFullText=%p, epubZipEntries=%p, epubChapters=%p\n",
                 epubFullText, epubZipEntries, epubChapters);
   epubCleanup();
+  // Free glyph cache to defragment PSRAM before new EPUB allocations.
+  // The previous book's 192KB bitmap pool would fragment the PSRAM heap,
+  // potentially preventing the text buffer from being allocated contiguously.
+  freeGlyphCache();
   // Unload all font resources to free SD file handles — prevents SD bus contention
   // during heavy EPUB chapter loading. Will be reloaded after loading completes.
   unloadBinaryFont();
@@ -642,6 +670,8 @@ bool loadBook(int bookIndex, bool forceChinese) {
   bookmarkCount = 0;
   Serial.printf("loadBook: after cleanup - Free heap: %u, Free PSRAM: %u\n",
                 ESP.getFreeHeap(), ESP.getFreePsram());
+  sdLog("loadBook: post-cleanup WiFi=%d heap=%u psram=%u",
+        (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
 
   // bookList contains the actual filenames (can be Chinese UTF-8)
   String filename = bookList[bookIndex];
@@ -664,6 +694,8 @@ bool loadBook(int bookIndex, bool forceChinese) {
     checkFile.close();
     Serial.printf("loadBook: file verified, size=%u bytes, isDir=%d, path=%s\n",
                   fsize, isDir, currentBookPath.c_str());
+    sdLog("loadBook: file='%s' size=%u isDir=%d",
+          currentBookPath.c_str(), (unsigned)fsize, isDir);
     if (isDir) {
       lastLoadError = "is directory";
       return false;
@@ -681,44 +713,54 @@ bool loadBook(int bookIndex, bool forceChinese) {
   lowerName.toLowerCase();
   if (lowerName.endsWith(".epub")) {
     currentBookIsEpub = true;
-    // Detect English mode BEFORE epubLoad (which calls epubCleanup and resets the flag)
-    bool useHorizontal = (!forceChinese && bookIsEnglishMode(bookIndex));
-    if (!epubLoad(currentBookPath)) {
+    // Determine layout from subfolder category
+    bool useHorizontal = bookIsEnglishMode(bookIndex);
+    bool isComic = bookIsComic(bookIndex);
+    sdLog("loadBook: pre-epubLoad WiFi=%d heap=%u",
+          (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
+    if (!epubLoad(currentBookPath, isComic)) {
       Serial.println("EPUB: Failed to load");
       if (lastLoadError.isEmpty()) lastLoadError = "epubLoad fail";
+      sdLog("loadBook: epubLoad FAILED WiFi=%d", (int)WiFi.status());
       currentBookIsEpub = false;
       return false;
     }
+    sdLog("loadBook: post-epubLoad WiFi=%d heap=%u psram=%u chapters=%d pages=%d imgBased=%d",
+          (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(),
+          epubChapterCount, totalPages, epubIsImageBased);
     // Set horizontal layout AFTER epubLoad (epubCleanup resets epubIsHorizontal)
-    if (useHorizontal) {
-      epubIsHorizontal = true;
-      Serial.println("EPUB: English mode (horizontal layout)");
-      readingFontSize = loadPrefInt("ereader", "rdFontSzEn", DEFAULT_ENGLISH_READING_FONT_SIZE);
-      readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
-      // Restore English font selection (default to embedded ET Book)
-      readingFontIndex = loadPrefInt("ereader", "fontIdxEn", -1);
-      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) {
-        // Find ET Book index (last entry added by scanFontFiles)
-        int etIdx = -1;
-        for (int fi = 0; fi < fontFileCount; fi++) {
-          if (fontFileList[fi] == "ETBook-embedded") { etIdx = fi; break; }
+    // Comic books: no font needed — skip font selection entirely
+    if (!isComic) {
+      if (useHorizontal) {
+        epubIsHorizontal = true;
+        Serial.println("EPUB: English mode (horizontal layout)");
+        readingFontSize = loadPrefInt("ereader", "rdFontSzEn", DEFAULT_ENGLISH_READING_FONT_SIZE);
+        readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
+        // Restore English font selection (default to embedded ET Book)
+        readingFontIndex = loadPrefInt("ereader", "fontIdxEn", -1);
+        if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) {
+          // Find ET Book index (last entry added by scanFontFiles)
+          int etIdx = -1;
+          for (int fi = 0; fi < fontFileCount; fi++) {
+            if (fontFileList[fi] == "ETBook-embedded") { etIdx = fi; break; }
+          }
+          readingFontIndex = (etIdx >= 0) ? etIdx : max(0, systemFontIndex);
         }
-        readingFontIndex = (etIdx >= 0) ? etIdx : max(0, systemFontIndex);
+        if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
+        selectedFontIndex = readingFontIndex;
+        readingFontFile = loadPrefStr("ereader", "fontFileEn", "ETBook-embedded");
+      } else {
+        readingFontSize = loadPrefInt("ereader", "rdFontSz", DEFAULT_READING_FONT_SIZE);
+        readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
+        // Restore Chinese font selection (default to system font, not previous readingFontIndex
+        // which may point to an English font from a previous session)
+        readingFontIndex = loadPrefInt("ereader", "fontIdx", max(0, systemFontIndex));
+        if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = max(0, systemFontIndex);
+        if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
+        selectedFontIndex = readingFontIndex;
+        readingFontFile = loadPrefStr("ereader", "fontFile",
+                           (readingFontIndex >= 0 && readingFontIndex < fontFileCount) ? fontFileList[readingFontIndex] : String(""));
       }
-      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
-      selectedFontIndex = readingFontIndex;
-      readingFontFile = loadPrefStr("ereader", "fontFileEn", "ETBook-embedded");
-    } else {
-      readingFontSize = loadPrefInt("ereader", "rdFontSz", DEFAULT_READING_FONT_SIZE);
-      readingFontSize = constrain(readingFontSize, MIN_READING_FONT_SIZE, MAX_READING_FONT_SIZE);
-      // Restore Chinese font selection (default to system font, not previous readingFontIndex
-      // which may point to an English font from a previous session)
-      readingFontIndex = loadPrefInt("ereader", "fontIdx", max(0, systemFontIndex));
-      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = max(0, systemFontIndex);
-      if (readingFontIndex < 0 || readingFontIndex >= fontFileCount) readingFontIndex = 0;
-      selectedFontIndex = readingFontIndex;
-      readingFontFile = loadPrefStr("ereader", "fontFile",
-                         (readingFontIndex >= 0 && readingFontIndex < fontFileCount) ? fontFileList[readingFontIndex] : String(""));
     }
     // Use estimated total for page calculation (covers all chapters, not just loaded ones)
     if (epubIsImageBased) {
@@ -758,8 +800,10 @@ bool loadBook(int bookIndex, bool forceChinese) {
     if (!epubIsImageBased) updateLoadProgress(75);
     yield();
     esp_task_wdt_reset();
+    sdLog("loadBook: pre-loadCurrentPage WiFi=%d heap=%u", (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
     if (!loadCurrentPage()) { lastLoadError = "epub loadPage"; return false; }
     Serial.println("EPUB: loadCurrentPage OK, ready to draw");
+    sdLog("loadBook: post-loadCurrentPage WiFi=%d heap=%u", (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
     if (epubIsImageBased) {
       // Comics render images, not text — skip font loading entirely.
       // drawReading() will unload any leftover OFR font to free heap for image decode.
@@ -767,17 +811,25 @@ bool loadBook(int bookIndex, bool forceChinese) {
     } else {
       updateLoadProgress(85);
       // Pre-load reading font here (not in drawReading) to avoid e-ink display bus conflicts
+      sdLog("loadBook: pre-loadReadingFont WiFi=%d heap=%u", (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
       loadReadingFont();
+      sdLog("loadBook: post-loadReadingFont WiFi=%d heap=%u", (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
+      // Pre-initialize glyph cache now (after EPUB text buffer is shrunk and font is loaded).
+      // Without this, the 192KB cache is lazily allocated during first text page render,
+      // which could fragment PSRAM or cause a spike in allocation+rendering latency.
+      initGlyphCache();
+      sdLog("loadBook: post-initGlyphCache WiFi=%d heap=%u", (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
       updateLoadProgress(95);
     }
     yield();
     esp_task_wdt_reset();
+    sdLog("loadBook: DONE WiFi=%d heap=%u psram=%u", (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
     return true;
   }
   
   // Plain text file
-  // Set horizontal layout: auto-detect from filename unless forced Chinese
-  if (!forceChinese && bookIsEnglishMode(bookIndex)) {
+  // Set horizontal layout from subfolder category
+  if (bookIsEnglishMode(bookIndex)) {
     epubIsHorizontal = true;
     Serial.println("TXT: English mode (horizontal layout)");
     readingFontSize = loadPrefInt("ereader", "rdFontSzEn", DEFAULT_ENGLISH_READING_FONT_SIZE);
@@ -829,9 +881,12 @@ bool loadBook(int bookIndex, bool forceChinese) {
   return true;
 }
 
-bool openBookFromList(int bookIndex, bool openAsChinese) {
+bool openBookFromList(int bookIndex) {
   currentBook = bookDisplayName[bookIndex];
-  Serial.printf("Opening book: %s (%s) chinese=%d\n", currentBook.c_str(), bookList[bookIndex].c_str(), openAsChinese);
+  Serial.printf("Opening book: %s (%s)\n", currentBook.c_str(), bookList[bookIndex].c_str());
+  sdLog("openBook: START idx=%d '%s' path='%s' WiFi=%d heap=%u psram=%u",
+        bookIndex, currentBook.c_str(), bookList[bookIndex].c_str(),
+        (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
   
   esp_task_wdt_reset();
   pagesSinceFullRefresh = 1;
@@ -840,6 +895,7 @@ bool openBookFromList(int bookIndex, bool openAsChinese) {
   {
     unsigned long busyStart = millis();
     while (M5.Display.displayBusy()) {
+      if (webServerRunning && webServer) webServer->handleClient();
       delay(10);
       esp_task_wdt_reset();
       if (millis() - busyStart > 3000) break;
@@ -865,21 +921,50 @@ bool openBookFromList(int bookIndex, bool openAsChinese) {
 
   unsigned long loadStart = millis();
   loadBookCrashed = true;
-  if (loadBook(bookIndex, openAsChinese)) {
+  sdLog("openBook: pre-loadBook WiFi=%d heap=%u psram=%u",
+        (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+  if (loadBook(bookIndex)) {
     loadBookCrashed = false;
     unsigned long loadMs = millis() - loadStart;
     Serial.printf("Book loaded OK in %lu ms - Free heap: %u, Free PSRAM: %u\n",
                   loadMs, ESP.getFreeHeap(), ESP.getFreePsram());
+    sdLog("openBook: loadBook OK %lums WiFi=%d heap=%u psram=%u",
+          loadMs, (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
     savePrefStr("ereader", "lastBook", bookList[bookIndex]);
     yield();
     esp_task_wdt_reset();
+    // WiFi may have crashed during heavy EPUB loading (heap drops below ~10KB).
+    // Force reconnect if WiFi is no longer connected.
+    sdLog("openBook: post-load WiFi=%d webRunning=%d heap=%u",
+          (int)WiFi.status(), (int)webServerRunning, (unsigned)ESP.getFreeHeap());
+    if (webServerEnabled && WiFi.status() != WL_CONNECTED && wifiConfig.ssid.length() > 0) {
+      sdLog("openBook: WiFi lost during load, reconnecting...");
+      WiFi.disconnect(true);
+      delay(100);
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(wifiConfig.ssid.c_str(), wifiConfig.password.c_str());
+      // Wait up to 5s for reconnect
+      unsigned long wStart = millis();
+      while (WiFi.status() != WL_CONNECTED && millis() - wStart < 5000) {
+        delay(100);
+        esp_task_wdt_reset();
+      }
+      sdLog("openBook: WiFi reconnect result=%d", (int)WiFi.status());
+      if (WiFi.status() == WL_CONNECTED && !webServerRunning) {
+        startWebServer();
+      }
+    }
     currentMode = MODE_READING;
     comicZoomQuadrant = -1;
+    sdLog("openBook: pre-drawReading WiFi=%d", (int)WiFi.status());
     drawReading();
+    sdLog("openBook: post-drawReading WiFi=%d", (int)WiFi.status());
     return true;
   } else {
     Serial.printf("Failed to load book! Free heap: %u, Free PSRAM: %u, error: %s\n",
                   ESP.getFreeHeap(), ESP.getFreePsram(), lastLoadError.c_str());
+    sdLog("openBook: FAILED WiFi=%d heap=%u err=%s",
+          (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), lastLoadError.c_str());
     M5.Display.setEpdMode(epd_mode_t::epd_fast);
     M5.Display.startWrite();
     M5.Display.fillScreen(TFT_WHITE);
@@ -915,6 +1000,7 @@ void drawBookList() {
   {
     unsigned long busyStart = millis();
     while (M5.Display.displayBusy()) {
+      if (webServerRunning && webServer) webServer->handleClient();
       delay(10);
       esp_task_wdt_reset();
       if (millis() - busyStart > 5000) {
@@ -934,39 +1020,47 @@ void drawBookList() {
   M5.Display.setTextColor(TFT_BLACK);
   
   // Draw title
-  drawSystemText("電子書列表", 20, 42, 36);
+  drawSystemText("電子書列表", 20, 42, 40);
   
-  // Draw "最後閱讀" button if there's a saved last book
+  // Draw "最後閱讀" button (top-right) if there's a saved last book
   {
     String lastBook = loadPrefStr("ereader", "lastBook", "");
     if (lastBook.length() > 0) {
-      const int btnX = 370, btnY = 44, btnW = 140, btnH = 36;
-      M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 6, TFT_BLACK);
-      drawSystemTextCentered("最後閱讀", btnX + btnW / 2, btnY + (btnH - 24) / 2, 24);
+      const int btnX = 380, btnY = 42, btnW = 140, btnH = 40;
+      M5.Display.fillRoundRect(btnX, btnY, btnW, btnH, 6, TFT_BLACK);
+      drawSystemTextCentered("最後閱讀", btnX + btnW / 2, btnY + btnH / 2 - 14, 28, TFT_WHITE, TFT_BLACK);
     }
   }
   
   M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   if (sdCardAvailable && bookCount > 0) {
-    int totalBookPages = (bookCount + BOOKS_PER_PAGE - 1) / BOOKS_PER_PAGE;
+    int totalBookPages;
+    if (bookViewMode == 0) {
+      // List view
+      totalBookPages = (bookCount + BOOKS_PER_PAGE - 1) / BOOKS_PER_PAGE;
+    } else {
+      // Grid view: 3 columns × 4 rows = 12 per page
+      totalBookPages = (bookCount + 11) / 12;
+    }
     if (bookListPage >= totalBookPages) bookListPage = totalBookPages - 1;
     if (bookListPage < 0) bookListPage = 0;
-    int startIdx = bookListPage * BOOKS_PER_PAGE;
-    int endIdx = min(startIdx + BOOKS_PER_PAGE, bookCount);
+
+    if (bookViewMode == 0) {
+      // ===== LIST VIEW =====
+      int startIdx = bookListPage * BOOKS_PER_PAGE;
+      int endIdx = min(startIdx + BOOKS_PER_PAGE, bookCount);
     
     // Show books for current page
     for (int i = startIdx; i < endIdx; i++) {
       int row = i - startIdx;
-      // Truncate long names to fit display width (540px - 40px left margin - 20px right margin)
+      bool isCN = (bookCategory[i] == CAT_CN);
+      // Truncate long names to fit display width
+      // Chinese books need room for 简/正 buttons at right (~100px)
       String displayName = bookDisplayName[i];
-      const int maxDisplayWidth = DISPLAY_WIDTH - 40 - 20;  // 480px
-      // Fast truncation: estimate max UTF-8 characters that fit, then verify once
-      // At font size 28: CJK chars ~28px wide, ASCII ~14px wide
-      // Conservative estimate: assume all chars are 16px wide → ~30 chars max
+      int maxChars = isCN ? 13 : 17;  // fewer chars when buttons present
       int len = displayName.length();
-      if (len > 30) {
-        // Count UTF-8 characters
+      if (len > 20) {
         int charCount = 0;
         int bytePos = 0;
         while (bytePos < len) {
@@ -977,9 +1071,8 @@ void drawBookList() {
           else bytePos += 4;
           charCount++;
         }
-        if (charCount > 17) {
-          // Likely too long — truncate to ~16 UTF-8 chars and add ellipsis
-          int targetChars = 16;
+        if (charCount > maxChars) {
+          int targetChars = maxChars - 1;
           bytePos = 0;
           int count = 0;
           while (bytePos < len && count < targetChars) {
@@ -993,14 +1086,39 @@ void drawBookList() {
           displayName = displayName.substring(0, bytePos) + "\xe2\x80\xa6";  // "…"
         }
       }
-      drawSystemText(displayName.c_str(), 40, 120 + (row * BOOK_ROW_HEIGHT), 28);
-      // English-mode books: show "中" button to allow opening in Chinese mode
-      if (bookIsEnglishMode(i)) {
-        int btnX = DISPLAY_WIDTH - 60;
+      // Draw category tag for non-auto books
+      int textX = 40;
+      BookCategory cat = bookCategory[i];
+      if (cat != CAT_AUTO) {
+        const char* tag = nullptr;
+        switch (cat) {
+          case CAT_EN:    tag = "EN"; break;
+          case CAT_CN:    tag = "中"; break;
+          case CAT_COMIC: tag = "漫"; break;
+          default: break;
+        }
+        if (tag) {
+          int tagY = 120 + (row * BOOK_ROW_HEIGHT) - 2;
+          int tagW = 40, tagH = 30;
+          M5.Display.drawRoundRect(textX, tagY, tagW, tagH, 4, TFT_BLACK);
+          drawSystemTextCentered(tag, textX + tagW / 2, tagY + (tagH - 20) / 2, 20);
+          textX += tagW + 6;
+        }
+      }
+      drawSystemText(displayName.c_str(), textX, 120 + (row * BOOK_ROW_HEIGHT), 28);
+
+      // Draw 简/正 buttons for Chinese books
+      if (isCN) {
         int btnY = 120 + (row * BOOK_ROW_HEIGHT) - 2;
-        int btnW = 45, btnH = 34;
-        M5.Display.drawRoundRect(btnX, btnY, btnW, btnH, 4, TFT_BLACK);
-        drawSystemTextCentered("中", btnX + btnW / 2, btnY + (btnH - 24) / 2, 24);
+        int btnW = 40, btnH = 30;
+        // 简 button
+        int jianX = 440;
+        M5.Display.drawRoundRect(jianX, btnY, btnW, btnH, 4, TFT_BLACK);
+        drawSystemTextCentered("\xe7\xae\x80", jianX + btnW / 2, btnY + (btnH - 20) / 2, 20);  // 简
+        // 正 button
+        int zhengX = 486;
+        M5.Display.drawRoundRect(zhengX, btnY, btnW, btnH, 4, TFT_BLACK);
+        drawSystemTextCentered("\xe6\xad\xa3", zhengX + btnW / 2, btnY + (btnH - 20) / 2, 20);  // 正
       }
     }
     
@@ -1017,6 +1135,100 @@ void drawBookList() {
       bookInfo += " | 第 " + String(bookListPage + 1) + "/" + String(totalBookPages) + " 頁";
     }
     drawSystemText(bookInfo.c_str(), 20, 840, 28);
+    } else {
+      // ===== GRID VIEW =====
+      int cols = 3, gridRows = 4, gridPad = 8;
+      int contentTop = 92;
+      int contentBot = 835;
+      int cellW = (DISPLAY_WIDTH - gridPad * (cols + 1)) / cols;
+      int cellH = (contentBot - contentTop - gridPad * (gridRows + 1)) / gridRows;
+      int perPage = cols * gridRows;  // 12
+      int startIdx = bookListPage * perPage;
+      int endIdx = min(startIdx + perPage, bookCount);
+
+      for (int i = startIdx; i < endIdx; i++) {
+        int slot = i - startIdx;
+        int col = slot % cols;
+        int row = slot / cols;
+        int cx = gridPad + col * (cellW + gridPad);
+        int cy = contentTop + gridPad + row * (cellH + gridPad);
+
+        // Draw card
+        M5.Display.drawRoundRect(cx, cy, cellW, cellH, 6, TFT_BLACK);
+
+        // Category tag
+        BookCategory cat = bookCategory[i];
+        if (cat != CAT_AUTO) {
+          const char* tag = nullptr;
+          switch (cat) {
+            case CAT_EN:    tag = "EN"; break;
+            case CAT_CN:    tag = "中"; break;
+            case CAT_COMIC: tag = "漫"; break;
+            default: break;
+          }
+          if (tag) {
+            int tagW = 32, tagH = 22;
+            M5.Display.drawRoundRect(cx + 4, cy + 4, tagW, tagH, 3, TFT_BLACK);
+            drawSystemTextCentered(tag, cx + 4 + tagW / 2, cy + 4 + (tagH - 16) / 2, 16);
+          }
+        }
+
+        // Book title — wrap within cell
+        String name = bookDisplayName[i];
+        int textX = cx + 6;
+        int textY = cy + 30;
+        int maxW = cellW - 12;
+        // Draw up to 3 lines of text
+        int bytePos = 0;
+        int nameLen = name.length();
+        for (int line = 0; line < 3 && bytePos < nameLen; line++) {
+          // Estimate chars per line: CJK ~22px at size 22, ASCII ~11px
+          int lineW = 0;
+          int lineStart = bytePos;
+          while (bytePos < nameLen && lineW < maxW) {
+            uint8_t c = (uint8_t)name[bytePos];
+            int charW = (c < 0x80) ? 11 : 22;
+            if (lineW + charW > maxW) break;
+            lineW += charW;
+            if (c < 0x80) bytePos += 1;
+            else if (c < 0xE0) bytePos += 2;
+            else if (c < 0xF0) bytePos += 3;
+            else bytePos += 4;
+          }
+          String lineStr = name.substring(lineStart, bytePos);
+          if (line == 2 && bytePos < nameLen) lineStr += "\xe2\x80\xa6";  // "…"
+          drawSystemText(lineStr.c_str(), textX, textY + line * 26, 22);
+        }
+
+        // 简/正 buttons at bottom of card for Chinese books
+        if (bookCategory[i] == CAT_CN) {
+          int btnW = 36, btnH = 24;
+          int btnY2 = cy + cellH - btnH - 4;
+          // 简 button (left)
+          int jX = cx + cellW / 2 - btnW - 4;
+          M5.Display.drawRoundRect(jX, btnY2, btnW, btnH, 3, TFT_BLACK);
+          drawSystemTextCentered("\xe7\xae\x80", jX + btnW / 2, btnY2 + (btnH - 16) / 2, 16);  // 简
+          // 正 button (right)
+          int zX = cx + cellW / 2 + 4;
+          M5.Display.drawRoundRect(zX, btnY2, btnW, btnH, 3, TFT_BLACK);
+          drawSystemTextCentered("\xe6\xad\xa3", zX + btnW / 2, btnY2 + (btnH - 16) / 2, 16);  // 正
+        }
+      }
+
+      // Draw pagination nav arrows if needed
+      bool hasPrev = (bookListPage > 0);
+      bool hasNext = (bookListPage < totalBookPages - 1);
+      if (totalBookPages > 1) {
+        drawVerticalNavBar(hasPrev, hasNext);
+      }
+
+      // Status info
+      String bookInfo = "共 " + String(bookCount) + " 本書";
+      if (totalBookPages > 1) {
+        bookInfo += " | 第 " + String(bookListPage + 1) + "/" + String(totalBookPages) + " 頁";
+      }
+      drawSystemText(bookInfo.c_str(), 20, 840, 28);
+    }
   } else {
     // Show sample books
     drawSystemText("示例書籍1.txt", 40, 120, 28);
@@ -1050,8 +1262,9 @@ epd_mode_t getReadingEpdMode() {
 }
 
 void drawReading() {
-  Serial.printf("\n=== drawReading() === heap=%u, psram=%u, ofrLoaded=%d, ofrFiles=%d\n",
-                ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofrFontLoaded, (int)ofr_file_list.size());
+  Serial.printf("\n=== drawReading() === heap=%u, psram=%u, ofrLoaded=%d, ofrFiles=%d, stack=%u\n",
+                ESP.getFreeHeap(), ESP.getFreePsram(), (int)ofrFontLoaded, (int)ofr_file_list.size(),
+                uxTaskGetStackHighWaterMark(NULL));
   Serial.println("Drawing reading mode...");
   
   // Ensure reading font is loaded (first page or after mode change).
@@ -1080,6 +1293,7 @@ void drawReading() {
   {
     unsigned long busyStart = millis();
     while (M5.Display.displayBusy()) {
+      if (webServerRunning && webServer) webServer->handleClient();
       delay(10);
       esp_task_wdt_reset();
       if (millis() - busyStart > 5000) {
@@ -1150,26 +1364,31 @@ void drawTocList() {
 
   int listStartY = 100;
 
+  // TOC layout depends on language
+  int tocFontSize = epubIsHorizontal ? 32 : 40;
+  int tocRowH = epubIsHorizontal ? 60 : 72;
+  int tocPerPage = (830 - listStartY) / tocRowH;
+
   if (tocTab == 0) {
     // === Chapter list ===
     if (epubTocEntries && epubTocCount > 0) {
-      int totalTocPages = (epubTocCount + TOC_PER_PAGE - 1) / TOC_PER_PAGE;
+      int totalTocPages = (epubTocCount + tocPerPage - 1) / tocPerPage;
       if (tocListPage >= totalTocPages) tocListPage = totalTocPages - 1;
       if (tocListPage < 0) tocListPage = 0;
-      int startIdx = tocListPage * TOC_PER_PAGE;
-      int endIdx = min(startIdx + TOC_PER_PAGE, epubTocCount);
+      int startIdx = tocListPage * tocPerPage;
+      int endIdx = min(startIdx + tocPerPage, epubTocCount);
 
       // Load reading font for chapter titles
       loadReadingFont();
       if (ofrFontLoaded) {
-        ofr.setFontSize(28);
+        ofr.setFontSize(tocFontSize);
         ofr.setFontColor(TFT_BLACK, TFT_WHITE);
         ofr.setDrawer(M5.Display);
       }
 
       for (int i = startIdx; i < endIdx; i++) {
         int row = i - startIdx;
-        int rowY = listStartY + row * BOOK_ROW_HEIGHT;
+        int rowY = listStartY + row * tocRowH;
 
         String displayName = epubTocEntries[i].label;
         int len = displayName.length();
@@ -1202,7 +1421,7 @@ void drawTocList() {
         if (ofrFontLoaded) {
           ofr.drawString(displayName.c_str(), 40, rowY);
         } else {
-          drawSystemText(displayName.c_str(), 40, rowY, 28);
+          drawSystemText(displayName.c_str(), 40, rowY, tocFontSize);
         }
         yield();
       }

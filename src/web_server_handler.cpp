@@ -293,141 +293,225 @@ void handleUploadComplete() {
 }
 
 // ===== Screen Capture =====
-// Serves the current e-ink framebuffer as a BMP image via HTTP
+// Non-blocking deferred capture: reads IT8951 VRAM one chunk per main-loop
+// iteration so HTTP requests are still processed during the slow SPI read.
+
+static uint8_t* cachedBmp = nullptr;
+static volatile bool captureRequested = false;
+static bool captureReady = false;
+
+// Non-blocking state machine
+static bool captureInProgress = false;
+static int captureY = 0;
+static uint8_t* captureRgbChunk = nullptr;
+static unsigned long captureStartTime = 0;
+
+static const int SCR_W = 540;
+static const int SCR_H = 960;
+static const int SCR_STRIDE = (SCR_W + 3) & ~3;  // 540
+static const int CAPTURE_CHUNK = 32;              // rows per iteration
+static const int BMP_HDR_SZ = 14 + 40;
+static const int BMP_PAL_SZ = 256 * 4;
+static const int BMP_IMG_SZ = SCR_STRIDE * SCR_H;
+static const int BMP_TOTAL  = BMP_HDR_SZ + BMP_PAL_SZ + BMP_IMG_SZ;
+
+static bool initScreenBuffer() {
+  if (cachedBmp) return true;
+  cachedBmp = (uint8_t*)ps_malloc(BMP_TOTAL);
+  if (!cachedBmp) {
+    sdLog("Screenshot: PSRAM alloc failed (%d bytes, free=%u)",
+          BMP_TOTAL, (unsigned)ESP.getFreePsram());
+    return false;
+  }
+  // BMP file header
+  memset(cachedBmp, 0, BMP_HDR_SZ);
+  cachedBmp[0] = 'B'; cachedBmp[1] = 'M';
+  *(uint32_t*)(cachedBmp + 2)  = BMP_TOTAL;
+  *(uint32_t*)(cachedBmp + 10) = BMP_HDR_SZ + BMP_PAL_SZ;
+  *(uint32_t*)(cachedBmp + 14) = 40;
+  *(int32_t*)(cachedBmp + 18)  = SCR_W;
+  *(int32_t*)(cachedBmp + 22)  = SCR_H;
+  *(uint16_t*)(cachedBmp + 26) = 1;
+  *(uint16_t*)(cachedBmp + 28) = 8;
+  *(uint32_t*)(cachedBmp + 34) = BMP_IMG_SZ;
+  *(int32_t*)(cachedBmp + 38)  = 2835;
+  *(int32_t*)(cachedBmp + 42)  = 2835;
+  *(uint32_t*)(cachedBmp + 46) = 256;
+  // Grayscale palette
+  for (int i = 0; i < 256; i++) {
+    cachedBmp[BMP_HDR_SZ + i * 4]     = i;
+    cachedBmp[BMP_HDR_SZ + i * 4 + 1] = i;
+    cachedBmp[BMP_HDR_SZ + i * 4 + 2] = i;
+    cachedBmp[BMP_HDR_SZ + i * 4 + 3] = 0;
+  }
+  memset(cachedBmp + BMP_HDR_SZ + BMP_PAL_SZ, 0xFF, BMP_IMG_SZ);
+  sdLog("Screenshot: BMP buffer allocated (%d bytes PSRAM)", BMP_TOTAL);
+  return true;
+}
+
+static void freeScreenBuffer() {
+  if (captureRgbChunk) {
+    free(captureRgbChunk);
+    captureRgbChunk = nullptr;
+  }
+  captureInProgress = false;
+  captureY = 0;
+  if (cachedBmp) {
+    free(cachedBmp);
+    cachedBmp = nullptr;
+    captureReady = false;
+    captureRequested = false;
+  }
+}
+
+// Called every main-loop iteration. Reads one chunk (32 rows) per call so
+// the loop stays responsive for HTTP handling between chunks.
+void updateScreenCapture() {
+  if (!cachedBmp) return;
+
+  // ── Start a new capture ──
+  if (captureRequested && !captureInProgress) {
+    captureRequested = false;
+
+    // If display is still refreshing, defer to next iteration
+    if (M5.Display.displayBusy()) {
+      captureRequested = true;
+      return;
+    }
+
+    captureRgbChunk = (uint8_t*)ps_malloc(SCR_W * 3 * CAPTURE_CHUNK);
+    if (!captureRgbChunk) {
+      sdLog("Capture: rgbChunk alloc failed psram=%u", (unsigned)ESP.getFreePsram());
+      return;
+    }
+
+    captureInProgress = true;
+    captureY = 0;
+    captureStartTime = millis();
+    sdLog("Capture: start mode=%d heap=%u psram=%u",
+          (int)currentMode, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+  }
+
+  // ── Process one chunk ──
+  if (!captureInProgress) return;
+
+  int rows = min(CAPTURE_CHUNK, SCR_H - captureY);
+  M5.Display.readRectRGB(0, captureY, SCR_W, rows, captureRgbChunk);
+
+  uint8_t* pixels = cachedBmp + BMP_HDR_SZ + BMP_PAL_SZ;
+  for (int r = 0; r < rows; r++) {
+    int bmpRow = SCR_H - 1 - (captureY + r);
+    uint8_t* src = captureRgbChunk + r * SCR_W * 3;
+    uint8_t* dst = pixels + bmpRow * SCR_STRIDE;
+    for (int x = 0; x < SCR_W; x++) {
+      dst[x] = (uint8_t)((src[x*3] * 77 + src[x*3+1] * 150 + src[x*3+2] * 29) >> 8);
+    }
+  }
+  esp_task_wdt_reset();
+
+  captureY += rows;
+
+  if (captureY >= SCR_H) {
+    free(captureRgbChunk);
+    captureRgbChunk = nullptr;
+    captureInProgress = false;
+    captureReady = true;
+    sdLog("Capture: done %lu ms", millis() - captureStartTime);
+  }
+}
+
+static void serveCachedBmp() {
+  WiFiClient client = webServer->client();
+  client.setTimeout(30);
+  webServer->setContentLength(BMP_TOTAL);
+  webServer->send(200, "image/bmp", "");
+  int sent = 0;
+  while (sent < BMP_TOTAL && client.connected()) {
+    int chunk = min(4096, BMP_TOTAL - sent);
+    size_t written = client.write(cachedBmp + sent, chunk);
+    if (written == 0) break;
+    sent += written;
+    yield();
+  }
+  Serial.printf("Screenshot: served %d/%d bytes\n", sent, BMP_TOTAL);
+}
 
 void handleScreenshot() {
-  int w = M5.Display.width();   // 540
-  int h = M5.Display.height();  // 960
+  sdLog("Screenshot: req ready=%d inProg=%d y=%d heap=%u psram=%u mode=%d",
+        (int)captureReady, (int)captureInProgress, captureY,
+        (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(), (int)currentMode);
 
-  // BMP row stride must be multiple of 4 bytes (8-bit grayscale: stride = w rounded up)
-  int rowStride = (w + 3) & ~3;
-  int imageSize = rowStride * h;
-  int paletteSize = 256 * 4;  // 256 RGBX entries
-  int headerSize = 14 + 40;   // BMP file header + DIB header
-  int fileSize = headerSize + paletteSize + imageSize;
-
-  size_t freeHeap = ESP.getFreeHeap();
-  size_t freePsram = ESP.getFreePsram();
-  Serial.printf("Screenshot: freeHeap=%u, freePsram=%u\n", (unsigned)freeHeap, (unsigned)freePsram);
-
-  if (freeHeap < 8192) {
-    Serial.printf("Screenshot: insufficient heap (%u bytes), aborting\n", (unsigned)freeHeap);
-    webServer->send(503, "text/plain", "Screenshot: insufficient memory, try again later");
+  // Test mode: fill buffer with gradient, serve immediately
+  if (webServer->hasArg("test")) {
+    if (!cachedBmp && !initScreenBuffer()) {
+      webServer->send(503, "text/plain", "Screenshot: memory allocation failed");
+      return;
+    }
+    uint8_t* pixels = cachedBmp + BMP_HDR_SZ + BMP_PAL_SZ;
+    for (int y = 0; y < SCR_H; y++) {
+      uint8_t gray = (uint8_t)((y * 255) / SCR_H);
+      memset(pixels + (SCR_H - 1 - y) * SCR_STRIDE, gray, SCR_W);
+    }
+    captureReady = true;
+    serveCachedBmp();
     return;
   }
 
-  // Allocate full grayscale image buffer in PSRAM (~520KB for 540x960)
-  uint8_t* imgBuf = (uint8_t*)ps_malloc(imageSize);
-  if (!imgBuf) {
-    Serial.println("Screenshot: PSRAM allocation failed");
-    webServer->send(503, "text/plain", "Screenshot: PSRAM allocation failed");
-    return;
-  }
-  memset(imgBuf, 0xFF, imageSize);  // default white
-
-  // Allocate RGB chunk buffer in PSRAM (multiple rows at once)
-  const int READ_CHUNK = 32;
-  uint8_t* rgbChunk = (uint8_t*)ps_malloc(w * 3 * READ_CHUNK);
-  if (!rgbChunk) {
-    free(imgBuf);
-    webServer->send(503, "text/plain", "Screenshot: row buffer allocation failed");
+  // If cached VRAM image is ready, serve it
+  if (cachedBmp && captureReady) {
+    serveCachedBmp();
+    captureReady = false;
+    captureRequested = true;
     return;
   }
 
-  // Wait for e-ink refresh to complete before reading the framebuffer
-  {
-    unsigned long busyStart = millis();
-    while (M5.Display.displayBusy()) {
-      delay(50);
-      esp_task_wdt_reset();
-      if (millis() - busyStart > 8000) {
-        Serial.println("Screenshot: display busy timeout, proceeding anyway");
-        break;
+  // Capture in progress — report progress
+  if (captureInProgress) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "capturing %d%%", captureY * 100 / SCR_H);
+    webServer->send(202, "text/plain", buf);
+    return;
+  }
+
+  // Try blocking VRAM capture if buffer is available
+  if (cachedBmp || initScreenBuffer()) {
+    captureRequested = true;
+    if (!captureRgbChunk) {
+      captureRgbChunk = (uint8_t*)ps_malloc(SCR_W * 3 * CAPTURE_CHUNK);
+    }
+    if (captureRgbChunk) {
+      captureInProgress = true;
+      captureY = 0;
+      captureStartTime = millis();
+      sdLog("Capture: blocking start heap=%u psram=%u",
+            (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+      uint8_t* pixels = cachedBmp + BMP_HDR_SZ + BMP_PAL_SZ;
+      for (int y = 0; y < SCR_H; y += CAPTURE_CHUNK) {
+        int rows = min(CAPTURE_CHUNK, SCR_H - y);
+        M5.Display.readRectRGB(0, y, SCR_W, rows, captureRgbChunk);
+        for (int r = 0; r < rows; r++) {
+          int bmpRow = SCR_H - 1 - (y + r);
+          uint8_t* src = captureRgbChunk + r * SCR_W * 3;
+          uint8_t* dst = pixels + bmpRow * SCR_STRIDE;
+          for (int xx = 0; xx < SCR_W; xx++) {
+            dst[xx] = (uint8_t)((src[xx*3]*77 + src[xx*3+1]*150 + src[xx*3+2]*29) >> 8);
+          }
+        }
+        esp_task_wdt_reset();
+        yield();
       }
+      captureInProgress = false;
+      captureReady = true;
+      captureRequested = false;
+      sdLog("Capture: blocking done %lu ms", millis() - captureStartTime);
+      serveCachedBmp();
+      captureReady = false;
+      captureRequested = true;
+      return;
     }
   }
 
-  // ── Phase 1: Read display into PSRAM buffer in multi-row chunks ──
-  // Each readRectRGB call reads READ_CHUNK rows in a single readRect call,
-  // which only allocates/frees IT8951 buffers once per chunk (~30 times total
-  // instead of 960 single-row calls).
-  Serial.println("Screenshot: reading display...");
-  unsigned long readStart = millis();
-  bool readOK = true;
-  for (int y = 0; y < h; y += READ_CHUNK) {
-    int rows = min(READ_CHUNK, h - y);
-    M5.Display.readRectRGB(0, y, w, rows, rgbChunk);
-    // Convert RGB to grayscale in BMP bottom-up order
-    for (int r = 0; r < rows; r++) {
-      int srcRow = r;
-      int bmpRow = h - 1 - (y + r);
-      uint8_t* src = rgbChunk + srcRow * w * 3;
-      uint8_t* dst = imgBuf + bmpRow * rowStride;
-      for (int x = 0; x < w; x++) {
-        dst[x] = (uint8_t)((src[x * 3] * 77 + src[x * 3 + 1] * 150 + src[x * 3 + 2] * 29) >> 8);
-      }
-    }
-    esp_task_wdt_reset();
-    yield();
-    // Abort if reading takes too long (prevent system halt)
-    if (millis() - readStart > 30000) {
-      Serial.printf("Screenshot: read timeout at row %d, aborting\n", y);
-      readOK = false;
-      break;
-    }
-  }
-  free(rgbChunk);
-  Serial.printf("Screenshot: display read %s in %lu ms\n",
-                readOK ? "complete" : "partial", millis() - readStart);
-
-  // ── Phase 2: Build and send BMP over WiFi (no SPI needed) ──
-  uint8_t bmpHeader[14 + 40];
-  memset(bmpHeader, 0, sizeof(bmpHeader));
-  bmpHeader[0] = 'B'; bmpHeader[1] = 'M';
-  *((uint32_t*)&bmpHeader[2])  = fileSize;
-  *((uint32_t*)&bmpHeader[10]) = headerSize + paletteSize;
-  *((uint32_t*)&bmpHeader[14]) = 40;
-  *((int32_t*)&bmpHeader[18])  = w;
-  *((int32_t*)&bmpHeader[22])  = h;
-  *((uint16_t*)&bmpHeader[26]) = 1;
-  *((uint16_t*)&bmpHeader[28]) = 8;
-  *((uint32_t*)&bmpHeader[30]) = 0;
-  *((uint32_t*)&bmpHeader[34]) = imageSize;
-  *((int32_t*)&bmpHeader[38])  = 2835;
-  *((int32_t*)&bmpHeader[42])  = 2835;
-  *((uint32_t*)&bmpHeader[46]) = 256;
-  *((uint32_t*)&bmpHeader[50]) = 0;
-
-  uint8_t palette[256 * 4];
-  for (int i = 0; i < 256; i++) {
-    palette[i * 4 + 0] = i;
-    palette[i * 4 + 1] = i;
-    palette[i * 4 + 2] = i;
-    palette[i * 4 + 3] = 0;
-  }
-
-  webServer->setContentLength(fileSize);
-  webServer->send(200, "image/bmp", "");
-
-  WiFiClient client = webServer->client();
-  client.write(bmpHeader, sizeof(bmpHeader));
-  client.write(palette, sizeof(palette));
-
-  // Send image data in chunks with WDT feeds
-  const int CHUNK_ROWS = 64;
-  for (int startRow = 0; startRow < h; startRow += CHUNK_ROWS) {
-    if (!client.connected()) {
-      Serial.printf("Screenshot: client disconnected at row %d\n", startRow);
-      break;
-    }
-    int rows = min(CHUNK_ROWS, h - startRow);
-    client.write(imgBuf + startRow * rowStride, rows * rowStride);
-    esp_task_wdt_reset();
-    yield();
-  }
-
-  free(imgBuf);
-  Serial.println("Screenshot sent successfully");
+  webServer->send(503, "text/plain", "Screenshot: no capture available");
 }
 
 void handleScreenView() {
@@ -439,7 +523,7 @@ void handleScreenView() {
   html += "display: flex; flex-direction: column; align-items: center; }";
   html += "h1 { color: #00d4ff; margin-bottom: 5px; }";
   html += ".info { color: #888; font-size: 14px; margin-bottom: 15px; }";
-  html += ".controls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; }";
+  html += ".controls { margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }";
   html += "button { background: #16213e; color: #00d4ff; border: 1px solid #00d4ff; ";
   html += "padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }";
   html += "button:hover { background: #00d4ff; color: #1a1a2e; }";
@@ -452,31 +536,58 @@ void handleScreenView() {
   html += "border-radius: 4px; }";
   html += "#status { font-size: 12px; color: #666; margin-top: 8px; }";
   html += "</style></head><body>";
-  html += "<h1>📱 M5Paper S3 Screen</h1>";
-  html += "<div class='info'>540 × 960 E-Ink Display</div>";
+  html += "<h1>\xF0\x9F\x93\xB1 M5Paper S3 Screen</h1>";
+  html += "<div class='info'>540 x 960 E-Ink Display</div>";
   html += "<div class='controls'>";
-  html += "<button onclick='capture()'>📸 Capture</button>";
-  html += "<button id='autoBtn' onclick='toggleAuto()'>▶ Auto</button>";
+  html += "<button onclick='capture()'>Capture</button>";
+  html += "<button onclick='captureTest()'>Test</button>";
+  html += "<button id='autoBtn' onclick='toggleAuto()'>Auto</button>";
   html += "<select id='interval' onchange='resetAuto()'>";
   html += "<option value='5'>5s</option><option value='10' selected>10s</option>";
   html += "<option value='30'>30s</option><option value='60'>60s</option></select>";
-  html += "<button onclick='download()'>💾 Save</button>";
+  html += "<button onclick='download()'>Save</button>";
   html += "<select id='fmt'><option value='png'>PNG</option><option value='jpg'>JPG</option></select>";
   html += "</div>";
-  html += "<div class='frame'><img id='screen' src='/screenshot' alt='Screen capture'></div>";
-  html += "<div id='status'>Ready</div>";
+  html += "<div class='frame'><img id='screen' alt='Screen capture'></div>";
+  html += "<div id='status'>Loading...</div>";
   html += "<script>";
-  html += "let timer=null, autoOn=false;";
-  html += "function capture(){";
-  html += "  let img=document.getElementById('screen');";
-  html += "  img.src='/screenshot?t='+Date.now();";
-  html += "  document.getElementById('status').textContent='Captured: '+new Date().toLocaleTimeString();";
+  html += "let timer=null,autoOn=false,busy=false;";
+  html += "function setStatus(msg){document.getElementById('status').textContent=msg;}";
+  html += "function doCapture(url,attempt){";
+  html += "  if(busy)return;busy=true;attempt=attempt||1;";
+  html += "  setStatus('Requesting capture...');";
+  html += "  fetch(url).then(function(r){";
+  html += "    if(r.status===202){";
+  html += "      return r.text().then(function(t){";
+  html += "        busy=false;";
+  html += "        setStatus(t||'capturing...');";
+  html += "        setTimeout(function(){doCapture(url,attempt+1);},1000);";
+  html += "        return null;";
+  html += "      });";
+  html += "    }";
+  html += "    if(!r.ok)throw new Error('HTTP '+r.status);";
+  html += "    return r.blob();";
+  html += "  }).then(function(blob){";
+  html += "    if(!blob)return;";
+  html += "    let img=document.getElementById('screen');";
+  html += "    let old=img.src;";
+  html += "    img.src=URL.createObjectURL(blob);";
+  html += "    if(old&&old.startsWith('blob:'))URL.revokeObjectURL(old);";
+  html += "    busy=false;";
+  html += "    setStatus('Captured: '+new Date().toLocaleTimeString()+' ('+Math.round(blob.size/1024)+'KB)');";
+  html += "  }).catch(function(e){";
+  html += "    busy=false;";
+  html += "    setStatus('Error: '+e.message);";
+  html += "    if(attempt<30)setTimeout(function(){doCapture(url,attempt+1);},2000);";
+  html += "  });";
   html += "}";
+  html += "function capture(){doCapture('/screenshot?t='+Date.now());}";
+  html += "function captureTest(){doCapture('/screenshot?test=1&t='+Date.now());}";
   html += "function toggleAuto(){";
   html += "  autoOn=!autoOn;";
   html += "  let btn=document.getElementById('autoBtn');";
-  html += "  if(autoOn){btn.textContent='⏸ Stop';btn.classList.add('active');startAuto();}";
-  html += "  else{btn.textContent='▶ Auto';btn.classList.remove('active');clearInterval(timer);}";
+  html += "  if(autoOn){btn.textContent='Stop';btn.classList.add('active');startAuto();}";
+  html += "  else{btn.textContent='Auto';btn.classList.remove('active');clearInterval(timer);}";
   html += "}";
   html += "function startAuto(){";
   html += "  clearInterval(timer);";
@@ -496,12 +607,73 @@ void handleScreenView() {
   html += "    a.download='m5paper_'+Date.now()+'.'+fmt;a.click();URL.revokeObjectURL(a.href);";
   html += "  },mime,0.95);";
   html += "}";
+  html += "capture();";
   html += "</script></body></html>";
 
   webServer->send(200, "text/html", html);
 }
 
+// ==================== SD Card Debug Logger ====================
+// Appends timestamped lines to /debug.log on SD card.
+// Safe to call from any context; silently fails if SD unavailable.
+void sdLog(const char* fmt, ...) {
+  char buf[256];
+  va_list args;
+  va_start(args, fmt);
+  int len = vsnprintf(buf, sizeof(buf), fmt, args);
+  va_end(args);
+  if (len <= 0) return;
+
+  // Also mirror to Serial
+  Serial.printf("[LOG] %s\n", buf);
+
+  if (!sdCardAvailable) return;
+
+  // Build timestamp prefix
+  char line[320];
+  unsigned long ms = millis();
+  unsigned long sec = ms / 1000;
+  int h = (sec / 3600) % 24;
+  int m = (sec / 60) % 60;
+  int s = sec % 60;
+  int lineLen = snprintf(line, sizeof(line), "[%02d:%02d:%02d.%03lu] %s\n",
+                         h, m, s, ms % 1000, buf);
+
+  File f = SD.open("/debug.log", FILE_APPEND);
+  if (f) {
+    f.write((const uint8_t*)line, lineLen);
+    f.close();
+  }
+}
+
+void handleDebugLog() {
+  ScopedSDLock lock;
+  File f = SD.open("/debug.log", FILE_READ);
+  if (!f) {
+    webServer->send(200, "text/plain", "(no log file yet)");
+    return;
+  }
+  webServer->setContentLength(f.size());
+  webServer->send(200, "text/plain", "");
+  uint8_t buf[512];
+  while (f.available()) {
+    int n = f.read(buf, sizeof(buf));
+    if (n > 0) webServer->client().write(buf, n);
+  }
+  f.close();
+}
+
+void handleClearLog() {
+  {
+    ScopedSDLock lock;
+    SD.remove("/debug.log");
+  }
+  webServer->send(200, "text/plain", "Log cleared");
+}
+
 void startWebServer() {
+  sdLog("startWebServer: WiFi.status=%d, heap=%u, psram=%u",
+        (int)WiFi.status(), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Cannot start web server: WiFi not connected");
     webServerRunning = false;
@@ -516,18 +688,21 @@ void startWebServer() {
     webServer->on("/delete", HTTP_GET, handleFileDelete);
     webServer->on("/screenshot", HTTP_GET, handleScreenshot);
     webServer->on("/screen", HTTP_GET, handleScreenView);
+    webServer->on("/log", HTTP_GET, handleDebugLog);
+    webServer->on("/log/clear", HTTP_GET, handleClearLog);
   }
   
   webServer->begin();
   webServerRunning = true;
-  Serial.print("Web server started at http://");
-  Serial.println(WiFi.localIP());
+  sdLog("startWebServer: OK at %s", WiFi.localIP().toString().c_str());
 }
 
 void stopWebServer() {
   if (webServer != nullptr) {
+    sdLog("stopWebServer: WiFi.status=%d", (int)WiFi.status());
     webServer->stop();
     webServerRunning = false;
+    freeScreenBuffer();
     Serial.println("Web server stopped");
   }
 }

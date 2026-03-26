@@ -597,6 +597,7 @@ void drawWebServerSetup() {
     M5.Display.print(WiFi.localIP().toString());
     
     drawSystemText("在電腦或手機瀏覽器中輸入上方 IP 位址", 20, 270, 20);
+    drawSystemText("截圖: /screen", 20, 330, 24);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(TFT_BLACK);
@@ -792,7 +793,7 @@ void drawSetupMenu() {
   int itemGap = 8;
 
   if (setupMenuPage == 0) {
-    // Page 1: 9 items
+    // Page 1: 8 items
     
     // WiFi Settings item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
@@ -820,24 +821,6 @@ void drawSetupMenu() {
     drawSystemText("時區設定", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     drawSystemText("已設定", 40, y + 50, 22, TFT_BLACK, cardTextBg);
-
-    y += itemHeight + itemGap;
-
-    // Web Server Settings item
-    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
-    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
-    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
-
-    drawSystemText("檔案上傳伺服器", 40, y + 12, 32, TFT_BLACK, cardTextBg);
-
-    if (webServerRunning) {
-      String serverInfo = "執行中 - " + WiFi.localIP().toString();
-      drawSystemText(serverInfo.c_str(), 40, y + 50, 22, TFT_BLACK, cardTextBg);
-    } else if (webServerEnabled) {
-      drawSystemText("已啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
-    } else {
-      drawSystemText("未啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
-    }
 
     y += itemHeight + itemGap;
 
@@ -931,7 +914,25 @@ void drawSetupMenu() {
       drawSystemText("四分區 - 點擊顯示該象限", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }
   } else if (setupMenuPage == 1) {
-    // Page 2: 3 items
+    // Page 2: 5 items
+
+    // Web Server Settings item
+    M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(20, y, 500, itemHeight, 10, TFT_BLACK);
+    M5.Display.drawRoundRect(21, y + 1, 498, itemHeight - 2, 9, TFT_BLACK);
+
+    drawSystemText("檔案上傳伺服器", 40, y + 12, 32, TFT_BLACK, cardTextBg);
+
+    if (webServerRunning) {
+      String wsInfo = "執行中 - " + WiFi.localIP().toString();
+      drawSystemText(wsInfo.c_str(), 40, y + 50, 22, TFT_BLACK, cardTextBg);
+    } else if (webServerEnabled) {
+      drawSystemText("已啟用 - 等待連接", 40, y + 50, 22, TFT_BLACK, cardTextBg);
+    } else {
+      drawSystemText("未啟用", 40, y + 50, 22, TFT_BLACK, cardTextBg);
+    }
+
+    y += itemHeight + itemGap;
 
     // Page Refresh Mode item
     M5.Display.fillRoundRect(20, y, 500, itemHeight, 10, TFT_LIGHTGRAY);

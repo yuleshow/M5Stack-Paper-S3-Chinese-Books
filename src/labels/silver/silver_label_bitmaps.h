@@ -1384,6 +1384,39 @@
 #include "slabel_dict_not_found.h"
 #include "slabel_dict_dismiss.h"
 #include "slabel_last_read.h"
+#include "slabel_s16_zheng.h"
+#include "slabel_s16_jian.h"
+#include "slabel_s20_zheng.h"
+#include "slabel_s20_jian.h"
+#include "slabel_s22_github.h"
+#include "slabel_s22_bt_waiting.h"
+#include "slabel_s22_manual_reset.h"
+#include "slabel_s32_ok.h"
+#include "slabel_s32_record_med.h"
+#include "slabel_s40_med_title.h"
+#include "slabel_s40_confirm_pwd.h"
+#include "slabel_s40_set_new_pwd.h"
+#include "slabel_s40_enter_pwd.h"
+#include "slabel_s22_bookmark_hint.h"
+#include "slabel_s28_close_x.h"
+#include "slabel_s28_no_bookmark.h"
+#include "slabel_s28_last_read.h"
+#include "slabel_s28_no_toc.h"
+#include "slabel_s28_tap_continue.h"
+#include "slabel_s32_bookmark.h"
+#include "slabel_s32_toc.h"
+#include "slabel_s40_booklist.h"
+#include "slabel_s48_load_fail.h"
+#include "slabel_s24_screenshot.h"
+#include "slabel_s28_switch_list.h"
+#include "slabel_s28_switch_thumb.h"
+#include "slabel_s28_slideshow.h"
+#include "slabel_s28_slideshow_on.h"
+#include "slabel_s28_random.h"
+#include "slabel_s40_wallpaper_title.h"
+#include "slabel_s40_select_font_en.h"
+#include "slabel_s40_tools.h"
+#include "slabel_s40_fortune.h"
 #include "slabel_mchar_2014.h"
 #include "slabel_mchar_3002.h"
 #include "slabel_mchar_300c.h"
@@ -1533,7 +1566,7 @@
 #include "slabel_mchar_fe42.h"
 
 // Reuse LabelBitmap struct from label_bitmaps.h
-const int kSilverLabelBitmapCount = 1525;
+const int kSilverLabelBitmapCount = 1558;
 
 const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"電子書", 32, slabel_ebook_w, slabel_ebook_h, slabel_ebook_bitmap},
@@ -2914,6 +2947,39 @@ const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"查無此字", 40, slabel_dict_not_found_w, slabel_dict_not_found_h, slabel_dict_not_found_bitmap},
   {"輕觸關閉", 28, slabel_dict_dismiss_w, slabel_dict_dismiss_h, slabel_dict_dismiss_bitmap},
   {"最後閱讀", 24, slabel_last_read_w, slabel_last_read_h, slabel_last_read_bitmap},
+  {"正", 16, slabel_s16_zheng_w, slabel_s16_zheng_h, slabel_s16_zheng_bitmap},
+  {"简", 16, slabel_s16_jian_w, slabel_s16_jian_h, slabel_s16_jian_bitmap},
+  {"正", 20, slabel_s20_zheng_w, slabel_s20_zheng_h, slabel_s20_zheng_bitmap},
+  {"简", 20, slabel_s20_jian_w, slabel_s20_jian_h, slabel_s20_jian_bitmap},
+  {"GitHub: yuleshow", 22, slabel_s22_github_w, slabel_s22_github_h, slabel_s22_github_bitmap},
+  {"已啟用 - 等待連接", 22, slabel_s22_bt_waiting_w, slabel_s22_bt_waiting_h, slabel_s22_bt_waiting_bitmap},
+  {"手動復位", 22, slabel_s22_manual_reset_w, slabel_s22_manual_reset_h, slabel_s22_manual_reset_bitmap},
+  {"OK", 32, slabel_s32_ok_w, slabel_s32_ok_h, slabel_s32_ok_bitmap},
+  {"按此記錄吃藥", 32, slabel_s32_record_med_w, slabel_s32_record_med_h, slabel_s32_record_med_bitmap},
+  {"吃藥提醒器", 40, slabel_s40_med_title_w, slabel_s40_med_title_h, slabel_s40_med_title_bitmap},
+  {"確認密碼", 40, slabel_s40_confirm_pwd_w, slabel_s40_confirm_pwd_h, slabel_s40_confirm_pwd_bitmap},
+  {"設定新密碼", 40, slabel_s40_set_new_pwd_w, slabel_s40_set_new_pwd_h, slabel_s40_set_new_pwd_bitmap},
+  {"輸入密碼", 40, slabel_s40_enter_pwd_w, slabel_s40_enter_pwd_h, slabel_s40_enter_pwd_bitmap},
+  {"閱讀時點擊 ★ 可加入書籤", 22, slabel_s22_bookmark_hint_w, slabel_s22_bookmark_hint_h, slabel_s22_bookmark_hint_bitmap},
+  {"✕", 28, slabel_s28_close_x_w, slabel_s28_close_x_h, slabel_s28_close_x_bitmap},
+  {"尚無書籤", 28, slabel_s28_no_bookmark_w, slabel_s28_no_bookmark_h, slabel_s28_no_bookmark_bitmap},
+  {"最後閱讀", 28, slabel_s28_last_read_w, slabel_s28_last_read_h, slabel_s28_last_read_bitmap},
+  {"此書無目錄", 28, slabel_s28_no_toc_w, slabel_s28_no_toc_h, slabel_s28_no_toc_bitmap},
+  {"點擊螢幕繼續", 28, slabel_s28_tap_continue_w, slabel_s28_tap_continue_h, slabel_s28_tap_continue_bitmap},
+  {"書籤", 32, slabel_s32_bookmark_w, slabel_s32_bookmark_h, slabel_s32_bookmark_bitmap},
+  {"目錄", 32, slabel_s32_toc_w, slabel_s32_toc_h, slabel_s32_toc_bitmap},
+  {"電子書列表", 40, slabel_s40_booklist_w, slabel_s40_booklist_h, slabel_s40_booklist_bitmap},
+  {"載入失敗", 48, slabel_s48_load_fail_w, slabel_s48_load_fail_h, slabel_s48_load_fail_bitmap},
+  {"截圖: /screen", 24, slabel_s24_screenshot_w, slabel_s24_screenshot_h, slabel_s24_screenshot_bitmap},
+  {"切換列表", 28, slabel_s28_switch_list_w, slabel_s28_switch_list_h, slabel_s28_switch_list_bitmap},
+  {"切換縮圖", 28, slabel_s28_switch_thumb_w, slabel_s28_switch_thumb_h, slabel_s28_switch_thumb_bitmap},
+  {"輪播", 28, slabel_s28_slideshow_w, slabel_s28_slideshow_h, slabel_s28_slideshow_bitmap},
+  {"輪播中", 28, slabel_s28_slideshow_on_w, slabel_s28_slideshow_on_h, slabel_s28_slideshow_on_bitmap},
+  {"隨機", 28, slabel_s28_random_w, slabel_s28_random_h, slabel_s28_random_bitmap},
+  {"壁紙選擇", 40, slabel_s40_wallpaper_title_w, slabel_s40_wallpaper_title_h, slabel_s40_wallpaper_title_bitmap},
+  {"Select Font", 40, slabel_s40_select_font_en_w, slabel_s40_select_font_en_h, slabel_s40_select_font_en_bitmap},
+  {"工具", 40, slabel_s40_tools_w, slabel_s40_tools_h, slabel_s40_tools_bitmap},
+  {"求籖", 40, slabel_s40_fortune_w, slabel_s40_fortune_h, slabel_s40_fortune_bitmap},
   {"—", 48, slabel_mchar_2014_w, slabel_mchar_2014_h, slabel_mchar_2014_bitmap},
   {"。", 48, slabel_mchar_3002_w, slabel_mchar_3002_h, slabel_mchar_3002_bitmap},
   {"「", 48, slabel_mchar_300c_w, slabel_mchar_300c_h, slabel_mchar_300c_bitmap},

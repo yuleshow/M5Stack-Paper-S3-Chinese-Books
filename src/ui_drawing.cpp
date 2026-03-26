@@ -108,6 +108,27 @@ bool drawNavIcon(const char* iconName, int x, int y) {
 // Draw return button at lower-right corner using return.png icon
 void drawReturnButton() {
   drawNavIcon("return.png", NAV_RETURN_X, NAV_Y);
+  // Show sleep button only on dashboard, book list, calendar main, and setup main menu
+  bool showSleep = false;
+  if (currentMode == MODE_DASHBOARD || currentMode == MODE_BOOK_LIST
+      || currentMode == MODE_CALENDAR || currentMode == MODE_FORTUNE_SLIPS) {
+    showSleep = true;
+  } else if (currentMode == MODE_SETUP && setupSubmenu == 0) {
+    showSleep = true;
+  }
+  if (showSleep) {
+    drawSleepButton();
+  }
+}
+
+// Draw return button at top-middle for reading mode
+void drawReadingReturnButton() {
+  drawNavIcon("return.png", (DISPLAY_WIDTH - NAV_ICON_SIZE) / 2, 0);
+}
+
+// Draw sleep button in the middle of the nav bar
+void drawSleepButton() {
+  drawNavIcon("sleep.png", NAV_SLEEP_X, NAV_Y);
 }
 
 // Draw page navigation buttons at lower-left corner using back.png/next.png icons
@@ -148,6 +169,18 @@ void drawHorizontalNavBar(bool hasPrev, bool hasNext) {
 // Touch detection helpers for nav bar
 bool touchedReturnButton(int x, int y) {
   return (x >= NAV_RETURN_X - 10 && x <= NAV_RETURN_X + NAV_ICON_SIZE + 10 &&
+          y >= NAV_TOUCH_Y_MIN && y <= NAV_TOUCH_Y_MAX);
+}
+
+// Touch detection for top-middle return button (reading mode)
+bool touchedReadingReturnButton(int x, int y) {
+  int rx = (DISPLAY_WIDTH - NAV_ICON_SIZE) / 2;
+  return (x >= rx - 10 && x <= rx + NAV_ICON_SIZE + 10 &&
+          y >= 0 && y <= NAV_ICON_SIZE + 10);
+}
+
+bool touchedSleepButton(int x, int y) {
+  return (x >= NAV_SLEEP_X - 10 && x <= NAV_SLEEP_X + NAV_ICON_SIZE + 10 &&
           y >= NAV_TOUCH_Y_MIN && y <= NAV_TOUCH_Y_MAX);
 }
 

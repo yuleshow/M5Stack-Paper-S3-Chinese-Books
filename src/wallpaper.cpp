@@ -92,7 +92,7 @@ static void drawThumbnail(int index, int tx, int ty, int tw, int th) {
   }
   
   uint8_t* buf = (uint8_t*)ps_malloc(fileSize);
-  if (!buf) buf = (uint8_t*)malloc(fileSize);
+  if (!buf) buf = (uint8_t*)ps_malloc(fileSize);
   if (!buf) { imgFile.close(); M5.Display.drawRect(tx, ty, tw, th, TFT_DARKGRAY); return; }
   
   imgFile.read(buf, fileSize);
@@ -369,7 +369,7 @@ void drawWallpaper() {
   
   uint8_t* buf = (uint8_t*)ps_malloc(fileSize);
   if (!buf) {
-    buf = (uint8_t*)malloc(fileSize);
+    buf = (uint8_t*)ps_malloc(fileSize);
   }
   if (!buf) {
     Serial.println("Failed to allocate memory for image!");

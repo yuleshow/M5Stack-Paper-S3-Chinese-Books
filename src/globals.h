@@ -7,8 +7,8 @@
 #include <SPI.h>
 #include <Preferences.h>
 #include <WiFi.h>
-#include <time.h>
 #include <WebServer.h>
+#include <time.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -103,6 +103,7 @@ extern const int NAV_Y;
 extern const int NAV_PREV_X;
 extern const int NAV_NEXT_X;
 extern const int NAV_RETURN_X;
+extern const int NAV_SLEEP_X;
 extern const int NAV_TOUCH_Y_MIN;
 extern const int NAV_TOUCH_Y_MAX;
 
@@ -325,12 +326,12 @@ extern String currentBook;
 extern unsigned long lastActivityTime;
 extern const unsigned long IDLE_SLEEP_TIMEOUT;
 extern bool autoSleepEnabled;  // Toggle for idle auto-sleep feature
-extern WebServer* webServer;
-extern bool webServerEnabled;
-extern bool webServerRunning;
 extern bool usbMSCEnabled;
 extern bool useSDCardIcons;
 extern bool usbMSCActive;
+extern WebServer* webServer;
+extern bool webServerEnabled;
+extern bool webServerRunning;
 extern int setupFastRefreshCount;
 extern int todoFastRefreshCount;
 extern bool useSxwnlCalendar;  // true = 壽星天文曆, false = Meeus (our way)
@@ -389,10 +390,15 @@ extern Mode fontMenuReturnMode;
 extern bool sdCardAvailable;
 extern bool sdCardChecked;
 static const int MAX_BOOKS = 100;
-extern String bookList[MAX_BOOKS];
+// Book category determined by subfolder under /books/
+enum BookCategory { CAT_AUTO = 0, CAT_EN, CAT_CN, CAT_COMIC };
+extern String bookList[MAX_BOOKS];         // Relative path from /books/ (e.g. "en/file.epub")
 extern String bookDisplayName[MAX_BOOKS];
+extern BookCategory bookCategory[MAX_BOOKS];
 extern int bookCount;
 extern int bookListPage;
+extern int bookViewMode;
+extern int bookConvMode;  // 0=original, 1=simplified(简), 2=traditional(正)
 static const int BOOKS_PER_PAGE = 13;
 static const int BOOK_ROW_HEIGHT = 55;
 extern String currentBookPath;
@@ -406,6 +412,8 @@ static const int MAX_PAGE_OFFSETS = 5000;
 extern size_t* pageByteOffsets;
 extern int pageOffsetsCount;
 extern size_t currentPageByteOffset;
+extern size_t lastRenderedNextOffset;  // Precise next-page offset from last render
+extern int lastRenderedForPage;         // Which page computed lastRenderedNextOffset
 extern Bookmark bookmarks[5];
 extern int bookmarkCount;
 extern String pageJumpInput;
@@ -424,6 +432,17 @@ static const char STYLE_BOLD_ON    = '\x04';
 static const char STYLE_BOLD_OFF   = '\x05';
 static const char STYLE_UNDERLINE_ON  = '\x06';
 static const char STYLE_UNDERLINE_OFF = '\x07';
+static const char EPUB_LINK_MARKER    = '\x08';  // \x08href\x08 before STYLE_UNDERLINE_ON
+
+// Inline EPUB link regions (populated during rendering, used for tap navigation)
+static const int MAX_INLINE_LINKS = 64;
+struct InlineLink {
+  int x, y, w, h;       // Screen bounding box
+  String href;           // Target href (resolved relative to basePath)
+};
+extern InlineLink inlineLinks[MAX_INLINE_LINKS];
+extern int inlineLinkCount;
+
 extern String epubFilePath;
 extern ZipEntry* epubZipEntries;
 extern int epubZipEntryCount;
@@ -586,6 +605,7 @@ GlyphIndex* findGlyph(uint32_t unicode);
 bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color = TFT_BLACK, float scale = 1.0f);
 void clearGlyphCache();
 void freeGlyphCache();
+void initGlyphCache();
 int drawBinFontString(const String &text, int x, int y, int charSpacing);
 int drawBinFontStringScaled(const String &text, int x, int y, float scale, bool noYOffset = false);
 bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontSize);
@@ -636,7 +656,7 @@ size_t htmlStripDirect(const char* htmlBuf, size_t htmlLen,
                        const String& basePath);
 String pathNormalize(const String& path);
 String epubGetTitle(const String& epubPath);
-bool epubLoad(const String& epubPath);
+bool epubLoad(const String& epubPath, bool isComic = false);
 bool epubLoadChapterRange(int startChapter);
 bool epubLoadSingleChapter(int chapterIndex);
 int epubChapterForOffset(size_t offset);
@@ -655,8 +675,8 @@ extern int pageRefreshMode;    // 0=system default, 1=every page, 2=every 10 pag
 extern bool paragraphIndent;   // true=首行縮進(2 chars), false=首行不縮進
 extern int pagesSinceFullRefresh;
 void scanBooks();
-bool isChineseBookName(const String& filename);
 bool bookIsEnglishMode(int bookIndex);
+bool bookIsComic(int bookIndex);
 void saveReadingPosition();
 int loadReadingPosition();
 void saveBookmarks();
@@ -667,8 +687,8 @@ void toggleBookmark();
 void updateBytesPerPage();
 void recalculatePages();
 bool loadCurrentPage();
-bool loadBook(int bookIndex, bool forceChinese = false);
-bool openBookFromList(int bookIndex, bool openAsChinese = false);
+bool loadBook(int bookIndex);
+bool openBookFromList(int bookIndex);
 void drawBookList();
 void drawReading();
 void drawComicReading();
@@ -690,11 +710,15 @@ int engFindWordAt(int tx, int ty);
 // ui_drawing
 bool drawNavIcon(const char* iconName, int x, int y);
 void drawReturnButton();
+void drawReadingReturnButton();
+void drawSleepButton();
 void drawPageButtons(bool showPrev, bool showNext);
 void drawNavBar(bool showPrev, bool showNext);
 void drawVerticalNavBar(bool hasPrev, bool hasNext);
 void drawHorizontalNavBar(bool hasPrev, bool hasNext);
 bool touchedReturnButton(int x, int y);
+bool touchedReadingReturnButton(int x, int y);
+bool touchedSleepButton(int x, int y);
 bool touchedPrevPage(int x, int y);
 bool touchedNextPage(int x, int y);
 void drawStatusBar();
@@ -769,9 +793,13 @@ void drawFortuneSlipStory();
 bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& height);
 bool getPngDimensions(const uint8_t* data, size_t len, int& width, int& height);
 
+// sd_log — persistent debug log to /debug.log on SD card
+void sdLog(const char* fmt, ...);
+
 // web_server_handler
 void startWebServer();
 void stopWebServer();
+void updateScreenCapture();
 
 // usb_msc_handler
 void startUSBMSC();
@@ -795,7 +823,6 @@ void updatePasswordDisplay();
 void drawClock();
 void drawSetupMenu();
 void drawWiFiSetup();
-void drawWebServerSetup();
 void drawUSBMSCSetup();
 void drawIconSetup();
 void drawCalendarSetup();
@@ -803,6 +830,7 @@ void drawBluetoothSetup();
 void drawFontMenu();
 void drawSystemFontSetup();
 void drawAboutPage();
+void drawWebServerSetup();
 
 // cleanup
 void deleteDotFiles(const String& path, int depth = 0);

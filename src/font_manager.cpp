@@ -132,7 +132,7 @@ static String extractTTFName(File &f) {
     if (priority <= bestPriority) continue;
     
     // Read the string
-    uint8_t* buf = (uint8_t*)malloc(length);
+    uint8_t* buf = (uint8_t*)ps_malloc(length);
     if (!buf) continue;
     f.seek(stringsBase + offset);
     if (f.read(buf, length) != length) { free(buf); continue; }
@@ -762,7 +762,7 @@ static uint8_t* glyphBitmapPool = nullptr;  // Contiguous PSRAM pool for bitmap 
 static size_t glyphPoolUsed = 0;
 static const size_t GLYPH_POOL_SIZE = 192 * 1024;  // 192KB for cached bitmaps
 
-static void initGlyphCache() {
+void initGlyphCache() {
   if (glyphCache) return;  // Already initialized
   glyphCache = (CachedGlyph*)ps_calloc(GLYPH_CACHE_SIZE, sizeof(CachedGlyph));
   glyphBitmapPool = (uint8_t*)ps_malloc(GLYPH_POOL_SIZE);
@@ -882,7 +882,7 @@ bool drawBinFontChar(uint32_t unicode, int x, int y, uint16_t color, float scale
     if (glyph->bitmapSize > reuseBufSize) {
       if (reuseBuf) free(reuseBuf);
       reuseBufSize = glyph->bitmapSize + 64;  // Slight overalloc to avoid frequent reallocs
-      reuseBuf = (uint8_t*)malloc(reuseBufSize);
+      reuseBuf = (uint8_t*)ps_malloc(reuseBufSize);
       if (!reuseBuf) { reuseBufSize = 0; return false; }
     }
     
@@ -1131,7 +1131,7 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
   if ((size_t)bitmapSize > convBufSize) {
     if (convBuf) free(convBuf);
     convBufSize = bitmapSize + 64;
-    convBuf = (uint8_t*)malloc(convBufSize);
+    convBuf = (uint8_t*)ps_malloc(convBufSize);
     if (!convBuf) { convBufSize = 0; sprite.deleteSprite(); return false; }
   }
   memset(convBuf, 0, bitmapSize);
@@ -1194,12 +1194,14 @@ int getCharAdvanceW(uint32_t unicode, int fontSize) {
     for (int c = 33; c < 127; c++) {
       buf[0] = (char)c;
       s_advanceCache[c] = (int16_t)ofr.getTextWidth(buf);
+      if ((c & 0x1F) == 0) { yield(); esp_task_wdt_reset(); } // WDT every 32 chars
     }
     // Space: derive from advance (getTextWidth(" ") returns 0 for OFR)
     int spW = (int)ofr.getTextWidth("i i") - (int)ofr.getTextWidth("ii");
     if (spW <= 0) spW = fontSize / 3;
     s_advanceCache[32] = (int16_t)spW;
     s_advanceCacheFontSize = fontSize;
+    esp_task_wdt_reset();
     Serial.printf("Advance cache built for size %d, space=%d\n", fontSize, spW);
   }
   if (unicode < 128) return s_advanceCache[unicode];

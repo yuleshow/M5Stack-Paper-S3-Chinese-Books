@@ -1,5 +1,6 @@
 #include "globals.h"
 #include "s3cover_jpg.h"
+#include "silver_cover_jpg.h"
 #include "embedded_icons.h"
 
 void layoutIcons() {
@@ -46,6 +47,56 @@ void drawDashboard() {
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.setTextColor(TFT_BLACK);
   
+  // Silver font: draw embedded silver cover as dashboard background
+  // Cover already contains icons and labels — skip all drawing, keep touch areas
+  if (systemFontChoice == 1) {
+    M5.Display.drawJpg(silver_cover_jpg, silver_cover_jpg_len, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    drawStatusBar();
+    layoutIcons();  // populate g_icons[] for touch detection
+    // Draw todo/shopping count badges over the cover
+    if (todoCount > 0) {
+      const auto& tIcon = g_icons[2];
+      int unchecked = 0;
+      for (int i = 0; i < todoCount; i++) if (!todoList[i].checked) unchecked++;
+      if (unchecked > 0) {
+        char badge[8];
+        snprintf(badge, sizeof(badge), "%d", unchecked);
+        int bx = tIcon.x + tIcon.w - 25;
+        int by = tIcon.y + 15;
+        M5.Display.fillCircle(bx, by, 14, TFT_BLACK);
+        M5.Display.setFont(&fonts::Font2);
+        M5.Display.setTextSize(1);
+        M5.Display.setTextColor(TFT_WHITE);
+        M5.Display.setTextDatum(MC_DATUM);
+        M5.Display.drawString(badge, bx, by);
+        M5.Display.setTextColor(TFT_BLACK);
+        M5.Display.setTextDatum(TL_DATUM);
+      }
+    }
+    if (shoppingCount > 0) {
+      const auto& sIcon = g_icons[3];
+      int unchecked = 0;
+      for (int i = 0; i < shoppingCount; i++) if (!shoppingList[i].checked) unchecked++;
+      if (unchecked > 0) {
+        char badge[8];
+        snprintf(badge, sizeof(badge), "%d", unchecked);
+        int bx = sIcon.x + sIcon.w - 25;
+        int by = sIcon.y + 15;
+        M5.Display.fillCircle(bx, by, 14, TFT_BLACK);
+        M5.Display.setFont(&fonts::Font2);
+        M5.Display.setTextSize(1);
+        M5.Display.setTextColor(TFT_WHITE);
+        M5.Display.setTextDatum(MC_DATUM);
+        M5.Display.drawString(badge, bx, by);
+        M5.Display.setTextColor(TFT_BLACK);
+        M5.Display.setTextDatum(TL_DATUM);
+      }
+    }
+    M5.Display.endWrite();
+    M5.Display.display();
+    return;
+  }
+
   // Status bar first (time top-left, battery top-right)
   drawStatusBar();
   

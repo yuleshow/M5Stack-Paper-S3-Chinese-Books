@@ -2,6 +2,7 @@
 // Main entry point: setup() and loop()
 
 #include "globals.h"
+#include "conv_table.h"
 #include "dictionary.h"
 #include "s3cover_jpg.h"
 #include "sleeping_jpg.h"
@@ -248,6 +249,8 @@ void setup() {
   if (SD.begin(47, sdSPI, 25000000)) {
     sdCardAvailable = true;
     Serial.println("✓ SD Card initialized");
+    sdLog("BOOT #%d wakeup=%d heap=%u psram=%u safeMode=%d",
+          bootCount, (int)wakeup_reason, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(), safeMode);
     if (!isDeepSleepWake && !safeMode) updateLoadProgress(10);
     // CRITICAL: Let SD subsystem fully initialize before using it
     delay(500);
@@ -266,6 +269,8 @@ void setup() {
     if (bookCount > 0) {
       Serial.printf("✓ Loaded %d books\n", bookCount);
     }
+    // Load S2T/T2S conversion tables into PSRAM
+    loadConvTables();
     if (!isDeepSleepWake && !safeMode) updateLoadProgress(20);
     
     // Load shopping list
@@ -548,11 +553,9 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   if (medReminderPressTime != 0) {
     Serial.printf("Med reminder: restored press time %ld\n", (long)medReminderPressTime);
   }
-  Serial.printf("Web server enabled: %s\n", webServerEnabled ? "YES" : "NO");
   Serial.printf("USB MSC enabled: %s\n", usbMSCEnabled ? "YES" : "NO");
-  Serial.printf("Use SD card icons: %s\n", useSDCardIcons ? "YES" : "NO");
-  Serial.printf("Calendar method: %s\n", useSxwnlCalendar ? "sxwnl" : "Meeus");
-  
+  Serial.printf("Web server enabled: %s\n", webServerEnabled ? "YES" : "NO");
+
   // Start web server at startup if WiFi connected
   if (WiFi.status() == WL_CONNECTED) {
     startWebServer();
@@ -590,22 +593,6 @@ void loop() {
     pollFortuneShake();
   }
   
-  // Handle web server if enabled (skip while USB MSC active — SD card not accessible)
-  if (webServerEnabled && webServer != nullptr && !usbMSCActive) {
-    // Start server if WiFi connected but server not running
-    if (WiFi.status() == WL_CONNECTED && !webServerRunning) {
-      startWebServer();
-    }
-    // Stop server if WiFi disconnected
-    else if (WiFi.status() != WL_CONNECTED && webServerRunning) {
-      stopWebServer();
-    }
-    // Handle client requests
-    if (webServerRunning) {
-      webServer->handleClient();
-    }
-  }
-  
   // Auto-refresh weather every 15 minutes while on weather screen
   if (currentMode == MODE_WEATHER && weatherData.valid && 
       (millis() - weatherData.fetchTime > WEATHER_REFRESH_INTERVAL)) {
@@ -628,10 +615,55 @@ void loop() {
     }
   }
 
+  // Handle web server if enabled (skip while USB MSC active — SD card not accessible)
+  if (webServerEnabled && !usbMSCActive) {
+    // Start server if WiFi connected but server not running
+    if (WiFi.status() == WL_CONNECTED && !webServerRunning) {
+      startWebServer();
+    }
+    // Stop server if WiFi disconnected
+    else if (WiFi.status() != WL_CONNECTED && webServerRunning) {
+      stopWebServer();
+    }
+    // Handle client requests
+    if (webServerRunning && webServer != nullptr) {
+      webServer->handleClient();
+      updateScreenCapture();
+    }
+  }
+
+  // Periodic WiFi health check (every 30s, log to SD if status changed)
+  // Also attempt reconnect if WiFi dropped
+  {
+    static int lastWiFiStatus = -1;
+    static unsigned long lastWiFiCheck = 0;
+    static unsigned long lastReconnectAttempt = 0;
+    if (millis() - lastWiFiCheck > 30000) {
+      lastWiFiCheck = millis();
+      int st = (int)WiFi.status();
+      if (st != lastWiFiStatus) {
+        sdLog("WiFi status changed: %d -> %d (mode=%d heap=%u)",
+              lastWiFiStatus, st, (int)currentMode, (unsigned)ESP.getFreeHeap());
+        lastWiFiStatus = st;
+      }
+      // If WiFi is not connected and we have credentials, try reconnect every 60s
+      if (st != WL_CONNECTED && webServerEnabled &&
+          wifiConfig.ssid.length() > 0 &&
+          millis() - lastReconnectAttempt > 60000) {
+        lastReconnectAttempt = millis();
+        sdLog("WiFi reconnect attempt (status=%d)", st);
+        WiFi.disconnect(true);
+        delay(100);
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(wifiConfig.ssid.c_str(), wifiConfig.password.c_str());
+      }
+    }
+  }
+
   // Medication reminder auto-reset after 18 hours
   if (medReminderPressTime != 0) {
     time_t now = time(NULL);
-    if (now > 1000000000 && (now - medReminderPressTime > (time_t)MED_REMINDER_RESET_SEC)) {
+    if (now > 1000000000 && medReminderPressTime <= now && (now - medReminderPressTime > (time_t)MED_REMINDER_RESET_SEC)) {
       Serial.println("Med reminder: auto-reset after 18 hours");
       medReminderPressTime = 0;
       prefs.begin("m5paper", false);
@@ -643,16 +675,16 @@ void loop() {
     }
   }
 
-  // Idle sleep: auto-sleep after 10 minutes of inactivity (when enabled and no external power)
-  if (autoSleepEnabled) {
-    bool hasExternalPower = isExternalPowerConnected();
-    if (lastActivityTime > 0 && !hasExternalPower && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
-      if (currentMode != MODE_CLOCK) {
-        Serial.println("Idle timeout - entering deep sleep");
-        enterDeepSleep();
-      }
-    }
-  }
+  // Idle sleep disabled — keep device awake for web server / screenshot access
+  // if (autoSleepEnabled) {
+  //   bool hasExternalPower = isExternalPowerConnected();
+  //   if (lastActivityTime > 0 && !hasExternalPower && (millis() - lastActivityTime > IDLE_SLEEP_TIMEOUT)) {
+  //     if (currentMode != MODE_CLOCK) {
+  //       Serial.println("Idle timeout - entering deep sleep");
+  //       enterDeepSleep();
+  //     }
+  //   }
+  // }
   
   // Auto-refresh clock - full refresh every minute, second hand update every second
   if (currentMode == MODE_CLOCK && timeConfig.timeSynced) {
@@ -791,10 +823,25 @@ void loop() {
   if (hasTouchEvent || hasSwipeEvent) {
     lastActivityTime = millis();
     lastTouchProcessedTime = millis();
-    
+    sdLog("TOUCH: x=%d y=%d mode=%d swipe=%d WiFi=%d heap=%u",
+          x, y, currentMode, hasSwipeEvent, (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
     DEBUG_LOG_THROTTLE(200, "Touch: %d, %d (mode=%d)", x, y, currentMode);
     
-    if (currentMode == MODE_WELCOME) {
+    // Universal sleep button — skip modes where it doesn't belong:
+    // reading (toolbar occupies space), font menu/test, motto/sleep screen
+    if (hasTouchEvent && touchedSleepButton(x, y) && currentMode != MODE_WELCOME
+        && currentMode != MODE_READING && currentMode != MODE_FONT_MENU
+        && currentMode != MODE_FONT_TEST && currentMode != MODE_MOTTO_TEST) {
+      sdLog("USER: sleep button pressed mode=%d", currentMode);
+      Serial.println("Sleep button pressed");
+      enterDeepSleep();
+      // enterDeepSleep returns if USB power is connected — show motto screen instead
+      if (currentMode != MODE_MOTTO_TEST) {
+        currentMode = MODE_MOTTO_TEST;
+        drawMottoScreen();
+      }
+    }
+    else if (currentMode == MODE_WELCOME) {
       // Any touch on welcome screen goes to dashboard
       currentMode = MODE_DASHBOARD;
       drawDashboard();
@@ -810,6 +857,7 @@ void loop() {
           
           // Icon 0 is E-Book — always show book list (no auto-resume)
           if (i == 0) {
+            sdLog("MODE: DASHBOARD -> BOOK_LIST");
             currentMode = MODE_BOOK_LIST;
             drawBookList();
           }
@@ -1347,6 +1395,8 @@ void loop() {
         bool swipeNext = epubIsHorizontal ? (swipeDeltaX < 0) : (swipeDeltaX > 0);
         bool swipePrev = epubIsHorizontal ? (swipeDeltaX > 0) : (swipeDeltaX < 0);
         if (swipeNext && currentPage < totalPages - 1) {
+          sdLog("PAGE: swipe next %d->%d/%d WiFi=%d heap=%u",
+                currentPage, currentPage+1, totalPages, (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
           Serial.printf("Swipe next page %d -> %d (totalPages=%d, heap=%u, psram=%u)\n",
                         currentPage, currentPage + 1, totalPages,
                         ESP.getFreeHeap(), ESP.getFreePsram());
@@ -1355,6 +1405,8 @@ void loop() {
           if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
           else { Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage); currentPage--; }
         } else if (swipePrev && currentPage > 0) {
+          sdLog("PAGE: swipe prev %d->%d/%d WiFi=%d heap=%u",
+                currentPage, currentPage-1, totalPages, (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
           Serial.printf("Swipe prev page %d -> %d\n", currentPage, currentPage - 1);
           currentPage--;
           if (currentBookIsEpub && epubIsImageBased) comicZoomQuadrant = -1;
@@ -1390,7 +1442,6 @@ void loop() {
           prefs.putInt("comicZoom", comicZoomMode);
           prefs.end();
           Serial.printf("Comic zoom mode toggled to: %d\n", comicZoomMode);
-          drawReading();
         }
         // Tap progress bar / page number area to open page jump popup
         else if (y >= 840 && y <= 890) {
@@ -1398,8 +1449,8 @@ void loop() {
           currentMode = MODE_PAGE_JUMP;
           drawPageJumpPopup();
         }
-        // Return button
-        else if (touchedReturnButton(x, y)) {
+        // Return button (top-middle)
+        else if (touchedReadingReturnButton(x, y)) {
           Serial.printf("Return from image reading - Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
           yield(); esp_task_wdt_reset();
           saveReadingPosition();
@@ -1439,8 +1490,10 @@ void loop() {
       }
       // Non-image EPUB / plain text reading
       else {
-      // Return button (lower-right)
-      if (touchedReturnButton(x, y)) {
+      // Return button (top-middle)
+      if (touchedReadingReturnButton(x, y)) {
+        sdLog("USER: return to booklist from '%s' page=%d/%d WiFi=%d",
+              currentBook.c_str(), currentPage, totalPages, (int)WiFi.status());
         Serial.printf("Back button touched - returning to book list. Free heap: %u, Free PSRAM: %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
         yield(); esp_task_wdt_reset();
         saveReadingPosition();
@@ -1455,12 +1508,71 @@ void loop() {
         yield(); esp_task_wdt_reset();
         drawBookList();
       }
+      // Inline EPUB link tap: check if touch hit a link region
+      else if (currentBookIsEpub && inlineLinkCount > 0) {
+        bool linkTapped = false;
+        for (int li = 0; li < inlineLinkCount; li++) {
+          InlineLink& lnk = inlineLinks[li];
+          if (x >= lnk.x && x <= lnk.x + lnk.w && y >= lnk.y && y <= lnk.y + lnk.h) {
+            Serial.printf("Link tapped: '%s'\n", lnk.href.c_str());
+            // Strip fragment (#section) for file matching
+            String targetFile = lnk.href;
+            int hashPos = targetFile.indexOf('#');
+            if (hashPos >= 0) targetFile = targetFile.substring(0, hashPos);
+            // Resolve href to chapter index by matching zip entry filename
+            int targetChapter = -1;
+            for (int ci = 0; ci < epubChapterCount; ci++) {
+              int zi = epubChapters[ci].zipEntryIndex;
+              if (zi >= 0 && zi < epubZipEntryCount) {
+                if (epubZipEntries[zi].filename == targetFile) {
+                  targetChapter = ci;
+                  break;
+                }
+              }
+            }
+            if (targetChapter >= 0 && targetChapter < epubChapterCount) {
+              Serial.printf("Link resolved to chapter %d\n", targetChapter);
+              if (epubIsImageBased) {
+                currentPage = targetChapter;
+              } else {
+                size_t targetOffset = epubChapters[targetChapter].cumulativeOffset;
+                int estimatedPage = 0;
+                if (bytesPerPage > 0) {
+                  estimatedPage = targetOffset / bytesPerPage;
+                  if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
+                }
+                currentPage = estimatedPage;
+                if (pageByteOffsets) {
+                  pageByteOffsets[currentPage] = targetOffset;
+                  if (pageOffsetsCount <= currentPage) {
+                    pageOffsetsCount = currentPage + 1;
+                  }
+                }
+              }
+              if (loadCurrentPage()) {
+                saveReadingPosition();
+                drawReading();
+              } else {
+                drawReading();
+              }
+              linkTapped = true;
+            } else {
+              Serial.printf("Link target not found in chapters: '%s'\n", targetFile.c_str());
+            }
+            break;
+          }
+        }
+        if (!linkTapped) goto normalReadingTouch;
+      }
+      else {
+        normalReadingTouch:
       // Vertical CJK: left button = NEXT page (forward in book)
       // Horizontal LTR: left button = PREV page (backward in book)
-      else if (touchedPrevPage(x, y)) {
+      if (touchedPrevPage(x, y)) {
         if (epubIsHorizontal) {
           // LTR: left arrow = prev page
           if (currentPage > 0) {
+            sdLog("PAGE: btn prev %d->%d/%d WiFi=%d", currentPage, currentPage-1, totalPages, (int)WiFi.status());
             Serial.printf("LEFT arrow - prev page %d -> %d\n", currentPage, currentPage - 1);
             currentPage--;
             if (loadCurrentPage()) { if (currentPage % 5 == 0) saveReadingPosition(); drawReading(); }
@@ -1469,6 +1581,7 @@ void loop() {
         } else {
           // CJK: left arrow = next page
           if (currentPage < totalPages - 1) {
+            sdLog("PAGE: btn next %d->%d/%d WiFi=%d", currentPage, currentPage+1, totalPages, (int)WiFi.status());
             Serial.printf("LEFT arrow - page %d -> %d (totalPages=%d, freePSRAM=%u)\n",
                           currentPage, currentPage + 1, totalPages, ESP.getFreePsram());
             currentPage++;
@@ -1619,10 +1732,14 @@ void loop() {
           if (!epubTocEntries || epubTocCount == 0) {
             epubParseToc();
           }
-          tocListPage = 0;
-          tocTab = 0;
-          currentMode = MODE_TOC;
-          drawTocList();
+          if (!epubTocEntries || epubTocCount == 0) {
+            Serial.println("TOC: no entries found, staying in reading mode");
+          } else {
+            tocListPage = 0;
+            tocTab = 0;
+            currentMode = MODE_TOC;
+            drawTocList();
+          }
         } else {
           // TXT: open bookmark tab directly
           tocListPage = 0;
@@ -1672,6 +1789,7 @@ void loop() {
           }
         }
       }
+      } // end normalReadingTouch else block
       } // end non-image else block
       } // end hasTouchEvent
     }
@@ -1679,6 +1797,10 @@ void loop() {
       handlePageJumpTouch(x, y);
     }
     else if (currentMode == MODE_TOC) {
+      // TOC layout (must match drawTocList)
+      int tocRowH = epubIsHorizontal ? 60 : 72;
+      int tocPerPage = (830 - 100) / tocRowH;
+
       // Return button → back to reading
       if (touchedReturnButton(x, y)) {
         currentMode = MODE_READING;
@@ -1686,7 +1808,7 @@ void loop() {
       }
       // Tab bar touch (y 35..85)
       else if (y >= 35 && y <= 85) {
-        if (x >= 10 && x <= 270 && tocTab != 0) {
+        if (x >= 10 && x < 270 && tocTab != 0) {
           tocTab = 0;
           tocListPage = 0;
           drawTocList();
@@ -1698,7 +1820,7 @@ void loop() {
       // Pagination: next page (left arrow, CJK forward)
       else if (touchedPrevPage(x, y)) {
         if (tocTab == 0) {
-          int totalTocPages = (epubTocCount + TOC_PER_PAGE - 1) / TOC_PER_PAGE;
+          int totalTocPages = (epubTocCount + tocPerPage - 1) / tocPerPage;
           if (tocListPage < totalTocPages - 1) {
             tocListPage++;
             drawTocList();
@@ -1715,12 +1837,12 @@ void loop() {
         }
       }
       // Tap on list entries
-      else if (y >= 100 && y <= 100 + TOC_PER_PAGE * BOOK_ROW_HEIGHT) {
-        int row = (y - 100) / BOOK_ROW_HEIGHT;
+      else if (y >= 100 && y <= 100 + tocPerPage * tocRowH) {
+        int row = (y - 100) / tocRowH;
 
         if (tocTab == 0) {
           // Chapter list tap
-          int tocIdx = tocListPage * TOC_PER_PAGE + row;
+          int tocIdx = tocListPage * tocPerPage + row;
           if (tocIdx >= 0 && tocIdx < epubTocCount) {
             int chapterIdx = epubTocEntries[tocIdx].chapterIndex;
             Serial.printf("TOC: jumping to chapter %d (%s)\n",
@@ -2417,7 +2539,7 @@ void loop() {
         }
 
         if (setupMenuPage == 0) {
-          // Page 1: 9 items
+          // Page 1: 8 items
           
           // WiFi Settings item
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
@@ -2437,15 +2559,6 @@ void loop() {
             setupSubmenu = 2;
             showingTimezone = true;
             drawWiFiSetup();
-            return;
-          }
-          
-          // Web Server Settings item
-          y1 += itemHeight + itemGap;
-          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
-            Serial.println("Web server settings selected");
-            setupSubmenu = 3;
-            drawWebServerSetup();
             return;
           }
           
@@ -2511,9 +2624,18 @@ void loop() {
             return;
           }
         } else if (setupMenuPage == 1) {
-          // Page 2: 4 items
+          // Page 2: 5 items
+
+          // Web Server Settings item
+          if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
+            Serial.println("Web server settings selected");
+            setupSubmenu = 3;
+            drawWebServerSetup();
+            return;
+          }
 
           // Page Refresh Mode item
+          y1 += itemHeight + itemGap;
           if (x >= 20 && x <= 520 && y >= y1 && y <= y1 + itemHeight) {
             Serial.println("Page refresh mode selected - cycling");
             pageRefreshMode = (pageRefreshMode + 1) % 3;
@@ -3576,12 +3698,16 @@ void loop() {
         drawBookList();
       }
       // Pagination: next page (left arrow)
-      else if (touchedPrevPage(x, y) && bookListPage < (bookCount + BOOKS_PER_PAGE - 1) / BOOKS_PER_PAGE - 1) {
-        bookListPage++;
-        drawBookList();
+      else if (touchedPrevPage(x, y)) {
+        int perPage = (bookViewMode == 0) ? BOOKS_PER_PAGE : 12;
+        int totalBookPages = (bookCount + perPage - 1) / perPage;
+        if (bookListPage < totalBookPages - 1) {
+          bookListPage++;
+          drawBookList();
+        }
       }
       // "最後閱讀" button in header area
-      else if (x >= 370 && x <= 510 && y >= 44 && y <= 80) {
+      else if (x >= 380 && x <= 520 && y >= 30 && y <= 82) {
         String lastBook = loadPrefStr("ereader", "lastBook", "");
         if (lastBook.length() > 0 && sdCardAvailable && bookCount > 0) {
           int bookIndex = -1;
@@ -3593,7 +3719,8 @@ void loop() {
           }
           if (bookIndex >= 0) {
             Serial.printf("Opening last book: %s (index %d)\n", lastBook.c_str(), bookIndex);
-            if (openBookFromList(bookIndex, false)) {
+            sdLog("USER: open last-read '%s' idx=%d", lastBook.c_str(), bookIndex);
+            if (openBookFromList(bookIndex)) {
               swipeTouchStartX = -1;
             }
           } else {
@@ -3601,20 +3728,72 @@ void loop() {
           }
         }
       }
-      // Touch book to open (English-named books: tap "中" button to open in Chinese mode)
-      else if (y >= 120 && y <= 120 + BOOKS_PER_PAGE * BOOK_ROW_HEIGHT) {
-        Serial.printf("Touch on book list: x=%d y=%d\n", x, y);
+      // Touch book to open (or 简/正 buttons)
+      else if (y >= 92 && y <= 835) {
+        Serial.printf("Touch on book list: x=%d y=%d mode=%d\n", x, y, bookViewMode);
         if (sdCardAvailable && bookCount > 0) {
-          int bookIndex = bookListPage * BOOKS_PER_PAGE + (y - 120) / BOOK_ROW_HEIGHT;
-          if (bookIndex >= 0 && bookIndex < bookCount) {
-            // For English-mode books, tap "中" button (right edge) → open as Chinese
-            bool openAsChinese = false;
-            if (bookIsEnglishMode(bookIndex) && x > DISPLAY_WIDTH - 65) {
-              openAsChinese = true;
-              Serial.printf("Force Chinese mode for: %s\n", bookList[bookIndex].c_str());
+          int bookIndex = -1;
+          int convMode = CONV_ORIGINAL;  // default: open original
+          if (bookViewMode == 0) {
+            // List view
+            if (y >= 120) {
+              int row = (y - 120) / BOOK_ROW_HEIGHT;
+              bookIndex = bookListPage * BOOKS_PER_PAGE + row;
+              // Check if 简 or 正 button was tapped (only for CAT_CN books)
+              if (bookIndex >= 0 && bookIndex < bookCount && bookCategory[bookIndex] == CAT_CN) {
+                int btnY = 120 + (row * BOOK_ROW_HEIGHT) - 2;
+                int btnH = 30;
+                if (y >= btnY && y <= btnY + btnH) {
+                  if (x >= 440 && x <= 480) {
+                    convMode = CONV_SIMPLIFIED;
+                    Serial.printf("  -> 简 (simplified) for book %d\n", bookIndex);
+                  } else if (x >= 486 && x <= 526) {
+                    convMode = CONV_TRADITIONAL;
+                    Serial.printf("  -> 正 (traditional) for book %d\n", bookIndex);
+                  }
+                }
+              }
             }
+          } else {
+            // Grid view: 3 columns × 4 rows
+            int cols = 3, gridRows = 4, gridPad = 8;
+            int contentTop = 92;
+            int contentBot = 835;
+            int cellW = (DISPLAY_WIDTH - gridPad * (cols + 1)) / cols;
+            int cellH = (contentBot - contentTop - gridPad * (gridRows + 1)) / gridRows;
+            int perPage = cols * gridRows;
 
-            if (openBookFromList(bookIndex, openAsChinese)) {
+            for (int slot = 0; slot < perPage; slot++) {
+              int col = slot % cols;
+              int row = slot / cols;
+              int cx = gridPad + col * (cellW + gridPad);
+              int cy = contentTop + gridPad + row * (cellH + gridPad);
+              if (x >= cx && x <= cx + cellW && y >= cy && y <= cy + cellH) {
+                bookIndex = bookListPage * perPage + slot;
+                // Check 简/正 buttons at bottom of card (for CAT_CN books)
+                if (bookIndex >= 0 && bookIndex < bookCount && bookCategory[bookIndex] == CAT_CN) {
+                  int btnW = 36, btnH2 = 24;
+                  int btnY2 = cy + cellH - btnH2 - 4;
+                  if (y >= btnY2 && y <= btnY2 + btnH2) {
+                    int jX = cx + cellW / 2 - btnW - 4;
+                    int zX = cx + cellW / 2 + 4;
+                    if (x >= jX && x <= jX + btnW) {
+                      convMode = CONV_SIMPLIFIED;
+                      Serial.printf("  -> 简 grid for book %d\n", bookIndex);
+                    } else if (x >= zX && x <= zX + btnW) {
+                      convMode = CONV_TRADITIONAL;
+                      Serial.printf("  -> 正 grid for book %d\n", bookIndex);
+                    }
+                  }
+                }
+                break;
+              }
+            }
+          }
+          if (bookIndex >= 0 && bookIndex < bookCount) {
+            bookConvMode = convMode;
+            sdLog("USER: tap book idx=%d '%s' conv=%d", bookIndex, bookList[bookIndex].c_str(), convMode);
+            if (openBookFromList(bookIndex)) {
               swipeTouchStartX = -1;
             }
           }  // end if (bookIndex valid)

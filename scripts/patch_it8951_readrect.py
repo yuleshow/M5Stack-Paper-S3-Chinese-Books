@@ -1,5 +1,5 @@
 """
-PlatformIO pre-build script: patch M5GFX Panel_IT8951 to fix two issues:
+PlatformIO pre-build script: patch M5GFX Panel_IT8951 to fix three issues:
 
 1. readRect() — use PSRAM for temporary buffers + null-pointer checks.
    The stock code calls heap_alloc() (internal SRAM) without null checks.
@@ -10,6 +10,11 @@ PlatformIO pre-build script: patch M5GFX Panel_IT8951 to fix two issues:
    The stock code has `while (!lgfx::gpio_in(_cfg.pin_busy));` with NO
    timeout. If the IT8951 is busy (e.g., during quality e-ink refresh),
    this spins forever and halts the system.
+
+3. readRect() row loop — add WDT reset + error check per row.
+   The inner loop calls _read_raw_line() for each row with no WDT feed.
+   Each call can spin for seconds in busy-waits. With many rows per chunk
+   this exceeds the 30-second WDT timeout and reboots the device.
 """
 Import("env")
 import os
@@ -73,10 +78,52 @@ def patch_it8951():
         changed = True
         print("  [patch_it8951] Patched _write_args: added busy-wait timeout")
 
+    # --- Patch 3: readRect row loop — WDT reset + error check ---
+    # Add #include <esp_task_wdt.h> so esp_task_wdt_reset() is available.
+    old_include = (
+        '#if __has_include (<esp_log.h>)\n'
+        ' #include <esp_log.h>\n'
+        '#endif'
+    )
+    new_include = (
+        '#if __has_include (<esp_log.h>)\n'
+        ' #include <esp_log.h>\n'
+        '#endif\n'
+        '\n'
+        '#if __has_include (<esp_task_wdt.h>)\n'
+        ' #include <esp_task_wdt.h>\n'
+        '#endif'
+    )
+
+    if old_include in content and "esp_task_wdt.h" not in content:
+        content = content.replace(old_include, new_include)
+        changed = True
+        print("  [patch_it8951] Added #include <esp_task_wdt.h>")
+
+    # Check _read_raw_line return value and feed WDT after each row.
+    old_readraw = (
+        '      _read_raw_line(rx & ~3, ry, padding_len >> 1, '
+        'reinterpret_cast<uint16_t*>(readbuf));'
+    )
+    new_readraw = (
+        '      if (!_read_raw_line(rx & ~3, ry, padding_len >> 1, '
+        'reinterpret_cast<uint16_t*>(readbuf))) break;\n'
+        '#if __has_include(<esp_task_wdt.h>)\n'
+        '      esp_task_wdt_reset();\n'
+        '#endif'
+    )
+
+    if old_readraw in content and "if (!_read_raw_line" not in content:
+        content = content.replace(old_readraw, new_readraw)
+        changed = True
+        print("  [patch_it8951] Patched readRect: WDT reset + error check")
+
     if changed:
         with open(filepath, "w") as f:
             f.write(content)
-    elif "heap_alloc_psram" in content and "auto _t = millis();" in content:
+    elif ("heap_alloc_psram" in content
+          and "auto _t = millis();" in content
+          and "if (!_read_raw_line" in content):
         print("  [patch_it8951] Panel_IT8951.cpp already patched")
     else:
         print("  [patch_it8951] WARNING: patterns not found, "

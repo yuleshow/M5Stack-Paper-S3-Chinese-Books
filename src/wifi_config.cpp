@@ -268,6 +268,7 @@ bool connectToWiFi() {
   Serial.printf("WiFi connect took %d attempts (%d ms)\n", attempts, attempts * 500);
   
   if (WiFi.status() == WL_CONNECTED) {
+    WiFi.setAutoReconnect(true);  // Auto-reconnect if connection drops
     Serial.println("WiFi connected!");
     Serial.println("IP address: " + WiFi.localIP().toString());
     syncTimeNTP();

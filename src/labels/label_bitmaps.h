@@ -1384,6 +1384,39 @@
 #include "label_dict_not_found.h"
 #include "label_dict_dismiss.h"
 #include "label_last_read.h"
+#include "label_s16_zheng.h"
+#include "label_s16_jian.h"
+#include "label_s20_zheng.h"
+#include "label_s20_jian.h"
+#include "label_s22_github.h"
+#include "label_s22_bt_waiting.h"
+#include "label_s22_manual_reset.h"
+#include "label_s32_ok.h"
+#include "label_s32_record_med.h"
+#include "label_s40_med_title.h"
+#include "label_s40_confirm_pwd.h"
+#include "label_s40_set_new_pwd.h"
+#include "label_s40_enter_pwd.h"
+#include "label_s22_bookmark_hint.h"
+#include "label_s28_close_x.h"
+#include "label_s28_no_bookmark.h"
+#include "label_s28_last_read.h"
+#include "label_s28_no_toc.h"
+#include "label_s28_tap_continue.h"
+#include "label_s32_bookmark.h"
+#include "label_s32_toc.h"
+#include "label_s40_booklist.h"
+#include "label_s48_load_fail.h"
+#include "label_s24_screenshot.h"
+#include "label_s28_switch_list.h"
+#include "label_s28_switch_thumb.h"
+#include "label_s28_slideshow.h"
+#include "label_s28_slideshow_on.h"
+#include "label_s28_random.h"
+#include "label_s40_wallpaper_title.h"
+#include "label_s40_select_font_en.h"
+#include "label_s40_tools.h"
+#include "label_s40_fortune.h"
 #include "label_mchar_2014.h"
 #include "label_mchar_3002.h"
 #include "label_mchar_300c.h"
@@ -1541,7 +1574,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1525;
+const int kLabelBitmapCount = 1558;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -2922,6 +2955,39 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"查無此字", 40, label_dict_not_found_w, label_dict_not_found_h, label_dict_not_found_bitmap},
   {"輕觸關閉", 28, label_dict_dismiss_w, label_dict_dismiss_h, label_dict_dismiss_bitmap},
   {"最後閱讀", 24, label_last_read_w, label_last_read_h, label_last_read_bitmap},
+  {"正", 16, label_s16_zheng_w, label_s16_zheng_h, label_s16_zheng_bitmap},
+  {"简", 16, label_s16_jian_w, label_s16_jian_h, label_s16_jian_bitmap},
+  {"正", 20, label_s20_zheng_w, label_s20_zheng_h, label_s20_zheng_bitmap},
+  {"简", 20, label_s20_jian_w, label_s20_jian_h, label_s20_jian_bitmap},
+  {"GitHub: yuleshow", 22, label_s22_github_w, label_s22_github_h, label_s22_github_bitmap},
+  {"已啟用 - 等待連接", 22, label_s22_bt_waiting_w, label_s22_bt_waiting_h, label_s22_bt_waiting_bitmap},
+  {"手動復位", 22, label_s22_manual_reset_w, label_s22_manual_reset_h, label_s22_manual_reset_bitmap},
+  {"OK", 32, label_s32_ok_w, label_s32_ok_h, label_s32_ok_bitmap},
+  {"按此記錄吃藥", 32, label_s32_record_med_w, label_s32_record_med_h, label_s32_record_med_bitmap},
+  {"吃藥提醒器", 40, label_s40_med_title_w, label_s40_med_title_h, label_s40_med_title_bitmap},
+  {"確認密碼", 40, label_s40_confirm_pwd_w, label_s40_confirm_pwd_h, label_s40_confirm_pwd_bitmap},
+  {"設定新密碼", 40, label_s40_set_new_pwd_w, label_s40_set_new_pwd_h, label_s40_set_new_pwd_bitmap},
+  {"輸入密碼", 40, label_s40_enter_pwd_w, label_s40_enter_pwd_h, label_s40_enter_pwd_bitmap},
+  {"閱讀時點擊 ★ 可加入書籤", 22, label_s22_bookmark_hint_w, label_s22_bookmark_hint_h, label_s22_bookmark_hint_bitmap},
+  {"✕", 28, label_s28_close_x_w, label_s28_close_x_h, label_s28_close_x_bitmap},
+  {"尚無書籤", 28, label_s28_no_bookmark_w, label_s28_no_bookmark_h, label_s28_no_bookmark_bitmap},
+  {"最後閱讀", 28, label_s28_last_read_w, label_s28_last_read_h, label_s28_last_read_bitmap},
+  {"此書無目錄", 28, label_s28_no_toc_w, label_s28_no_toc_h, label_s28_no_toc_bitmap},
+  {"點擊螢幕繼續", 28, label_s28_tap_continue_w, label_s28_tap_continue_h, label_s28_tap_continue_bitmap},
+  {"書籤", 32, label_s32_bookmark_w, label_s32_bookmark_h, label_s32_bookmark_bitmap},
+  {"目錄", 32, label_s32_toc_w, label_s32_toc_h, label_s32_toc_bitmap},
+  {"電子書列表", 40, label_s40_booklist_w, label_s40_booklist_h, label_s40_booklist_bitmap},
+  {"載入失敗", 48, label_s48_load_fail_w, label_s48_load_fail_h, label_s48_load_fail_bitmap},
+  {"截圖: /screen", 24, label_s24_screenshot_w, label_s24_screenshot_h, label_s24_screenshot_bitmap},
+  {"切換列表", 28, label_s28_switch_list_w, label_s28_switch_list_h, label_s28_switch_list_bitmap},
+  {"切換縮圖", 28, label_s28_switch_thumb_w, label_s28_switch_thumb_h, label_s28_switch_thumb_bitmap},
+  {"輪播", 28, label_s28_slideshow_w, label_s28_slideshow_h, label_s28_slideshow_bitmap},
+  {"輪播中", 28, label_s28_slideshow_on_w, label_s28_slideshow_on_h, label_s28_slideshow_on_bitmap},
+  {"隨機", 28, label_s28_random_w, label_s28_random_h, label_s28_random_bitmap},
+  {"壁紙選擇", 40, label_s40_wallpaper_title_w, label_s40_wallpaper_title_h, label_s40_wallpaper_title_bitmap},
+  {"Select Font", 40, label_s40_select_font_en_w, label_s40_select_font_en_h, label_s40_select_font_en_bitmap},
+  {"工具", 40, label_s40_tools_w, label_s40_tools_h, label_s40_tools_bitmap},
+  {"求籖", 40, label_s40_fortune_w, label_s40_fortune_h, label_s40_fortune_bitmap},
   {"—", 48, label_mchar_2014_w, label_mchar_2014_h, label_mchar_2014_bitmap},
   {"。", 48, label_mchar_3002_w, label_mchar_3002_h, label_mchar_3002_bitmap},
   {"「", 48, label_mchar_300c_w, label_mchar_300c_h, label_mchar_300c_bitmap},

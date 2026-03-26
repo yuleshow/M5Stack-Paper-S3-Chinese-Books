@@ -50,7 +50,7 @@ void drawMedReminder() {
   // Auto-reset check
   if (medReminderPressTime != 0) {
     time_t now = time(NULL);
-    if (now > 1000000000 && (now - medReminderPressTime > (time_t)MED_REMINDER_RESET_SEC)) {
+    if (now > 1000000000 && medReminderPressTime <= now && (now - medReminderPressTime > (time_t)MED_REMINDER_RESET_SEC)) {
       medReminderPressTime = 0;
       prefs.begin("m5paper", false);
       prefs.putLong("medTime", 0);

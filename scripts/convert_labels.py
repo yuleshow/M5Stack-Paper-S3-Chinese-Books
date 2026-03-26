@@ -1478,6 +1478,55 @@ LABELS = [
 
     # ── Book list (book_reader.cpp) ──
     ("最後閱讀", 24, "last_read"),
+
+    # ── S2T toggle labels (book_reader.cpp) ──
+    ("正",                         16, "s16_zheng"),
+    ("简",                         16, "s16_jian"),
+    ("正",                         20, "s20_zheng"),
+    ("简",                         20, "s20_jian"),
+
+    # ── About page (setup_ui.cpp) ──
+    ("GitHub: yuleshow",           22, "s22_github"),
+
+    # ── Bluetooth status (setup_ui.cpp) ──
+    ("已啟用 - 等待連接",         22, "s22_bt_waiting"),
+
+    # ── Med reminder (med_reminder.cpp) ──
+    ("手動復位",                   22, "s22_manual_reset"),
+    ("OK",                         32, "s32_ok"),
+    ("按此記錄吃藥",               32, "s32_record_med"),
+    ("吃藥提醒器",                 40, "s40_med_title"),
+    ("確認密碼",                   40, "s40_confirm_pwd"),
+    ("設定新密碼",                 40, "s40_set_new_pwd"),
+    ("輸入密碼",                   40, "s40_enter_pwd"),
+
+    # ── Book reader (book_reader.cpp) ──
+    ("閱讀時點擊 ★ 可加入書籤",   22, "s22_bookmark_hint"),
+    ("✕",                          28, "s28_close_x"),
+    ("尚無書籤",                   28, "s28_no_bookmark"),
+    ("最後閱讀",                   28, "s28_last_read"),
+    ("此書無目錄",                 28, "s28_no_toc"),
+    ("點擊螢幕繼續",               28, "s28_tap_continue"),
+    ("書籤",                       32, "s32_bookmark"),
+    ("目錄",                       32, "s32_toc"),
+    ("電子書列表",                 40, "s40_booklist"),
+    ("載入失敗",                   48, "s48_load_fail"),
+
+    # ── Web server screenshot (setup_ui.cpp) ──
+    ("截圖: /screen",              24, "s24_screenshot"),
+
+    # ── Wallpaper (wallpaper.cpp) ──
+    ("切換列表",                   28, "s28_switch_list"),
+    ("切換縮圖",                   28, "s28_switch_thumb"),
+    ("輪播",                       28, "s28_slideshow"),
+    ("輪播中",                     28, "s28_slideshow_on"),
+    ("隨機",                       28, "s28_random"),
+    ("壁紙選擇",                   40, "s40_wallpaper_title"),
+
+    # ── Font selection / Tools (setup_ui.cpp, fortune_slips.cpp) ──
+    ("Select Font",                40, "s40_select_font_en"),
+    ("工具",                       40, "s40_tools"),
+    ("求籖",                       40, "s40_fortune"),
 ]
 
 # ── Built-in motto characters (auto-generated per-character labels) ──────────
