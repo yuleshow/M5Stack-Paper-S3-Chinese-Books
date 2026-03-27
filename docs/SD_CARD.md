@@ -159,6 +159,18 @@ The motto / 醒世格言 feature looks for:
 
 If not found, the firmware falls back to the built-in font. For the best visual experience with mottos, place this file in `/fonts/`.
 
+### Silver Font
+
+Silver is an alternative system font with a pixel-art aesthetic. To use it:
+
+- Place **`Silver.ttf`** in `/fonts/`.
+- The firmware auto-detects any font whose filename contains "Silver" and switches to Silver mode.
+- Pre-rendered `.bin` files should be named **`Silver_<size>pt.bin`** (e.g. `Silver_36pt.bin`).
+
+Silver glyphs are rendered **~38% larger** than their nominal point size so they match the visual weight of GenYoMinTW at the same setting. The firmware handles this scaling automatically — no manual adjustment is needed.
+
+You can switch between GenYoMinTW and Silver from the font selection menu on the device.
+
 ---
 
 ## Wallpapers — `/wallpapers/`
