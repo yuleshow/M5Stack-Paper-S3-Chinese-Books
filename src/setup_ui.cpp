@@ -109,7 +109,7 @@ void drawFontMenu() {
     if (englishMode) {
       String nameInfo = displayName;
       if (i == selectedFontIndex) nameInfo += " \u2713";
-      drawSystemText(nameInfo.c_str(), 50, y + 5, 22);
+      drawSystemText(nameInfo.c_str(), 50, y + 5, 28);
       // Store preview info for pass 2
       previews[previewCount] = {y, i, (i == selectedFontIndex), false, fileName, false};
       previewCount++;
@@ -126,7 +126,7 @@ void drawFontMenu() {
     
       String nameInfo = displayName;
       if (i == selectedFontIndex) nameInfo += " \u2713";
-      drawSystemText(nameInfo.c_str(), 50, y + 5, 22);
+      drawSystemText(nameInfo.c_str(), 50, y + 5, 28);
     
       bool isStandaloneBin = (fileName.endsWith(".bin") || fileName.endsWith(".BIN"));
       String typeLabel = isStandaloneBin ? "\u25A3 " : "\u24C9 ";
@@ -203,25 +203,27 @@ void drawFontMenu() {
     yield(); esp_task_wdt_reset();
     auto &pv = previews[p];
     int sampleTop = pv.y + (englishMode ? 40 : 50);
-    int sampleH = 40;
+    int sampleH = 32;
     uint16_t bg = pv.isSelected ? TFT_LIGHTGRAY : TFT_WHITE;
     const String &sampleLine = englishMode ? sampleLineEn : sampleLineCJK;
 
     if (pv.isBinPreview) {
-      // BIN font preview
+      // BIN font preview — Silver fonts need scaled size to match visual height
       unloadBinaryFont();
       bool binLoaded = loadBinaryFont(pv.fontFile.c_str());
       if (binLoaded) {
-        float scale = (float)sampleH / g_binFont.fontSize;
+        bool isSilver = (pv.fontFile.indexOf("Silver") >= 0 || pv.fontFile.indexOf("silver") >= 0);
+        int targetH = isSilver ? silverScaledSize(sampleH) : sampleH;
+        float scale = (float)targetH / g_binFont.fontSize;
         drawBinFontStringScaled(sampleLine, 50, sampleTop, scale, true);
       }
     } else if (pv.fontFile == "ETBook-embedded") {
-      loadEmbeddedETBook(36);
+      loadEmbeddedETBook(32);
       ofr.setFontColor(TFT_BLACK, bg);
       ofr.drawString(sampleLine.c_str(), 50, sampleTop);
     } else {
       // TTF preview — loadTTFFont internally unloads previous font
-      bool loaded = loadTTFFont(pv.fontFile.c_str(), englishMode ? 36 : 40);
+      bool loaded = loadTTFFont(pv.fontFile.c_str(), 32);
       if (loaded && ofrFontLoaded) {
         ofr.setFontColor(TFT_BLACK, bg);
         ofr.drawString(sampleLine.c_str(), 50, sampleTop);
@@ -251,13 +253,8 @@ void drawFontMenu() {
     }
   }
   
-  // Page indicator next to right arrow, larger font
-  if (totalPages > 1) {
-    M5.Display.setCursor(155, 910);
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(1);
-    M5.Display.printf("%d/%d", fontMenuPage + 1, totalPages);
-  }
+  // Page indicator (universal)
+  drawPageIndicator(fontMenuPage + 1, totalPages);
   
   M5.Display.endWrite();
   M5.Display.setAutoDisplay(true);
@@ -312,7 +309,7 @@ void drawVirtualKeyboard() {
   int keyW = 48;
   int keyH = 60;
   int keySpacing = 6;
-  int startY = 450;
+  int startY = 320;
   
   M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(1);
@@ -385,15 +382,15 @@ void updatePasswordDisplay() {
   M5.Display.startWrite();
   
   // Clear password box
-  M5.Display.fillRect(20, 240, 500, 60, TFT_WHITE);
-  M5.Display.drawRect(20, 240, 500, 60, TFT_BLACK);
-  M5.Display.drawRect(21, 241, 498, 58, TFT_BLACK);
+  M5.Display.fillRect(20, 200, 500, 60, TFT_WHITE);
+  M5.Display.drawRect(20, 200, 500, 60, TFT_BLACK);
+  M5.Display.drawRect(21, 201, 498, 58, TFT_BLACK);
   
   // Show password as dots
   M5.Display.setFont(&fonts::Font2);
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_BLACK);
-  M5.Display.setCursor(30, 255);
+  M5.Display.setCursor(30, 215);
   
   String maskedPassword = "";
   for (int i = 0; i < passwordInput.length(); i++) {
@@ -579,12 +576,11 @@ void drawWebServerSetup() {
   
   // Title
   drawSystemText("檔案上傳伺服器", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Current status
-  drawSystemText("狀態：", 20, 120, 32);
-  
   if (webServerRunning) {
-    drawSystemText("執行中", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("狀態： 執行中", 20, 120, 32);
     
     // Display IP address prominently
     M5.Display.drawRect(15, 170, 510, 80, TFT_BLACK);
@@ -604,7 +600,7 @@ void drawWebServerSetup() {
     M5.Display.setCursor(20, 300);
     M5.Display.print("Enter above IP in computer/phone browser");
   } else if (webServerEnabled) {
-    drawSystemText("已啟用", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("狀態： 已啟用", 20, 120, 32);
     
     if (WiFi.status() == WL_CONNECTED) {
       drawSystemText("正在啟動伺服器...", 20, 200, 28);
@@ -612,7 +608,7 @@ void drawWebServerSetup() {
       drawSystemText("等待 WiFi 連接...", 20, 200, 28);
     }
   } else {
-    drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
+    drawSystemText("狀態： 未啟用", 20, 120, 32);
   }
   
   // Toggle button (full width, matching MSC layout)
@@ -664,13 +660,13 @@ void drawIconSetup() {
   
   // Title
   drawSystemText("圖標來源", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Current status
-  drawSystemText("目前：", 20, 120, 32);
   if (useSDCardIcons) {
-    drawSystemText("SD 卡優先", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("目前： SD 卡優先", 20, 120, 32);
   } else {
-    drawSystemText("內建圖標", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("目前： 內建圖標", 20, 120, 32);
   }
   
   // Toggle button (full width, matching MSC layout)
@@ -718,13 +714,13 @@ void drawCalendarSetup() {
   
   // Title
   drawSystemText("曆法計算", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Current status
-  drawSystemText("目前：", 20, 120, 32);
   if (useSxwnlCalendar) {
-    drawSystemText("壽星天文曆", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("目前： 壽星天文曆", 20, 120, 32);
   } else {
-    drawSystemText("Meeus 天文算法", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("目前： Meeus 天文算法", 20, 120, 32);
   }
   
   // Toggle button (full width, matching MSC layout)
@@ -779,6 +775,7 @@ void drawSetupMenu() {
 
   // Title
   drawSystemText("設定", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   {
     char pageBuf[8];
     snprintf(pageBuf, sizeof(pageBuf), "%d/%d", setupMenuPage + 1, totalPages);
@@ -1010,123 +1007,68 @@ void drawWiFiSetup() {
   drawStatusBar();
   
   // Draw title
-  M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextSize(3);
-  M5.Display.setCursor(20, 30);
-  M5.Display.print("WiFi Setup");
+  drawSystemText("\xe7\x84\xa1\xe7\xb7\x9a\xe7\xb6\xb2\xe7\xb5\xa1\xe8\xa8\xad\xe5\xae\x9a", 20, 42, 40);  // 無線網絡設定
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
-  // Clock display at top-right (if time synced)
-  if (timeConfig.timeSynced) {
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextDatum(TR_DATUM);
-    
-    // Draw clock box with decorative border
-    int clockX = M5.Display.width() - 10;
-    int clockY = 10;
-    int clockW = 220;
-    int clockH = 140;
-    
-    // Outer shadow
-    M5.Display.fillRoundRect(clockX - clockW + 3, clockY + 3, clockW, clockH, 8, TFT_DARKGRAY);
-    
-    // Main box
-    M5.Display.fillRoundRect(clockX - clockW, clockY, clockW, clockH, 8, TFT_LIGHTGRAY);
-    M5.Display.drawRoundRect(clockX - clockW, clockY, clockW, clockH, 8, TFT_BLACK);
-    M5.Display.drawRoundRect(clockX - clockW + 1, clockY + 1, clockW - 2, clockH - 2, 7, TFT_BLACK);
-    
-    // Time (large)
-    String timeStr = getCurrentTimeString();
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextSize(4);
-    M5.Display.drawString(timeStr, clockX - clockW/2 + 110, clockY + 15);
-    
-    // Date
-    String dateStr = getCurrentDateString();
-    M5.Display.setTextSize(1);
-    M5.Display.drawString(dateStr, clockX - clockW/2 + 110, clockY + 80);
-    
-    // Timezone label
-    M5.Display.setTextSize(1);
-    M5.Display.drawString(timezones[selectedTimezone].name, clockX - clockW/2 + 110, clockY + 105);
-    
-    // WiFi status indicator (small icon)
-    if (WiFi.status() == WL_CONNECTED) {
-      M5.Display.fillCircle(clockX - clockW + 15, clockY + 15, 6, EPD_DARK_GRAY);
-      M5.Display.setTextSize(1);
-      M5.Display.setTextDatum(TL_DATUM);
-      M5.Display.drawString("WiFi", clockX - clockW + 25, clockY + 10);
-      M5.Display.setTextDatum(TR_DATUM);
-    }
-    
-    M5.Display.setTextDatum(TL_DATUM);
-  } else if (WiFi.status() == WL_CONNECTED) {
-    // WiFi connected but no time sync
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextDatum(TR_DATUM);
-    
-    int clockX = M5.Display.width() - 10;
-    int clockY = 10;
-    M5.Display.fillRoundRect(clockX - 220, clockY, 220, 60, 8, EPD_LIGHT_GRAY);
-    M5.Display.drawRoundRect(clockX - 220, clockY, 220, 60, 8, TFT_BLACK);
-    M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.drawString("WiFi Connected", clockX - 15, clockY + 10);
-    M5.Display.drawString("Syncing time...", clockX - 15, clockY + 35);
-    
-    M5.Display.setTextDatum(TL_DATUM);
-  } else {
-    // No WiFi connection
-    M5.Display.setFont(&fonts::Font2);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextDatum(TR_DATUM);
-    
-    int clockX = M5.Display.width() - 10;
-    int clockY = 10;
-    M5.Display.fillRoundRect(clockX - 220, clockY, 220, 60, 8, TFT_LIGHTGRAY);
-    M5.Display.drawRoundRect(clockX - 220, clockY, 220, 60, 8, TFT_BLACK);
-    M5.Display.setTextColor(TFT_DARKGRAY);
-    M5.Display.drawString("No WiFi", clockX - 15, clockY + 10);
-    M5.Display.drawString("Connect to sync time", clockX - 15, clockY + 35);
-    
-    M5.Display.setTextDatum(TL_DATUM);
-  }
-  
-  // If showing timezone selection
+  // If showing timezone selection — draw as its own page
   if (showingTimezone) {
-    M5.Display.setTextSize(2);
-    M5.Display.setCursor(20, 100);
-    M5.Display.println("Select Timezone:");
+    // Clear and redraw as independent page
+    M5.Display.fillScreen(TFT_WHITE);
+    drawStatusBar();
+
+    // Title + top separator (single line)
+    drawSystemText("\xe6\x99\x82\xe5\x8d\x80\xe8\xa8\xad\xe5\xae\x9a", 20, 42, 40);  // 時區設定
+    M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
     
-    // Show timezone list
-    int y = 160;
-    for (int i = 0; i < timezoneCount; i++) {
+    // Show timezone list with paging
+    int rowH = 62;
+    int listTop = 100;
+    int listBottom = 830;
+    int maxVisible = (listBottom - listTop) / rowH;  // ~11 items visible
+    int totalPages = (timezoneCount + maxVisible - 1) / maxVisible;
+    int currentPage = tzScrollOffset / maxVisible + 1;
+
+    // Clamp scroll offset to page boundaries
+    if (tzScrollOffset < 0) tzScrollOffset = 0;
+    if (tzScrollOffset > timezoneCount - maxVisible) tzScrollOffset = timezoneCount - maxVisible;
+    if (tzScrollOffset < 0) tzScrollOffset = 0;
+
+    int y = listTop;
+    for (int i = tzScrollOffset; i < timezoneCount && y + rowH <= listBottom; i++) {
       // Highlight selected timezone
       if (i == selectedTimezone) {
-        M5.Display.fillRect(15, y - 5, 510, 60, TFT_LIGHTGRAY);
+        M5.Display.fillRoundRect(15, y, 510, rowH - 4, 6, TFT_LIGHTGRAY);
       }
-      
+
       M5.Display.setTextColor(TFT_BLACK);
-      M5.Display.setTextSize(2);
-      M5.Display.setCursor(30, y + 10);
-      M5.Display.print(timezones[i].name);
-      
+      drawSystemText(timezones[i].name, 30, y + 10, 30);
+
       // Draw separator
-      M5.Display.drawLine(20, y + 55, 520, y + 55, TFT_DARKGRAY);
-      
-      y += 70;
-      if (y > 750) break;  // Don't overflow screen
+      M5.Display.drawLine(20, y + rowH - 3, 520, y + rowH - 3, TFT_LIGHTGRAY);
+
+      y += rowH;
     }
-    
-    // Save button
-    int btnY = 820;
-    M5.Display.fillRect(20, btnY, 200, 80, TFT_BLACK);
-    M5.Display.setTextColor(TFT_WHITE);
-    M5.Display.setTextSize(2);
-    M5.Display.setCursor(70, btnY + 25);
-    M5.Display.print("Save");
-    
-    // Universal return button (lower-right)
-    drawReturnButton();
+
+    // 保存 button above lower separator
+    M5.Display.fillRoundRect(20, 832, 100, 44, 8, TFT_BLACK);
+    drawSystemTextCentered("\xe4\xbf\x9d\xe5\xad\x98", 70, 840, 28, TFT_WHITE, TFT_BLACK);  // 保存
+
+    // Page indicator (right-aligned, above lower separator)
+    if (totalPages > 1) {
+      char pageBuf[16];
+      snprintf(pageBuf, sizeof(pageBuf), "%d/%d", currentPage, totalPages);
+      int pw = getSystemTextWidth(pageBuf, 28);
+      drawSystemText(pageBuf, 510 - pw, 850, 28);
+    }
+
+    // Lower separator (double line)
+    M5.Display.drawLine(20, 878, 520, 878, TFT_BLACK);
+    M5.Display.drawLine(20, 881, 520, 881, TFT_BLACK);
+
+    // Nav bar: left/right arrows for paging + return
+    bool hasPrev = (tzScrollOffset > 0);
+    bool hasNext = (tzScrollOffset + maxVisible < timezoneCount);
+    drawHorizontalNavBar(hasPrev, hasNext);
     
     M5.Display.endWrite();
     M5.Display.display();
@@ -1135,24 +1077,21 @@ void drawWiFiSetup() {
   
   // If showing keyboard for password entry
   if (showingKeyboard) {
-    // Show selected network info
-    M5.Display.setTextSize(2);
-    M5.Display.setCursor(20, 100);
-    M5.Display.print("Network:");
-    M5.Display.setCursor(20, 140);
-    M5.Display.setTextSize(2);
-    M5.Display.println(scannedNetworks[selectedNetworkIndex].ssid);
-    
-    M5.Display.setCursor(20, 200);
-    M5.Display.setTextSize(2);
-    M5.Display.print("Password:");
+    // Show selected network name
+    String netLabel = String("\xe7\xb6\xb2\xe7\xb5\xa1\xef\xbc\x9a ") + scannedNetworks[selectedNetworkIndex].ssid;  // 網絡：
+    drawSystemText(netLabel.c_str(), 20, 105, 32);
+
+    // Password label
+    drawSystemText("\xe5\xaf\x86\xe7\xa2\xbc\xef\xbc\x9a", 20, 155, 32);  // 密碼：
     
     // Password input box
-    M5.Display.fillRect(20, 240, 500, 60, TFT_WHITE);
-    M5.Display.drawRect(20, 240, 500, 60, TFT_BLACK);
-    M5.Display.drawRect(21, 241, 498, 58, TFT_BLACK);
-    M5.Display.setCursor(30, 255);
+    M5.Display.fillRect(20, 200, 500, 60, TFT_WHITE);
+    M5.Display.drawRect(20, 200, 500, 60, TFT_BLACK);
+    M5.Display.drawRect(21, 201, 498, 58, TFT_BLACK);
+    M5.Display.setCursor(30, 215);
+    M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(2);
+    M5.Display.setTextColor(TFT_BLACK);
     
     // Show password as dots for security
     String maskedPassword = "";
@@ -1165,12 +1104,9 @@ void drawWiFiSetup() {
     drawVirtualKeyboard();
     
     // Connect button
-    int btnY = 820;
-    M5.Display.fillRect(20, btnY, 200, 80, TFT_BLACK);
-    M5.Display.setTextColor(TFT_WHITE);
-    M5.Display.setTextSize(2);
-    M5.Display.setCursor(50, btnY + 25);
-    M5.Display.print("Connect");
+    int btnY = 620;
+    M5.Display.fillRoundRect(20, btnY, 200, 70, 8, TFT_BLACK);
+    drawSystemText("\xe9\x80\xa3\xe7\xb7\x9a", 50, btnY + 18, 34, TFT_WHITE, TFT_BLACK);  // 連線
     
     // Universal return button (lower-right)
     drawReturnButton();
@@ -1181,65 +1117,87 @@ void drawWiFiSetup() {
   }
   
   // Show scanning status or network list
+  int listStartY = 100;  // right after title separator
+
+  // Show currently connected WiFi first
+  bool hasConnected = (WiFi.status() == WL_CONNECTED);
+  String connectedSSID = hasConnected ? WiFi.SSID() : "";
+  if (hasConnected && connectedSSID.length() > 0) {
+    // Highlighted connected row
+    M5.Display.fillRoundRect(15, listStartY, 510, 68, 8, TFT_LIGHTGRAY);
+    M5.Display.drawRoundRect(15, listStartY, 510, 68, 8, TFT_BLACK);
+
+    // Signal strength bars for connected network
+    int rssi = WiFi.RSSI();
+    int bars = (rssi > -50) ? 4 : (rssi > -60) ? 3 : (rssi > -70) ? 2 : 1;
+    int barX = 28;
+    for (int b = 0; b < bars; b++) {
+      M5.Display.fillRect(barX, listStartY + 40 - (b + 1) * 5, 7, (b + 1) * 5, TFT_BLACK);
+      barX += 10;
+    }
+
+    // SSID
+    drawSystemText(connectedSSID.c_str(), 72, listStartY + 10, 32);
+
+    // "已連線" label on the right
+    drawSystemText("\xe5\xb7\xb2\xe9\x80\xa3\xe7\xb7\x9a", 430, listStartY + 14, 26);  // 已連線
+
+    listStartY += 80;
+  }
+
   if (wifiScanning) {
-    M5.Display.setTextSize(2);
-    M5.Display.setCursor(20, 120);
-    M5.Display.println("Scanning for networks...");
+    drawSystemText("\xe6\x8e\x83\xe6\x8f\x8f\xe4\xb8\xad\xe2\x80\xa6", 20, listStartY + 10, 32);  // 掃描中…
   } else if (networkCount == 0) {
-    M5.Display.setTextSize(2);
-    M5.Display.setCursor(20, 120);
-    M5.Display.println("No networks found");
+    drawSystemText("\xe6\x9c\xaa\xe6\x89\xbe\xe5\x88\xb0\xe7\xb6\xb2\xe7\xb5\xa1", 20, listStartY + 10, 32);  // 未找到網絡
   } else {
-    // Display network list (max 7 to avoid overlapping buttons at y=750)
-    M5.Display.setTextSize(2);
-    int y = 120;
-    for (int i = 0; i < networkCount && i < 7; i++) {
-      // Network name
-      M5.Display.setCursor(60, y);
-      M5.Display.print(scannedNetworks[i].ssid);
-      
-      // Signal strength
+    // Display other networks (skip the currently connected one)
+    int y = listStartY;
+    int maxY = 830;  // leave room for buttons
+    for (int i = 0; i < networkCount; i++) {
+      if (y > maxY) break;
+
+      // Skip the currently connected network (already shown above)
+      if (hasConnected && scannedNetworks[i].ssid == connectedSSID) continue;
+
+      // Signal strength bars
       int bars = 0;
       if (scannedNetworks[i].rssi > -50) bars = 4;
       else if (scannedNetworks[i].rssi > -60) bars = 3;
       else if (scannedNetworks[i].rssi > -70) bars = 2;
       else bars = 1;
-      
-      int barX = 20;
+
+      int barX = 28;
       for (int b = 0; b < bars; b++) {
-        M5.Display.fillRect(barX, y + 15 - (b + 1) * 4, 6, (b + 1) * 4, TFT_BLACK);
-        barX += 8;
+        M5.Display.fillRect(barX, y + 40 - (b + 1) * 5, 7, (b + 1) * 5, TFT_BLACK);
+        barX += 10;
       }
-      
+
+      // Network name
+      drawSystemText(scannedNetworks[i].ssid.c_str(), 72, y + 10, 32);
+
       // Lock icon if encrypted
       if (scannedNetworks[i].encrypted) {
-        M5.Display.setCursor(470, y);
-        M5.Display.print("[*]");
+        M5.Display.setFont(&fonts::Font2);
+        M5.Display.setTextSize(1);
+        M5.Display.setTextColor(TFT_BLACK);
+        M5.Display.setCursor(490, y + 15);
+        M5.Display.print("*");
       }
-      
-      // Draw separator line
-      M5.Display.drawLine(20, y + 40, 520, y + 40, TFT_LIGHTGRAY);
-      
-      y += 80;
+
+      // Separator line
+      M5.Display.drawLine(20, y + 64, 520, y + 64, TFT_LIGHTGRAY);
+
+      y += 68;
     }
   }
   
-  // Scan button
-  int btnY = 750;
-  M5.Display.fillRect(20, btnY, 150, 70, TFT_BLACK);
-  M5.Display.setTextColor(TFT_WHITE);
-  M5.Display.setTextSize(2);
-  M5.Display.setCursor(50, btnY + 20);
-  M5.Display.print("Scan");
+  // Scan button (above lower separator)
+  M5.Display.fillRoundRect(20, 832, 100, 44, 8, TFT_BLACK);
+  drawSystemTextCentered("\xe6\x8e\x83\xe6\x8f\x8f", 70, 840, 28, TFT_WHITE, TFT_BLACK);  // 掃描
   
-  // Timezone button
-  M5.Display.fillRect(190, btnY, 150, 70, TFT_DARKGRAY);
-  M5.Display.setTextColor(TFT_WHITE);
-  M5.Display.setTextSize(1);
-  M5.Display.setCursor(210, btnY + 15);
-  M5.Display.print("Timezone");
-  M5.Display.setCursor(210, btnY + 40);
-  M5.Display.print(timezones[selectedTimezone].name);
+  // Lower separator (double line)
+  M5.Display.drawLine(20, 878, 520, 878, TFT_BLACK);
+  M5.Display.drawLine(20, 881, 520, 881, TFT_BLACK);
   
   // Universal return button (lower-right)
   drawReturnButton();
@@ -1263,11 +1221,11 @@ void drawBluetoothSetup() {
   
   // Title
   drawSystemText("藍牙", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Current status
-  drawSystemText("狀態：", 20, 120, 32);
   if (bleConnectedToDevice) {
-    drawSystemText("已連接", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("狀態： 已連接", 20, 120, 32);
     
     // Show connected device info
     M5.Display.drawRect(15, 170, 500, 80, TFT_BLACK);
@@ -1275,14 +1233,14 @@ void drawBluetoothSetup() {
     String connInfo = "已連接：" + bleConnectedName;
     drawSystemText(connInfo.c_str(), 25, 190, 22);
   } else if (bluetoothActive) {
-    drawSystemText("已啟用", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("狀態： 已啟用", 20, 120, 32);
     
     // Show device name
     M5.Display.drawRect(15, 170, 500, 80, TFT_BLACK);
     M5.Display.drawRect(16, 171, 498, 78, TFT_BLACK);
     drawSystemText("裝置名稱：M5Paper-BLE", 25, 190, 22);
   } else {
-    drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
+    drawSystemText("狀態： 未啟用", 20, 120, 32);
   }
   
   // If showing scan results
@@ -1400,13 +1358,13 @@ void drawSystemFontSetup() {
   
   // Title
   drawSystemText("系統字體", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Current status
-  drawSystemText("目前：", 20, 120, 32);
   if (systemFontChoice == 0) {
-    drawSystemText("源樣明體", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("目前： 源樣明體", 20, 120, 32);
   } else {
-    drawSystemText("Silver", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("目前： Silver", 20, 120, 32);
   }
   
   // Toggle button (full width)
@@ -1454,77 +1412,61 @@ void drawAboutPage() {
 
   // Title
   drawSystemText("關於", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
 
-  int y = 120;
-  int lineH = 45;
+  int y = 110;
+  int lineH = 46;
 
-  // App name
-  drawSystemText("M5Stack Paper S3 中文電子書閱讀器", 20, y, 28);
+  // App name (split into two lines at size 36 to fit width)
+  drawSystemText("M5Stack Paper S3", 20, y, 36);
+  y += 42;
+  drawSystemText("中文電子書閱讀器", 20, y, 36);
   y += lineH + 10;
 
   // Build date
   M5.Display.drawLine(20, y - 5, 520, y - 5, EPD_LIGHT_GRAY);
-  {
-    int xOff = drawSystemText("編譯日期：", 20, y, 22);
-    drawSystemText((String(__DATE__) + "  " + __TIME__).c_str(), 20 + xOff, y, 22);
-  }
+  drawSystemText(("編譯日期： " + String(__DATE__) + " " + __TIME__).c_str(), 20, y, 32);
   y += lineH;
 
   // Hardware
-  drawSystemText("硬體：M5Stack Paper S3 (ESP32-S3)", 20, y, 22);
+  drawSystemText("硬體： M5Paper S3 (ESP32-S3)", 20, y, 32);
   y += lineH;
 
   // CPU frequency
-  {
-    int xOff = drawSystemText("CPU：", 20, y, 22);
-    drawSystemText((String(ESP.getCpuFreqMHz()) + " MHz").c_str(), 20 + xOff, y, 22);
-  }
+  drawSystemText(("CPU： " + String(ESP.getCpuFreqMHz()) + " MHz").c_str(), 20, y, 32);
   y += lineH;
 
   // Flash
-  {
-    int xOff = drawSystemText("Flash：", 20, y, 22);
-    drawSystemText((String(ESP.getFlashChipSize() / 1024 / 1024) + " MB").c_str(), 20 + xOff, y, 22);
-  }
+  drawSystemText(("Flash： " + String(ESP.getFlashChipSize() / 1024 / 1024) + " MB").c_str(), 20, y, 32);
   y += lineH;
 
   // PSRAM
-  {
-    int xOff = drawSystemText("PSRAM：", 20, y, 22);
-    xOff += drawSystemText((String(ESP.getPsramSize() / 1024 / 1024) + " MB").c_str(), 20 + xOff, y, 22);
-    xOff += drawSystemText("（剩餘 ", 20 + xOff, y, 22);
-    drawSystemText((String(ESP.getFreePsram() / 1024) + " KB）").c_str(), 20 + xOff, y, 22);
-  }
+  drawSystemText(("PSRAM： " + String(ESP.getPsramSize() / 1024 / 1024) + " MB（剩 " + String(ESP.getFreePsram() / 1024) + " KB）").c_str(), 20, y, 32);
   y += lineH;
 
-  // Heap
-  {
-    int xOff = drawSystemText("記憶體：剩餘 ", 20, y, 22);
-    drawSystemText((String(ESP.getFreeHeap() / 1024) + " KB").c_str(), 20 + xOff, y, 22);
-  }
+  // Heap (internal SRAM)
+  drawSystemText(("記憶體： " + String(ESP.getHeapSize() / 1024) + " KB（剩餘 " + String(ESP.getFreeHeap() / 1024) + " KB）").c_str(), 20, y, 32);
   y += lineH;
 
   // SD card
   if (sdCardAvailable) {
     uint64_t totalBytes = SD.totalBytes();
     uint64_t usedBytes = SD.usedBytes();
-    int xOff = drawSystemText("SD 卡：", 20, y, 22);
-    drawSystemText((String((uint32_t)(usedBytes / 1024 / 1024)) + " / " + String((uint32_t)(totalBytes / 1024 / 1024)) + " MB").c_str(), 20 + xOff, y, 22);
+    drawSystemText(("SD 卡： " + String((uint32_t)(usedBytes / 1024 / 1024)) + " / " + String((uint32_t)(totalBytes / 1024 / 1024)) + " MB").c_str(), 20, y, 32);
   } else {
-    drawSystemText("SD 卡：未插入", 20, y, 22);
+    drawSystemText("SD 卡： 未插入", 20, y, 32);
   }
   y += lineH;
 
   // Display
-  drawSystemText("螢幕：540 × 960  電子紙", 20, y, 22);
+  drawSystemText("螢幕： 540×960 電子紙", 20, y, 32);
   y += lineH;
 
   // WiFi
   if (WiFi.status() == WL_CONNECTED) {
-    int xOff = drawSystemText("WiFi：", 20, y, 22);
-    drawSystemText((WiFi.SSID() + "  " + WiFi.localIP().toString()).c_str(), 20 + xOff, y, 22);
+    drawSystemText(("WiFi： " + WiFi.SSID() + " " + WiFi.localIP().toString()).c_str(), 20, y, 32);
   } else {
-    drawSystemText("WiFi：未連接", 20, y, 22);
+    drawSystemText("WiFi： 未連接", 20, y, 32);
   }
   y += lineH + 10;
 
@@ -1532,7 +1474,7 @@ void drawAboutPage() {
   M5.Display.drawLine(20, y - 5, 520, y - 5, EPD_LIGHT_GRAY);
 
   // Author / project
-  drawSystemText("GitHub: yuleshow", 20, y, 22, EPD_DARK_GRAY);
+  drawSystemText("GitHub: yuleshow", 20, y, 32, EPD_DARK_GRAY);
 
   M5.Display.endWrite();
   M5.Display.display();

@@ -158,6 +158,7 @@ void drawWallpaperList() {
   
   // Title
   drawSystemText("壁紙選擇", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // View toggle button (top-right, below status bar)
   int toggleX = 380, toggleY = 42, toggleW = 140, toggleH = 40;
@@ -182,8 +183,8 @@ void drawWallpaperList() {
   } else if (wallpaperViewMode == 0) {
     // ===== NAME LIST VIEW =====
     int y = 92;
-    int itemHeight = 60;
-    int maxVisible = 12;
+    int itemHeight = 68;
+    int maxVisible = 10;
     
     int startIdx = wallpaperScrollOffset;
     int endIdx = min(startIdx + maxVisible, wallpaperCount);
@@ -195,24 +196,15 @@ void drawWallpaperList() {
         M5.Display.fillRoundRect(20, y, 500, itemHeight, 8, TFT_WHITE);
       }
       M5.Display.drawRoundRect(20, y, 500, itemHeight, 8, TFT_BLACK);
-      M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextSize(2);
-      M5.Display.setCursor(35, y + 15);
-      M5.Display.print(wallpaperFiles[i]);
-      M5.Display.setTextSize(1);
+      drawSystemText(wallpaperFiles[i].c_str(), 35, y + 17, 32);
       y += itemHeight + 5;
     }
     
-    // Scroll indicator (top center, between title and toggle)
-    if (wallpaperCount > maxVisible) {
-      M5.Display.setTextSize(2);
-      M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextDatum(MC_DATUM);
-      char buf[32];
-      snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);
-      M5.Display.drawString(buf, 270, 70);
-      M5.Display.setTextSize(1);
-      M5.Display.setTextDatum(TL_DATUM);
+    // Page indicator (universal)
+    {
+      int totalWpPages = (wallpaperCount + maxVisible - 1) / maxVisible;
+      int curWpPage = wallpaperScrollOffset / maxVisible + 1;
+      drawPageIndicator(curWpPage, totalWpPages);
     }
     
     // Nav bar arrows + return
@@ -256,16 +248,11 @@ void drawWallpaperList() {
       drawThumbnail(i, tx, ty, thumbW, thumbH);
     }
     
-    // Scroll indicator (top center, between title and toggle)
-    if (wallpaperCount > maxVisible) {
-      M5.Display.setTextSize(2);
-      M5.Display.setFont(&fonts::Font2);
-      M5.Display.setTextDatum(MC_DATUM);
-      char buf[32];
-      snprintf(buf, sizeof(buf), "%d-%d / %d", startIdx + 1, endIdx, wallpaperCount);
-      M5.Display.drawString(buf, 270, 70);
-      M5.Display.setTextSize(1);
-      M5.Display.setTextDatum(TL_DATUM);
+    // Page indicator (universal)
+    {
+      int totalWpPages = (wallpaperCount + maxVisible - 1) / maxVisible;
+      int curWpPage = wallpaperScrollOffset / maxVisible + 1;
+      drawPageIndicator(curWpPage, totalWpPages);
     }
     
     // Nav bar arrows + return

@@ -243,6 +243,23 @@ void drawEnglishReading() {
       continue;
     }
 
+    // EPUB chapter break → force new page
+    if (ch == EPUB_CHAPTER_BREAK && currentBookIsEpub) {
+      if (charsDrawn > 0 || currentLine.length() > 0) {
+        if (currentLine.length() > 0) {
+          drawLineCached(currentLine, rdLeft, currentY);
+          charsDrawn += currentLine.length();
+          currentLine = "";
+          currentLineW = 0;
+          pendingSpace = false;
+        }
+        renderStopByte = i;
+        goto endHorizPage;
+      }
+      i++;
+      continue;  // Skip marker at start of page
+    }
+
     // Newline → paragraph break
     if (ch == '\n') {
       i++;
@@ -405,14 +422,14 @@ void drawEnglishReading() {
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(BR_DATUM);
-    M5.Display.drawString(pctStr, barX + barW, barY - 6);
+    M5.Display.setTextDatum(BL_DATUM);
+    M5.Display.drawString(pctStr, barX, barY - 6);
     M5.Display.setTextDatum(TL_DATUM);
     char pageStr[20];
     snprintf(pageStr, sizeof(pageStr), "%d/%d", currentPage + 1, totalPages);
     M5.Display.setTextSize(2);
-    M5.Display.setTextDatum(BL_DATUM);
-    M5.Display.drawString(pageStr, barX, barY - 6);
+    M5.Display.setTextDatum(BR_DATUM);
+    M5.Display.drawString(pageStr, barX + barW, barY - 6);
     M5.Display.setTextDatum(TL_DATUM);
   }
 

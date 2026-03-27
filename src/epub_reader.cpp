@@ -1029,13 +1029,13 @@ bool epubLoadChapterRange(int startChapter) {
       continue;
     }
 
-    // Add chapter separator
-    if (epubFullTextLen > 0 && epubFullTextLen < bufferSize - 2) {
-      epubFullText[epubFullTextLen++] = '\n';
-      epubFullText[epubFullTextLen++] = '\n';
-    }
-
+    // Add chapter break marker (forces new page in renderer)
+    // Capture beforeLen BEFORE marker so actualTextSize includes the marker byte.
+    // This keeps cumulativeOffset in sync with actual buffer positions.
     size_t beforeLen = epubFullTextLen;
+    if (epubFullTextLen > 0 && epubFullTextLen < bufferSize - 2) {
+      epubFullText[epubFullTextLen++] = EPUB_CHAPTER_BREAK;
+    }
 
     // Strip HTML directly into buffer
     // Use the HTML file's own directory as basePath (not OPF directory)
@@ -1055,6 +1055,8 @@ bool epubLoadChapterRange(int startChapter) {
       ch.actualTextSize = epubFullTextLen - beforeLen;
       chaptersLoaded++;
     } else {
+      // Strip failed — roll back marker byte if it was written
+      epubFullTextLen = beforeLen;
       ch.actualTextSize = 0;
     }
 
@@ -1497,7 +1499,8 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
     } else {
       float sx = (float)maxW / (float)imgW;
       float sy = (float)maxH / (float)imgH;
-      float scale = (sx < sy) ? sx : sy;  // Fit within bounds (scale up or down)
+      float scale = (sx < sy) ? sx : sy;  // Fit within bounds
+      if (scale > 1.0f) scale = 1.0f;     // Don't enlarge small images
       scale_x = scale;
       scale_y = scale;
       Serial.printf("EPUB IMG: Original %dx%d, scale=%.3f, output ~%dx%d\n",
@@ -1510,11 +1513,16 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
   // Center the scaled image in the available area (full view only)
   int drawX = x;
   int drawY = y;
+  int clipW = maxW;
+  int clipH = maxH;
   if (quadrant < 0 && gotDims && imgW > 0 && imgH > 0) {
     int outW = (int)(imgW * scale_x);
     int outH = (int)(imgH * (scale_y > 0 ? scale_y : scale_x));
     if (outW < maxW) drawX = x + (maxW - outW) / 2;
     if (outH < maxH) drawY = y + (maxH - outH) / 2;
+    // Use actual output size as clip bounds so image doesn't occupy extra space
+    clipW = outW < maxW ? outW : maxW;
+    clipH = outH < maxH ? outH : maxH;
   } else {
     drawX = x;
     drawY = y;
@@ -1522,18 +1530,18 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
 
   if (isJpeg) {
     Serial.printf("EPUB IMG: drawing JPEG %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
-    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
+    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, clipW, clipH, offX, offY, scale_x, scale_y);
   } else if (isPng) {
     Serial.printf("EPUB IMG: drawing PNG %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
-    drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
+    drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, clipW, clipH, offX, offY, scale_x, scale_y);
   } else if (isBmp) {
     Serial.printf("EPUB IMG: drawing BMP %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
-    drawn = M5.Display.drawBmp(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
+    drawn = M5.Display.drawBmp(imgBuf, imgLen, drawX, drawY, clipW, clipH, offX, offY, scale_x, scale_y);
   } else {
     // Try JPEG first (most common in EPUBs), then PNG
     Serial.printf("EPUB IMG: drawing unknown format %dx%d at (%d,%d)...\n", imgW, imgH, drawX, drawY);
-    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
-    if (!drawn) drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, maxW, maxH, offX, offY, scale_x, scale_y);
+    drawn = M5.Display.drawJpg(imgBuf, imgLen, drawX, drawY, clipW, clipH, offX, offY, scale_x, scale_y);
+    if (!drawn) drawn = M5.Display.drawPng(imgBuf, imgLen, drawX, drawY, clipW, clipH, offX, offY, scale_x, scale_y);
   }
   esp_task_wdt_reset();
 

@@ -438,6 +438,7 @@ void drawTodoList() {
         String ch = todoList[i].date.substring(j, j + 1);
         // Rotate date characters 90° clockwise using sprite
         LGFX_Sprite sprite(&M5.Display);
+        sprite.setPsram(true);
         if (!sprite.createSprite(48, 48)) {
           y += 24;  // Skip but advance position
           continue;
@@ -531,6 +532,7 @@ void drawTodoList() {
         // Rotate ASCII 90° clockwise using sprite (use TTF if available for smooth text)
         {
           LGFX_Sprite sprite(&M5.Display);
+          sprite.setPsram(true);
           if (!sprite.createSprite(48, 48)) {
             y += 30;  // Skip but advance position
             continue;
@@ -589,11 +591,8 @@ void drawTodoList() {
     }
   }
   
-  // Page indicator next to right arrow, larger font
-  M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextSize(1.0);
-  M5.Display.setCursor(155, 910);
-  M5.Display.printf("%d/%d", currentTodoPage + 1, totalTodoPages);
+  // Page indicator (universal)
+  drawPageIndicator(currentTodoPage + 1, totalTodoPages);
   
   // "新增" (Add new) button
   {

@@ -399,8 +399,8 @@ extern int bookCount;
 extern int bookListPage;
 extern int bookViewMode;
 extern int bookConvMode;  // 0=original, 1=simplified(简), 2=traditional(正)
-static const int BOOKS_PER_PAGE = 13;
-static const int BOOK_ROW_HEIGHT = 55;
+static const int BOOKS_PER_PAGE = 11;
+static const int BOOK_ROW_HEIGHT = 64;
 extern String currentBookPath;
 extern String currentPageContent;
 extern int currentPage;
@@ -433,6 +433,7 @@ static const char STYLE_BOLD_OFF   = '\x05';
 static const char STYLE_UNDERLINE_ON  = '\x06';
 static const char STYLE_UNDERLINE_OFF = '\x07';
 static const char EPUB_LINK_MARKER    = '\x08';  // \x08href\x08 before STYLE_UNDERLINE_ON
+static const char EPUB_CHAPTER_BREAK  = '\x0E';  // Inserted between EPUB chapters → forces new page
 
 // Inline EPUB link regions (populated during rendering, used for tap navigation)
 static const int MAX_INLINE_LINKS = 64;
@@ -555,6 +556,7 @@ extern int selectedNetworkIndex;
 extern bool wifiScanning;
 extern bool showingKeyboard;
 extern bool showingTimezone;
+extern int tzScrollOffset;
 extern String passwordInput;
 extern bool keyboardShift;
 extern bool keyboardSymbols;
@@ -716,6 +718,7 @@ void drawPageButtons(bool showPrev, bool showNext);
 void drawNavBar(bool showPrev, bool showNext);
 void drawVerticalNavBar(bool hasPrev, bool hasNext);
 void drawHorizontalNavBar(bool hasPrev, bool hasNext);
+void drawPageIndicator(int curPage, int totalPages, const char* prefix = nullptr);
 bool touchedReturnButton(int x, int y);
 bool touchedReadingReturnButton(int x, int y);
 bool touchedSleepButton(int x, int y);

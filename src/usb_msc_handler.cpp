@@ -226,11 +226,11 @@ void drawUSBMSCSetup() {
   
   // Title
   drawSystemText("USB 外接磁碟", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
   
   // Current status
   if (usbMSCActive) {
-    drawSystemText("狀態: ", 20, 120, 32);
-    drawSystemText("執行中", 160, 120, 32, EPD_DARK_GRAY);
+    drawSystemText("狀態： 執行中", 20, 120, 32);
     
     drawSystemText("SD 卡已連接到電腦", 20, 180, 24);
     M5.Display.setFont(&fonts::Font2);
@@ -252,12 +252,11 @@ void drawUSBMSCSetup() {
     M5.Display.setCursor(20, 350);
     M5.Display.print("Disabling will restart device");
   } else {
-    drawSystemText("狀態: ", 20, 120, 32);
     if (!sdCardAvailable) {
-      drawSystemText("未插入 SD 卡", 160, 120, 32, EPD_DARK_GRAY);
+      drawSystemText("狀態： 未插入 SD 卡", 20, 120, 32);
       drawSystemText("請插入 SD 卡後重新啟動", 20, 180, 24, EPD_DARK_GRAY);
     } else {
-      drawSystemText("未啟用", 160, 120, 32, TFT_DARKGRAY);
+      drawSystemText("狀態： 未啟用", 20, 120, 32);
       drawSystemText("將整張 SD 卡作為 USB 磁碟", 20, 180, 24);
       M5.Display.setFont(&fonts::Font2);
       M5.Display.setTextSize(1);

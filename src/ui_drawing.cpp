@@ -108,10 +108,12 @@ bool drawNavIcon(const char* iconName, int x, int y) {
 // Draw return button at lower-right corner using return.png icon
 void drawReturnButton() {
   drawNavIcon("return.png", NAV_RETURN_X, NAV_Y);
-  // Show sleep button only on dashboard, book list, calendar main, and setup main menu
+  // Show sleep button on: dashboard, book list, calendar, fortune slips, tools menu, med reminder, weather, setup main
   bool showSleep = false;
   if (currentMode == MODE_DASHBOARD || currentMode == MODE_BOOK_LIST
-      || currentMode == MODE_CALENDAR || currentMode == MODE_FORTUNE_SLIPS) {
+      || currentMode == MODE_CALENDAR || currentMode == MODE_FORTUNE_SLIPS
+      || currentMode == MODE_TOOLS_MENU || currentMode == MODE_MED_REMINDER
+      || currentMode == MODE_WEATHER) {
     showSleep = true;
   } else if (currentMode == MODE_SETUP && setupSubmenu == 0) {
     showSleep = true;
@@ -164,6 +166,28 @@ void drawHorizontalNavBar(bool hasPrev, bool hasNext) {
   if (hasPrev) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);  // ← left arrow = prev page
   if (hasNext) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);  // → right arrow = next page
   drawReturnButton();
+}
+
+// Universal page indicator: double line at y=878/881 (matching reading progress bar)
+// Page info right-aligned above double line using system font (CJK-capable)
+void drawPageIndicator(int curPage, int totalPages, const char* prefix) {
+  // Double line separator (same position as reading progress bar)
+  M5.Display.drawLine(20, 878, 520, 878, TFT_BLACK);
+  M5.Display.drawLine(20, 881, 520, 881, TFT_BLACK);
+  if (totalPages <= 1 && !prefix) return;
+  // Build display string
+  char buf[48];
+  if (prefix && totalPages > 1) {
+    snprintf(buf, sizeof(buf), "%s  %d/%d", prefix, curPage, totalPages);
+  } else if (prefix) {
+    snprintf(buf, sizeof(buf), "%s", prefix);
+  } else {
+    snprintf(buf, sizeof(buf), "%d/%d", curPage, totalPages);
+  }
+  // Right-align at x=510 using system font (supports CJK)
+  int textSize = 28;
+  int textW = getSystemTextWidth(buf, textSize);
+  drawSystemText(buf, 510 - textW, 850, textSize);
 }
 
 // Touch detection helpers for nav bar

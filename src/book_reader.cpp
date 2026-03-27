@@ -437,6 +437,18 @@ bool loadCurrentPage() {
         return false;
       }
 
+      // After reloading, cumulativeOffset values are updated with actual sizes.
+      // Re-read the target chapter's offset so we land precisely at chapter start.
+      if (targetChapter < epubChapterCount) {
+        size_t corrected = epubChapters[targetChapter].cumulativeOffset;
+        if (corrected != pageOffset) {
+          Serial.printf("EPUB: Corrected page offset %u -> %u (chapter %d actual)\n",
+                        (unsigned)pageOffset, (unsigned)corrected, targetChapter + 1);
+          pageOffset = corrected;
+          currentPageByteOffset = pageOffset;
+        }
+      }
+
       // After reloading, the totalBookBytes estimate may have changed
       totalBookBytes = epubEstimatedTotalBytes;
 
@@ -1058,7 +1070,7 @@ void drawBookList() {
       // Truncate long names to fit display width
       // Chinese books need room for 简/正 buttons at right (~100px)
       String displayName = bookDisplayName[i];
-      int maxChars = isCN ? 13 : 17;  // fewer chars when buttons present
+      int maxChars = isCN ? 10 : 15;  // fewer chars when buttons present (enlarged font)
       int len = displayName.length();
       if (len > 20) {
         int charCount = 0;
@@ -1087,7 +1099,7 @@ void drawBookList() {
         }
       }
       // Draw category tag for non-auto books
-      int textX = 40;
+      int textX = 15;
       BookCategory cat = bookCategory[i];
       if (cat != CAT_AUTO) {
         const char* tag = nullptr;
@@ -1099,26 +1111,26 @@ void drawBookList() {
         }
         if (tag) {
           int tagY = 120 + (row * BOOK_ROW_HEIGHT) - 2;
-          int tagW = 40, tagH = 30;
+          int tagW = 56, tagH = 42;
           M5.Display.drawRoundRect(textX, tagY, tagW, tagH, 4, TFT_BLACK);
-          drawSystemTextCentered(tag, textX + tagW / 2, tagY + (tagH - 20) / 2, 20);
+          drawSystemTextCentered(tag, textX + tagW / 2, tagY + (tagH - 30) / 2, 30);
           textX += tagW + 6;
         }
       }
-      drawSystemText(displayName.c_str(), textX, 120 + (row * BOOK_ROW_HEIGHT), 28);
+      drawSystemText(displayName.c_str(), textX, 120 + (row * BOOK_ROW_HEIGHT), 34);
 
       // Draw 简/正 buttons for Chinese books
       if (isCN) {
         int btnY = 120 + (row * BOOK_ROW_HEIGHT) - 2;
-        int btnW = 40, btnH = 30;
+        int btnW = 56, btnH = 42;
         // 简 button
-        int jianX = 440;
+        int jianX = 405;
         M5.Display.drawRoundRect(jianX, btnY, btnW, btnH, 4, TFT_BLACK);
-        drawSystemTextCentered("\xe7\xae\x80", jianX + btnW / 2, btnY + (btnH - 20) / 2, 20);  // 简
+        drawSystemTextCentered("\xe7\xae\x80", jianX + btnW / 2, btnY + (btnH - 30) / 2, 30);  // 简
         // 正 button
-        int zhengX = 486;
+        int zhengX = 467;
         M5.Display.drawRoundRect(zhengX, btnY, btnW, btnH, 4, TFT_BLACK);
-        drawSystemTextCentered("\xe6\xad\xa3", zhengX + btnW / 2, btnY + (btnH - 20) / 2, 20);  // 正
+        drawSystemTextCentered("\xe6\xad\xa3", zhengX + btnW / 2, btnY + (btnH - 30) / 2, 30);  // 正
       }
     }
     
@@ -1129,12 +1141,10 @@ void drawBookList() {
       drawVerticalNavBar(hasPrev, hasNext);
     }
     
-    // Status info
-    String bookInfo = "共 " + String(bookCount) + " 本書";
-    if (totalBookPages > 1) {
-      bookInfo += " | 第 " + String(bookListPage + 1) + "/" + String(totalBookPages) + " 頁";
-    }
-    drawSystemText(bookInfo.c_str(), 20, 840, 28);
+    // Status info + page indicator
+    char bookInfoBuf[32];
+    snprintf(bookInfoBuf, sizeof(bookInfoBuf), "共 %d 本書", bookCount);
+    drawPageIndicator(bookListPage + 1, totalBookPages, bookInfoBuf);
     } else {
       // ===== GRID VIEW =====
       int cols = 3, gridRows = 4, gridPad = 8;
@@ -1167,9 +1177,9 @@ void drawBookList() {
             default: break;
           }
           if (tag) {
-            int tagW = 32, tagH = 22;
+            int tagW = 40, tagH = 28;
             M5.Display.drawRoundRect(cx + 4, cy + 4, tagW, tagH, 3, TFT_BLACK);
-            drawSystemTextCentered(tag, cx + 4 + tagW / 2, cy + 4 + (tagH - 16) / 2, 16);
+            drawSystemTextCentered(tag, cx + 4 + tagW / 2, cy + 4 + (tagH - 20) / 2, 20);
           }
         }
 
@@ -1182,12 +1192,12 @@ void drawBookList() {
         int bytePos = 0;
         int nameLen = name.length();
         for (int line = 0; line < 3 && bytePos < nameLen; line++) {
-          // Estimate chars per line: CJK ~22px at size 22, ASCII ~11px
+          // Estimate chars per line: CJK ~26px at size 26, ASCII ~13px
           int lineW = 0;
           int lineStart = bytePos;
           while (bytePos < nameLen && lineW < maxW) {
             uint8_t c = (uint8_t)name[bytePos];
-            int charW = (c < 0x80) ? 11 : 22;
+            int charW = (c < 0x80) ? 13 : 26;
             if (lineW + charW > maxW) break;
             lineW += charW;
             if (c < 0x80) bytePos += 1;
@@ -1197,21 +1207,21 @@ void drawBookList() {
           }
           String lineStr = name.substring(lineStart, bytePos);
           if (line == 2 && bytePos < nameLen) lineStr += "\xe2\x80\xa6";  // "…"
-          drawSystemText(lineStr.c_str(), textX, textY + line * 26, 22);
+          drawSystemText(lineStr.c_str(), textX, textY + line * 30, 26);
         }
 
         // 简/正 buttons at bottom of card for Chinese books
         if (bookCategory[i] == CAT_CN) {
-          int btnW = 36, btnH = 24;
+          int btnW = 44, btnH = 30;
           int btnY2 = cy + cellH - btnH - 4;
           // 简 button (left)
           int jX = cx + cellW / 2 - btnW - 4;
           M5.Display.drawRoundRect(jX, btnY2, btnW, btnH, 3, TFT_BLACK);
-          drawSystemTextCentered("\xe7\xae\x80", jX + btnW / 2, btnY2 + (btnH - 16) / 2, 16);  // 简
+          drawSystemTextCentered("\xe7\xae\x80", jX + btnW / 2, btnY2 + (btnH - 20) / 2, 20);  // 简
           // 正 button (right)
           int zX = cx + cellW / 2 + 4;
           M5.Display.drawRoundRect(zX, btnY2, btnW, btnH, 3, TFT_BLACK);
-          drawSystemTextCentered("\xe6\xad\xa3", zX + btnW / 2, btnY2 + (btnH - 16) / 2, 16);  // 正
+          drawSystemTextCentered("\xe6\xad\xa3", zX + btnW / 2, btnY2 + (btnH - 20) / 2, 20);  // 正
         }
       }
 
@@ -1222,12 +1232,10 @@ void drawBookList() {
         drawVerticalNavBar(hasPrev, hasNext);
       }
 
-      // Status info
-      String bookInfo = "共 " + String(bookCount) + " 本書";
-      if (totalBookPages > 1) {
-        bookInfo += " | 第 " + String(bookListPage + 1) + "/" + String(totalBookPages) + " 頁";
-      }
-      drawSystemText(bookInfo.c_str(), 20, 840, 28);
+      // Status info + page indicator
+      char bookInfoBuf2[32];
+      snprintf(bookInfoBuf2, sizeof(bookInfoBuf2), "共 %d 本書", bookCount);
+      drawPageIndicator(bookListPage + 1, totalBookPages, bookInfoBuf2);
     }
   } else {
     // Show sample books
@@ -1249,7 +1257,7 @@ epd_mode_t getReadingEpdMode() {
     // Mode 1: always quality (slowest, cleanest)
     return epd_mode_t::epd_quality;
   }
-  // Mode 0 and 2: fast with periodic quality refresh every 10 pages for cleanup
+  // Mode 0 and 2: fastest with periodic quality refresh every 10 pages for cleanup
   if (pagesSinceFullRefresh >= 10) {
     pagesSinceFullRefresh = 0;
   }
@@ -1258,7 +1266,7 @@ epd_mode_t getReadingEpdMode() {
     return epd_mode_t::epd_quality;
   }
   pagesSinceFullRefresh++;
-  return epd_mode_t::epd_fast;
+  return epd_mode_t::epd_fastest;
 }
 
 void drawReading() {
@@ -1432,11 +1440,9 @@ void drawTocList() {
       bool hasNext = (tocListPage < totalTocPages - 1);
       drawVerticalNavBar(hasPrev, hasNext);
 
-      String info = String(epubTocCount) + " 章";
-      if (totalTocPages > 1) {
-        info += " | 第 " + String(tocListPage + 1) + "/" + String(totalTocPages) + " 頁";
-      }
-      drawSystemText(info.c_str(), 20, 840, 28);
+      char tocInfoBuf[32];
+      snprintf(tocInfoBuf, sizeof(tocInfoBuf), "%d 章", epubTocCount);
+      drawPageIndicator(tocListPage + 1, totalTocPages, tocInfoBuf);
     } else {
       drawSystemText("此書無目錄", 40, listStartY, 28);
     }
@@ -1457,7 +1463,7 @@ void drawTocList() {
       }
 
       String info = String(bookmarkCount) + " / 5 個書籤";
-      drawSystemText(info.c_str(), 20, 840, 28);
+      drawSystemText(info.c_str(), 20, 830, 28);
     } else {
       drawSystemText("尚無書籤", 40, listStartY, 28);
       drawSystemText("閱讀時點擊 ★ 可加入書籤", 40, listStartY + 50, 22, EPD_DARK_GRAY);

@@ -377,22 +377,49 @@ WeatherConfig weatherConfig;
 TimeConfig timeConfig;
 const char* ntpServer = "pool.ntp.org";
 TimezoneInfo timezones[] = {
-  {"UTC+0", "UTC0", 0},
-  {"Beijing/Taipei +8", "CST-8", 28800},
-  {"Tokyo +9", "JST-9", 32400},
-  {"US West -8/-7", "PST8PDT", -28800},
-  {"US East -5/-4", "EST5EDT", -18000},
-  {"UK +0/+1", "GMT0BST", 0},
-  {"Sydney +10/+11", "AEST-10AEDT", 36000}
+  {"UTC+0 \xe5\x8d\x94\xe8\xaa\xbf\xe4\xb8\x96\xe7\x95\x8c\xe6\x99\x82", "UTC0", 0},                         // UTC+0 協調世界時
+  {"UTC-12 \xe5\x9c\x8b\xe9\x9a\x9b\xe6\x8f\x9b\xe6\x97\xa5\xe7\xb7\x9a\xe8\xa5\xbf", "MHT12", -43200},      // UTC-12
+  {"UTC-11 \xe8\x96\xa9\xe6\x91\xa9\xe4\xba\x9e", "SST11", -39600},                                            // UTC-11 薩摩亞
+  {"UTC-10 \xe5\xa4\x8f\xe5\xa8\x81\xe5\xa4\xb7", "HST10", -36000},                                            // UTC-10 夏威夷
+  {"UTC-9 \xe9\x98\xbf\xe6\x8b\x89\xe6\x96\xaf\xe5\x8a\xa0", "AKST9AKDT", -32400},                            // UTC-9 阿拉斯加
+  {"UTC-8 \xe7\xbe\x8e\xe5\x9c\x8b\xe5\xa4\xaa\xe5\xb9\xb3\xe6\xb4\x8b", "PST8PDT", -28800},                  // UTC-8 美國太平洋
+  {"UTC-7 \xe7\xbe\x8e\xe5\x9c\x8b\xe5\xb1\xb1\xe5\x8d\x80", "MST7MDT", -25200},                              // UTC-7 美國山區
+  {"UTC-6 \xe7\xbe\x8e\xe5\x9c\x8b\xe4\xb8\xad\xe9\x83\xa8", "CST6CDT", -21600},                              // UTC-6 美國中部
+  {"UTC-5 \xe7\xbe\x8e\xe5\x9c\x8b\xe6\x9d\xb1\xe9\x83\xa8", "EST5EDT", -18000},                              // UTC-5 美國東部
+  {"UTC-4 \xe5\xa4\xa7\xe8\xa5\xbf\xe6\xb4\x8b", "AST4ADT", -14400},                                           // UTC-4 大西洋
+  {"UTC-3 \xe5\xb7\xb4\xe8\xa5\xbf", "BRT3", -10800},                                                           // UTC-3 巴西
+  {"UTC-2 \xe4\xb8\xad\xe5\xa4\xa7\xe8\xa5\xbf\xe6\xb4\x8b", "GST2", -7200},                                   // UTC-2 中大西洋
+  {"UTC-1 \xe4\xba\x9e\xe9\x80\x9f\xe7\x88\xbe", "CVT1", -3600},                                               // UTC-1 亞速爾
+  {"UTC+1 \xe4\xb8\xad\xe6\xad\x90", "CET-1CEST", 3600},                                                        // UTC+1 中歐
+  {"UTC+2 \xe6\x9d\xb1\xe6\xad\x90", "EET-2EEST", 7200},                                                        // UTC+2 東歐
+  {"UTC+3 \xe8\x8e\xab\xe6\x96\xaf\xe7\xa7\x91", "MSK-3", 10800},                                               // UTC+3 莫斯科
+  {"UTC+4 \xe6\x9d\x9c\xe6\x8b\x9c", "GST-4", 14400},                                                           // UTC+4 杜拜
+  {"UTC+5 \xe5\x8d\xa1\xe6\x8b\x89\xe5\xa5\x87", "PKT-5", 18000},                                               // UTC+5 卡拉奇
+  {"UTC+5:30 \xe5\x8d\xb0\xe5\xba\xa6", "IST-5:30", 19800},                                                     // UTC+5:30 印度
+  {"UTC+6 \xe9\x81\x94\xe5\x8d\xa1", "BST-6", 21600},                                                           // UTC+6 達卡
+  {"UTC+7 \xe6\x9b\xbc\xe8\xb0\xb7", "ICT-7", 25200},                                                           // UTC+7 曼谷
+  {"UTC+8 \xe5\x8c\x97\xe4\xba\xac", "CST-8", 28800},                                                           // UTC+8 北京
+  {"UTC+8 \xe4\xb8\x8a\xe6\xb5\xb7", "CST-8", 28800},                                                           // UTC+8 上海
+  {"UTC+8 \xe8\x87\xba\xe5\x8c\x97", "CST-8", 28800},                                                           // UTC+8 臺北
+  {"UTC+8 \xe9\xa6\x99\xe6\xb8\xaf", "HKT-8", 28800},                                                           // UTC+8 香港
+  {"UTC+8 \xe6\x96\xb0\xe5\x8a\xa0\xe5\x9d\xa1", "SGT-8", 28800},                                               // UTC+8 新加坡
+  {"UTC+9 \xe6\x9d\xb1\xe4\xba\xac", "JST-9", 32400},                                                           // UTC+9 東京
+  {"UTC+9 \xe9\xa6\x96\xe7\x88\xbe", "KST-9", 32400},                                                           // UTC+9 首爾
+  {"UTC+9:30 \xe9\x98\xbf\xe5\xbe\xb7\xe8\x90\x8a\xe5\xbe\xb7", "ACST-9:30ACDT", 34200},                       // UTC+9:30 阿德萊德
+  {"UTC+10 \xe6\x82\x89\xe5\xb0\xbc", "AEST-10AEDT", 36000},                                                    // UTC+10 悉尼
+  {"UTC+11 \xe6\x89\x80\xe7\xbe\x85\xe9\x96\x80\xe7\xbe\xa4\xe5\xb3\xb6", "SBT-11", 39600},                    // UTC+11 所羅門群島
+  {"UTC+12 \xe5\xa5\xa7\xe5\x85\x8b\xe8\x98\xad", "NZST-12NZDT", 43200},                                        // UTC+12 奧克蘭
+  {"UTC+13 \xe6\x9d\xb1\xe5\x8a\xa0", "TOT-13", 46800},                                                         // UTC+13 東加
 };
-int timezoneCount = 7;
-int selectedTimezone = 1;
+int timezoneCount = sizeof(timezones) / sizeof(timezones[0]);
+int selectedTimezone = 21;  // Default: UTC+8 北京
 WiFiNetwork scannedNetworks[MAX_WIFI_NETWORKS];
 int networkCount = 0;
 int selectedNetworkIndex = -1;
 bool wifiScanning = false;
 bool showingKeyboard = false;
 bool showingTimezone = false;
+int tzScrollOffset = 0;
 String passwordInput = "";
 bool keyboardShift = false;
 bool keyboardSymbols = false;

@@ -1048,11 +1048,8 @@ bgWidth, groupTextHeight + bgPadding * 2,
   Serial.printf("Draw shopping: rendered %d items (idx %d to %d), final columnX=%d\n",
     itemsRendered, startItem, lastRenderedItem, columnX);
   
-  // Page indicator next to right arrow, larger font
-  M5.Display.setFont(&fonts::Font2);
-  M5.Display.setTextSize(1.0);
-  M5.Display.setCursor(155, 910);
-  M5.Display.printf("%d/%d", currentShoppingPage + 1, totalShoppingPages);
+  // Page indicator (universal)
+  drawPageIndicator(currentShoppingPage + 1, totalShoppingPages);
   
   // "清除" (Clear checked) button - only show if there are checked items
   int checkedCount = 0;

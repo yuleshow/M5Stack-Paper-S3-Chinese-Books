@@ -12,6 +12,7 @@ void drawToolsMenu() {
 
   // Title
   drawSystemText("工具", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
 
   // Option 1: 壁紙
   int optY = 200;
@@ -71,7 +72,7 @@ void drawMedReminder() {
   drawSystemText("吃藥提醒器", 20, 42, 40);
 
   // Divider below title
-  M5.Display.drawLine(20, 90, 520, 90, TFT_BLACK);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
 
   // Center X for all centered content
   int cx = 270;

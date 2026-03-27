@@ -827,11 +827,13 @@ void loop() {
           x, y, currentMode, hasSwipeEvent, (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
     DEBUG_LOG_THROTTLE(200, "Touch: %d, %d (mode=%d)", x, y, currentMode);
     
-    // Universal sleep button — skip modes where it doesn't belong:
-    // reading (toolbar occupies space), font menu/test, motto/sleep screen
-    if (hasTouchEvent && touchedSleepButton(x, y) && currentMode != MODE_WELCOME
-        && currentMode != MODE_READING && currentMode != MODE_FONT_MENU
-        && currentMode != MODE_FONT_TEST && currentMode != MODE_MOTTO_TEST) {
+    // Sleep button — only active in modes where the button is actually drawn
+    if (hasTouchEvent && touchedSleepButton(x, y)
+        && (currentMode == MODE_DASHBOARD || currentMode == MODE_BOOK_LIST
+            || currentMode == MODE_CALENDAR || currentMode == MODE_FORTUNE_SLIPS
+            || currentMode == MODE_TOOLS_MENU || currentMode == MODE_MED_REMINDER
+            || currentMode == MODE_WEATHER
+            || (currentMode == MODE_SETUP && setupSubmenu == 0))) {
       sdLog("USER: sleep button pressed mode=%d", currentMode);
       Serial.println("Sleep button pressed");
       enterDeepSleep();
@@ -1535,6 +1537,17 @@ void loop() {
               if (epubIsImageBased) {
                 currentPage = targetChapter;
               } else {
+                // Ensure target chapter is loaded so cumulativeOffset is actual, not estimated
+                bool chapterLoaded = (epubFullText &&
+                    targetChapter >= epubLoadedStartChapter &&
+                    targetChapter < epubLoadedEndChapter);
+                if (!chapterLoaded) {
+                  epubLoadChapterRange(targetChapter);
+                  totalBookBytes = epubEstimatedTotalBytes;
+                  if (bytesPerPage > 0) {
+                    totalPages = (totalBookBytes / bytesPerPage) + 1;
+                  }
+                }
                 size_t targetOffset = epubChapters[targetChapter].cumulativeOffset;
                 int estimatedPage = 0;
                 if (bytesPerPage > 0) {
@@ -1542,6 +1555,7 @@ void loop() {
                   if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
                 }
                 currentPage = estimatedPage;
+                lastRenderedForPage = -1;  // Invalidate sequential offset chain
                 if (pageByteOffsets) {
                   pageByteOffsets[currentPage] = targetOffset;
                   if (pageOffsetsCount <= currentPage) {
@@ -1851,6 +1865,17 @@ void loop() {
               if (epubIsImageBased) {
                 currentPage = chapterIdx;
               } else {
+                // Ensure target chapter is loaded so cumulativeOffset is actual, not estimated
+                bool chapterLoaded = (epubFullText &&
+                    chapterIdx >= epubLoadedStartChapter &&
+                    chapterIdx < epubLoadedEndChapter);
+                if (!chapterLoaded) {
+                  epubLoadChapterRange(chapterIdx);
+                  totalBookBytes = epubEstimatedTotalBytes;
+                  if (bytesPerPage > 0) {
+                    totalPages = (totalBookBytes / bytesPerPage) + 1;
+                  }
+                }
                 size_t targetOffset = epubChapters[chapterIdx].cumulativeOffset;
                 int estimatedPage = 0;
                 if (bytesPerPage > 0) {
@@ -1858,6 +1883,7 @@ void loop() {
                   if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
                 }
                 currentPage = estimatedPage;
+                lastRenderedForPage = -1;  // Invalidate sequential offset chain
                 if (pageByteOffsets) {
                   pageByteOffsets[currentPage] = targetOffset;
                   if (pageOffsetsCount <= currentPage) {
@@ -2558,6 +2584,7 @@ void loop() {
             Serial.println("Timezone settings selected");
             setupSubmenu = 2;
             showingTimezone = true;
+            tzScrollOffset = 0;
             drawWiFiSetup();
             return;
           }
@@ -2695,7 +2722,7 @@ void loop() {
           int keyW = 48;
           int keyH = 60;
           int keySpacing = 6;
-          int startY = 450;
+          int startY = 320;
           
           // Check special keys first
           int specialY = startY + 3 * (keyH + keySpacing);
@@ -2761,8 +2788,8 @@ void loop() {
             }
           }
           
-          // Connect button
-          if (x >= 20 && x <= 220 && y >= btnY && y <= btnY + 80) {
+          // Connect button (at y=620, height 70)
+          if (x >= 20 && x <= 220 && y >= 620 && y <= 690) {
             Serial.println("Connect button touched");
             wifiConfig.ssid = scannedNetworks[selectedNetworkIndex].ssid;
             wifiConfig.password = passwordInput;
@@ -2813,19 +2840,11 @@ void loop() {
           }
         } else {
           // Main WiFi setup screen (network list)
-          int btnY = 750;
           
-          // Scan button
-          if (x >= 20 && x <= 170 && y >= btnY && y <= btnY + 70) {
+          // Scan button (y=832, height 44, width 100)
+          if (x >= 20 && x <= 120 && y >= 832 && y <= 876) {
             Serial.println("Scan button touched");
             scanWiFiNetworks();
-            drawWiFiSetup();
-          }
-          // Timezone button
-          else if (x >= 190 && x <= 340 && y >= btnY && y <= btnY + 70) {
-            Serial.println("Timezone button touched (from WiFi screen)");
-            setupSubmenu = 2;
-            showingTimezone = true;
             drawWiFiSetup();
           }
           // Universal return button (lower-right)
@@ -2834,11 +2853,19 @@ void loop() {
             setupSubmenu = 0;
             drawSetupMenu();
           }
-          // Network selection
+          // Network selection (skip connected WiFi row, match other networks)
           else if (!wifiScanning && networkCount > 0) {
-            int networkY = 120;
-            for (int i = 0; i < networkCount && i < 7; i++) {
-              if (y >= networkY && y <= networkY + 70 && x >= 20 && x <= 520) {
+            // Determine list start: connected WiFi takes y=100..167, others start after
+            bool hasConnected = (WiFi.status() == WL_CONNECTED);
+            String connectedSSID = hasConnected ? WiFi.SSID() : "";
+            int networkY = hasConnected && connectedSSID.length() > 0 ? 180 : 100;
+
+            for (int i = 0; i < networkCount; i++) {
+              if (networkY > 740) break;
+              // Skip the connected network (it's shown as info, not tappable)
+              if (hasConnected && scannedNetworks[i].ssid == connectedSSID) continue;
+
+              if (y >= networkY && y <= networkY + 64 && x >= 20 && x <= 520) {
                 Serial.printf("Network %d selected: %s\n", i, scannedNetworks[i].ssid.c_str());
                 selectedNetworkIndex = i;
                 
@@ -2876,7 +2903,7 @@ void loop() {
                 }
                 break;
               }
-              networkY += 80;
+              networkY += 68;
             }
           }
         }
@@ -2884,8 +2911,13 @@ void loop() {
       else if (setupSubmenu == 2) {
         // Timezone setup submenu
         if (showingTimezone) {
-          // Save button
-          if (x >= 20 && x <= 220 && y >= btnY && y <= btnY + 80) {
+          int rowH = 62;
+          int listTop = 100;
+          int listBottom = 830;
+          int maxVisible = (listBottom - listTop) / rowH;
+
+          // Save button (保存) at y=832, height 44, width 100
+          if (x >= 20 && x <= 120 && y >= 832 && y <= 876) {
             Serial.println("Save timezone button touched");
             timeConfig.timezone = String(timezones[selectedTimezone].tzString);
             timeConfig.gmtOffset = timezones[selectedTimezone].gmtOffset;
@@ -2901,6 +2933,19 @@ void loop() {
             drawSetupMenu();
             return;
           }
+          // Left arrow (prev page)
+          else if (touchedPrevPage(x, y) && tzScrollOffset > 0) {
+            tzScrollOffset -= maxVisible;
+            if (tzScrollOffset < 0) tzScrollOffset = 0;
+            drawWiFiSetup();
+            return;
+          }
+          // Right arrow (next page)
+          else if (touchedNextPage(x, y) && tzScrollOffset + maxVisible < timezoneCount) {
+            tzScrollOffset += maxVisible;
+            drawWiFiSetup();
+            return;
+          }
           // Universal return button (lower-right)
           else if (touchedReturnButton(x, y)) {
             Serial.println("Cancel timezone button touched");
@@ -2910,17 +2955,13 @@ void loop() {
             return;
           }
           // Timezone list selection
-          else {
-            int tzY = 160;
-            for (int i = 0; i < timezoneCount; i++) {
-              if (y >= tzY && y <= tzY + 60 && x >= 15 && x <= 525) {
-                selectedTimezone = i;
-                Serial.printf("Timezone %d selected: %s\n", i, timezones[i].name);
-                drawWiFiSetup();
-                return;
-              }
-              tzY += 70;
-              if (tzY > 750) break;
+          else if (y >= listTop && y <= listBottom) {
+            int tappedIndex = tzScrollOffset + (y - listTop) / rowH;
+            if (tappedIndex >= 0 && tappedIndex < timezoneCount) {
+              selectedTimezone = tappedIndex;
+              Serial.printf("Timezone %d selected: %s\n", tappedIndex, timezones[tappedIndex].name);
+              drawWiFiSetup();
+              return;
             }
           }
         }
@@ -3742,12 +3783,12 @@ void loop() {
               // Check if 简 or 正 button was tapped (only for CAT_CN books)
               if (bookIndex >= 0 && bookIndex < bookCount && bookCategory[bookIndex] == CAT_CN) {
                 int btnY = 120 + (row * BOOK_ROW_HEIGHT) - 2;
-                int btnH = 30;
+                int btnH = 36;
                 if (y >= btnY && y <= btnY + btnH) {
-                  if (x >= 440 && x <= 480) {
+                  if (x >= 421 && x <= 471) {
                     convMode = CONV_SIMPLIFIED;
                     Serial.printf("  -> 简 (simplified) for book %d\n", bookIndex);
-                  } else if (x >= 486 && x <= 526) {
+                  } else if (x >= 477 && x <= 527) {
                     convMode = CONV_TRADITIONAL;
                     Serial.printf("  -> 正 (traditional) for book %d\n", bookIndex);
                   }
@@ -3772,7 +3813,7 @@ void loop() {
                 bookIndex = bookListPage * perPage + slot;
                 // Check 简/正 buttons at bottom of card (for CAT_CN books)
                 if (bookIndex >= 0 && bookIndex < bookCount && bookCategory[bookIndex] == CAT_CN) {
-                  int btnW = 36, btnH2 = 24;
+                  int btnW = 44, btnH2 = 30;
                   int btnY2 = cy + cellH - btnH2 - 4;
                   if (y >= btnY2 && y <= btnY2 + btnH2) {
                     int jX = cx + cellW / 2 - btnW - 4;

@@ -103,6 +103,7 @@ void drawFortuneSlipsMenu() {
 
   // Title
   drawSystemText("求籖", 20, 42, 40);
+  M5.Display.drawLine(20, 85, 520, 85, TFT_BLACK);
 
   // Option 1: 觀音靈籖
   int optY = 200;

@@ -191,7 +191,16 @@ void drawChineseReading() {
     if (unicode == '\r') continue;
     if (unicode < 0x20 && unicode != '\n' && unicode != EPUB_IMG_MARKER &&
         unicode != STYLE_UNDERLINE_ON && unicode != STYLE_UNDERLINE_OFF &&
-        unicode != EPUB_LINK_MARKER) continue;
+        unicode != EPUB_LINK_MARKER && unicode != EPUB_CHAPTER_BREAK) continue;
+
+    // EPUB chapter break → force new page (only if we've drawn something)
+    if (unicode == EPUB_CHAPTER_BREAK && currentBookIsEpub) {
+      if (charsDrawn > 0) {
+        renderStopByte = i;
+        goto endPageRender;
+      }
+      continue;  // Skip marker at start of page
+    }
 
     // Handle EPUB link marker: \x08href\x08 — extract href for tap navigation
     if (unicode == EPUB_LINK_MARKER) {
@@ -739,23 +748,23 @@ void drawChineseReading() {
     if (fillW > 0) {
       M5.Display.fillRect(barX, barY, fillW, barH, TFT_BLACK);
     }
-    // Percentage above bar on the right
+    // Percentage above bar on the left
     char pctStr[8];
     snprintf(pctStr, sizeof(pctStr), "%d%%", (int)(progress * 100));
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(BR_DATUM);
-    M5.Display.drawString(pctStr, barX + barW, barY - 6);
+    M5.Display.setTextDatum(BL_DATUM);
+    M5.Display.drawString(pctStr, barX, barY - 6);
     M5.Display.setTextDatum(TL_DATUM);
-    // Page number on the left side above progress bar (avoid overlapping font buttons)
+    // Page number on the right side above progress bar
     char pageStr[16];
     snprintf(pageStr, sizeof(pageStr), "%d/%d", currentPage + 1, totalPages);
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(TFT_BLACK);
-    M5.Display.setTextDatum(BL_DATUM);
-    M5.Display.drawString(pageStr, barX, barY - 6);
+    M5.Display.setTextDatum(BR_DATUM);
+    M5.Display.drawString(pageStr, barX + barW, barY - 6);
     M5.Display.setTextDatum(TL_DATUM);
   }
   
