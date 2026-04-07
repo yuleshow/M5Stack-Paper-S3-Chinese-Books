@@ -252,6 +252,14 @@ const char* kIconLabels[kIconCount] = {
 };
 Mode fontMenuReturnMode = MODE_DASHBOARD;
 
+// File Manager
+String fmPath = "/";
+String fmEntries[FM_MAX_ENTRIES];
+bool   fmIsDir[FM_MAX_ENTRIES];
+size_t fmSizes[FM_MAX_ENTRIES];
+int    fmCount = 0;
+int    fmScrollOffset = 0;
+
 // SD / Book
 bool sdCardAvailable = false;
 bool sdCardChecked = false;
@@ -310,7 +318,7 @@ int comicZoomQuadrant = -1;
 int comicZoomMode = 0;
 float comicZoomCX = 0.5f;
 float comicZoomCY = 0.5f;
-int pageRefreshMode = 0;       // 0=system default, 1=every page, 2=every 10 pages
+int pageRefreshMode = 0;       // 0=system default (fast+quality every 10 pages), 1=every page quality, 2=fastest only
 bool paragraphIndent = false;  // true=首行縮進(2 chars), false=首行不縮進
 int pagesSinceFullRefresh = 0; // Counter for mode 2
 

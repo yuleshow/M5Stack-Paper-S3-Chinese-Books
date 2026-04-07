@@ -126,7 +126,15 @@ void enterDeepSleep() {
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  
+  // Check wake-up reason early to optimize delay
+  esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+  bool isDeepSleepWake = (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0 || 
+                          wakeup_reason == ESP_SLEEP_WAKEUP_TIMER ||
+                          wakeup_reason == ESP_SLEEP_WAKEUP_EXT1);
+  
+  // Shorter delay for deep sleep wake (serial port already initialized by USB stack)
+  delay(isDeepSleepWake ? 100 : 1000);
   
   // Initialize watchdog timer: auto-reboot if device hangs for 30 seconds
   // This prevents USB from entering a bad state that interferes with
@@ -135,9 +143,6 @@ void setup() {
   esp_task_wdt_add(NULL);       // Add current task (loopTask) to watchdog
   
   bootCount++;
-  
-  // Check wake-up reason
-  esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
   
   Serial.println("\n\n=== M5Paper S3 E-Book Reader ===");
   Serial.printf("Boot #%d, Wakeup cause: %d\n", bootCount, wakeup_reason);
@@ -203,8 +208,6 @@ void setup() {
   Serial.println("M5 initialized");
   
   // Show loading screen (skip for deep sleep wake to avoid extra refresh)
-  bool isDeepSleepWake = (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0 || 
-                          wakeup_reason == ESP_SLEEP_WAKEUP_TIMER);
   if (!isDeepSleepWake) {
     M5.Display.setEpdMode(epd_mode_t::epd_quality);
     M5.Display.startWrite();
@@ -253,7 +256,7 @@ void setup() {
           bootCount, (int)wakeup_reason, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram(), safeMode);
     if (!isDeepSleepWake && !safeMode) updateLoadProgress(10);
     // CRITICAL: Let SD subsystem fully initialize before using it
-    delay(500);
+    delay(isDeepSleepWake ? 100 : 500);
     yield();
     
     // Clean up macOS dot files (skip in safe mode - this can cause WDT resets)
@@ -522,10 +525,18 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   }
   Serial.println("=====================\n");
   
-  // Auto-connect WiFi (skip in safe mode to avoid long timeout)
+  // Auto-connect WiFi (skip in safe mode and deep sleep wake to avoid long timeout)
+  // Deep sleep wake: defer WiFi to loop() reconnection logic for faster resume
   Serial.println("\n=== WiFi Auto-Connect ===");
   if (safeMode) {
     Serial.println("SAFE MODE: Skipping WiFi auto-connect");
+  } else if (isDeepSleepWake) {
+    Serial.println("Deep sleep wake: deferring WiFi to loop() for faster resume");
+    if (wifiConfig.configured) {
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(wifiConfig.ssid.c_str(), wifiConfig.password.c_str());
+      // Non-blocking: let it connect in background, loop() will pick it up
+    }
   } else if (wifiConfig.configured) {
     Serial.printf("SSID: %s\n", wifiConfig.ssid.c_str());
     Serial.println("Attempting auto-connect...");
@@ -823,8 +834,11 @@ void loop() {
   if (hasTouchEvent || hasSwipeEvent) {
     lastActivityTime = millis();
     lastTouchProcessedTime = millis();
-    sdLog("TOUCH: x=%d y=%d mode=%d swipe=%d WiFi=%d heap=%u",
-          x, y, currentMode, hasSwipeEvent, (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
+    // Skip generic TOUCH log in reading mode — page-turn actions are logged individually (PAGE:)
+    if (currentMode != MODE_READING) {
+      sdLog("TOUCH: x=%d y=%d mode=%d swipe=%d WiFi=%d heap=%u",
+            x, y, currentMode, hasSwipeEvent, (int)WiFi.status(), (unsigned)ESP.getFreeHeap());
+    }
     DEBUG_LOG_THROTTLE(200, "Touch: %d, %d (mode=%d)", x, y, currentMode);
     
     // Sleep button — only active in modes where the button is actually drawn
@@ -1404,7 +1418,7 @@ void loop() {
                         ESP.getFreeHeap(), ESP.getFreePsram());
           currentPage++;
           if (currentBookIsEpub && epubIsImageBased) comicZoomQuadrant = -1;
-          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+          if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
           else { Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage); currentPage--; }
         } else if (swipePrev && currentPage > 0) {
           sdLog("PAGE: swipe prev %d->%d/%d WiFi=%d heap=%u",
@@ -1412,7 +1426,7 @@ void loop() {
           Serial.printf("Swipe prev page %d -> %d\n", currentPage, currentPage - 1);
           currentPage--;
           if (currentBookIsEpub && epubIsImageBased) comicZoomQuadrant = -1;
-          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+          if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
           else { Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage); currentPage++; }
         }
       }
@@ -1430,12 +1444,12 @@ void loop() {
         else if (touchedPrevPage(x, y) && currentPage < totalPages - 1) {
           currentPage++;
           comicZoomQuadrant = -1;
-          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+          if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
         }
         else if (touchedNextPage(x, y) && currentPage > 0) {
           currentPage--;
           comicZoomQuadrant = -1;
-          if (loadCurrentPage()) { saveReadingPosition(); drawReading(); }
+          if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
         }
         // Comic zoom mode toggle button (x: 355-425)
         else if (x >= 345 && x <= 435 && y >= NAV_Y && y <= NAV_Y + 69) {
@@ -1589,7 +1603,7 @@ void loop() {
             sdLog("PAGE: btn prev %d->%d/%d WiFi=%d", currentPage, currentPage-1, totalPages, (int)WiFi.status());
             Serial.printf("LEFT arrow - prev page %d -> %d\n", currentPage, currentPage - 1);
             currentPage--;
-            if (loadCurrentPage()) { if (currentPage % 5 == 0) saveReadingPosition(); drawReading(); }
+            if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
             else { currentPage++; }
           }
         } else {
@@ -1599,7 +1613,7 @@ void loop() {
             Serial.printf("LEFT arrow - page %d -> %d (totalPages=%d, freePSRAM=%u)\n",
                           currentPage, currentPage + 1, totalPages, ESP.getFreePsram());
             currentPage++;
-            if (loadCurrentPage()) { if (currentPage % 5 == 0) saveReadingPosition(); drawReading(); }
+            if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
             else { currentPage--; }
           }
         }
@@ -1612,7 +1626,7 @@ void loop() {
           if (currentPage < totalPages - 1) {
             Serial.printf("RIGHT arrow - next page %d -> %d\n", currentPage, currentPage + 1);
             currentPage++;
-            if (loadCurrentPage()) { if (currentPage % 5 == 0) saveReadingPosition(); drawReading(); }
+            if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
             else { currentPage--; }
           }
         } else {
@@ -1620,7 +1634,7 @@ void loop() {
           if (currentPage > 0) {
             Serial.printf("RIGHT arrow - page %d -> %d\n", currentPage, currentPage - 1);
             currentPage--;
-            if (loadCurrentPage()) { if (currentPage % 5 == 0) saveReadingPosition(); drawReading(); }
+            if (loadCurrentPage()) { drawReading(); if (currentPage % 5 == 0) saveReadingPosition(); }
             else { currentPage++; }
           }
         }
@@ -1633,8 +1647,8 @@ void loop() {
         Serial.printf("Image page tap - page %d -> %d\n", currentPage, currentPage + 1);
         currentPage++;
         if (loadCurrentPage()) {
-          saveReadingPosition();
           drawReading();
+          if (currentPage % 5 == 0) saveReadingPosition();
         } else {
           Serial.printf("ERROR: loadCurrentPage failed for page %d\n", currentPage);
           currentPage--;
@@ -1746,6 +1760,18 @@ void loop() {
           if (!epubTocEntries || epubTocCount == 0) {
             epubParseToc();
           }
+          // If TOC has only a license entry (e.g., Project Gutenberg), treat as no TOC
+          if (epubTocCount == 1 && epubTocEntries) {
+            String lbl = epubTocEntries[0].label;
+            lbl.toUpperCase();
+            if (lbl.indexOf("GUTENBERG") >= 0 || lbl.indexOf("LICENSE") >= 0) {
+              Serial.println("TOC: only license entry, generating virtual TOC");
+              epubFreeToc();
+            }
+          }
+          if (!epubTocEntries || epubTocCount == 0) {
+            epubGenerateVirtualToc();
+          }
           if (!epubTocEntries || epubTocCount == 0) {
             Serial.println("TOC: no entries found, staying in reading mode");
           } else {
@@ -1773,6 +1799,10 @@ void loop() {
         pageJumpInput = "";
         currentMode = MODE_PAGE_JUMP;
         drawPageJumpPopup();
+      }
+      // Dead zone: lower-right corner (old return button area) — ignore taps
+      else if (x >= NAV_RETURN_X && y >= NAV_Y) {
+        // No action — prevent accidental page turns in this corner
       }
       else if (x < 270) {
         // Left side tap
@@ -1876,7 +1906,9 @@ void loop() {
                     totalPages = (totalBookBytes / bytesPerPage) + 1;
                   }
                 }
-                size_t targetOffset = epubChapters[chapterIdx].cumulativeOffset;
+                size_t targetOffset = epubTocEntries[tocIdx].byteOffset > 0
+                    ? epubTocEntries[tocIdx].byteOffset
+                    : epubChapters[chapterIdx].cumulativeOffset;
                 int estimatedPage = 0;
                 if (bytesPerPage > 0) {
                   estimatedPage = targetOffset / bytesPerPage;
@@ -3327,6 +3359,74 @@ void loop() {
           drawMottoScreen();
         } else {
           drawMottoBuiltinPage();
+        }
+      }
+      // Option 4: 檔案管理 (y=590..700)
+      else if (x >= 40 && x <= 500 && y >= 590 && y <= 700) {
+        Serial.println("Tools: opening file manager");
+        if (sdCardAvailable) {
+          fmPath = "/";
+          loadFileManagerDir();
+          currentMode = MODE_FILE_MANAGER;
+          drawFileManager();
+        }
+      }
+    }
+    else if (currentMode == MODE_FILE_MANAGER) {
+      if (touchedReturnButton(x, y)) {
+        // Go up one directory, or back to tools menu if at root
+        if (fmPath == "/") {
+          Serial.println("FM: return to tools menu");
+          currentMode = MODE_TOOLS_MENU;
+          drawToolsMenu();
+        } else {
+          // Go to parent directory
+          int lastSlash = fmPath.lastIndexOf('/');
+          if (lastSlash <= 0) {
+            fmPath = "/";
+          } else {
+            fmPath = fmPath.substring(0, lastSlash);
+          }
+          Serial.printf("FM: navigate up to '%s'\n", fmPath.c_str());
+          loadFileManagerDir();
+          drawFileManager();
+        }
+      }
+      // Next page (← arrow)
+      else if (touchedPrevPage(x, y)) {
+        int maxVisible = 10;
+        int endIdx = fmScrollOffset + maxVisible;
+        if (endIdx < fmCount) {
+          fmScrollOffset += maxVisible;
+          drawFileManager();
+        }
+      }
+      // Prev page (→ arrow)
+      else if (touchedNextPage(x, y)) {
+        if (fmScrollOffset > 0) {
+          int maxVisible = 10;
+          fmScrollOffset -= maxVisible;
+          if (fmScrollOffset < 0) fmScrollOffset = 0;
+          drawFileManager();
+        }
+      }
+      // Item touch (y=92..875)
+      else if (y >= 92 && y <= 875 && x >= 20 && x <= 520) {
+        int itemHeight = 73;  // 68 + 5 gap
+        int idx = fmScrollOffset + (y - 92) / itemHeight;
+        if (idx >= 0 && idx < fmCount) {
+          if (fmIsDir[idx]) {
+            // Navigate into directory
+            if (fmPath == "/") {
+              fmPath = "/" + fmEntries[idx];
+            } else {
+              fmPath = fmPath + "/" + fmEntries[idx];
+            }
+            Serial.printf("FM: enter dir '%s'\n", fmPath.c_str());
+            loadFileManagerDir();
+            drawFileManager();
+          }
+          // Files: just highlight (no action for now)
         }
       }
     }

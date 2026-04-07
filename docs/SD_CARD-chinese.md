@@ -11,7 +11,6 @@
 ```
 SD 卡根目錄/
 ├── config.ini                ← WiFi、時區、天氣、BLE 解鎖設定
-├── weather.cfg               ← 舊版天氣設定（選用備用）
 ├── mottos.txt                ← 睡眠畫面格言，每行一句
 ├── cangjie5.bin              ← 倉頡輸入法字典
 ├── shopping_list.csv         ← 購物清單
@@ -66,16 +65,6 @@ device_name=M5Paper-BLE
 
 範本請參見 `assets/config.ini.example`。
 
-### `weather.cfg`（選用）
-
-舊版天氣專用設定檔。當 `config.ini` 未包含天氣設定時作為備用。
-
-```
-apikey=你的OPENWEATHERMAP_API金鑰
-city=Los Angeles,US
-units=metric
-```
-
 ### `mottos.txt`（選用）
 
 每行一句格言（UTF-8 編碼）。顯示於桌布/睡眠畫面。若檔案不存在，使用內建預設格言。
@@ -124,7 +113,7 @@ units=metric
 | `*.txt`  | UTF-8 純文字書籍 |
 | `*.epub` | EPUB 電子書 |
 
-- 最多顯示 **20** 本書。
+- 最多顯示 **100** 本書。
 - 韌體會在每本書旁自動建立附屬檔案：
   - `<書名>.txt.pos` / `<書名>.epub.pos` — 閱讀進度
   - `<書名>.txt.bm` / `<書名>.epub.bm` — 書籤（最多 5 個）

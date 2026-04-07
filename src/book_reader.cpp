@@ -1257,8 +1257,12 @@ epd_mode_t getReadingEpdMode() {
     // Mode 1: always quality (slowest, cleanest)
     return epd_mode_t::epd_quality;
   }
-  // Mode 0 and 2: fastest with periodic quality refresh every 10 pages for cleanup
-  if (pagesSinceFullRefresh >= 10) {
+  if (pageRefreshMode == 2) {
+    // Mode 2: fastest only — never do quality refresh (fastest page turns, may show ghosting)
+    return epd_mode_t::epd_fastest;
+  }
+  // Mode 0: fastest with periodic quality refresh every 20 pages for cleanup
+  if (pagesSinceFullRefresh >= 20) {
     pagesSinceFullRefresh = 0;
   }
   if (pagesSinceFullRefresh == 0) {

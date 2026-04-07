@@ -11,8 +11,6 @@ SD card content and build-time assets for the M5Stack Paper S3 firmware.
 |------|-------------|
 | `config.ini` | Main configuration: WiFi credentials, timezone, weather API key (gitignored) |
 | `config.ini.example` | Template for `config.ini` — copy to SD card and fill in your details |
-| `weather.cfg` | Alternative weather-only configuration (gitignored) |
-| `weather.cfg.example` | Template for `weather.cfg` |
 | `cangjie5.bin` | Compiled Cangjie input method dictionary (binary, loaded at runtime from SD) |
 | `mottos.txt` | Daily mottos displayed on the sleep screen, one per line |
 | `shopping_list.csv` | Shopping list data (`group|item` format) |

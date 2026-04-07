@@ -20,10 +20,14 @@ void drawChineseReading() {
   // (not ofrFontLoaded, since OFR may also hold a Latin font like EBGaramond)
   enum FontRenderer { FONT_BUILTIN, FONT_BINFONT, FONT_OFR };
   FontRenderer renderer = FONT_BUILTIN;
+  bool isBpmfZihiFont = false;
   
   {
     String activeFont = (readingFontFile.length() > 0) ? readingFontFile :
         ((readingFontIndex >= 0 && readingFontIndex < fontFileCount) ? fontFileList[readingFontIndex] : String(""));
+    String activeFontLower = activeFont;
+    activeFontLower.toLowerCase();
+    isBpmfZihiFont = (activeFontLower.indexOf("bpmf") >= 0 && activeFontLower.indexOf("zihi") >= 0);
     bool isBinFile = activeFont.endsWith(".bin") || activeFont.endsWith(".BIN");
     if (isBinFile && g_binFont.loaded) {
       renderer = FONT_BINFONT;
@@ -107,8 +111,10 @@ void drawChineseReading() {
   int rdLeft, rdRight, rdTop, rdMaxY;
   // Use nominal readingFontSize for layout so all fonts at same size have same grid
   int layoutSize = readingFontSize;
-  charHeight = layoutSize + (layoutSize / 5);  // ~1.2x font size for spacing
-  columnSpacing = layoutSize + (layoutSize / 5);
+  charHeight = layoutSize + (layoutSize / 5);
+  // Bpmf Zihi: increase horizontal column spacing only.
+  int horizontalSpacingDiv = isBpmfZihiFont ? 3 : 5;
+  columnSpacing = layoutSize + (layoutSize / horizontalSpacingDiv);
   rdLeft = READING_AREA_LEFT; rdRight = READING_AREA_RIGHT;
   rdTop = READING_AREA_TOP;   rdMaxY = VERTICAL_TEXT_MAX_Y;
   // Safety: guard against zero char dimensions (would cause div-by-zero or infinite loop)
@@ -142,6 +148,7 @@ void drawChineseReading() {
   bool lastWasSpace = true;   // Start true to skip leading spaces/U+3000 (paragraph indent)
   bool pageHasImage = false;  // Track if this page rendered a cover/inline image
   int indentCount = 0;        // Track paragraph indent spaces rendered (for paragraphIndent mode)
+  uint32_t lastRenderedUnicode = 0;  // Track last drawn codepoint (for space-after-punctuation check)
   bool underlineActive = false;  // For EPUB <a> link underline rendering
   String currentLinkHref = "";   // Current link href being rendered
   int linkStartY = -1;           // Y of first underlined char in current link
@@ -150,7 +157,8 @@ void drawChineseReading() {
   // Clear inline link table for this page
   inlineLinkCount = 0;
   
-  Serial.printf("Font renderer: %d, fontSize: %d, charHeight: %d, silverReading: %d\n", renderer, fontSizePt, charHeight, silverReading);
+  Serial.printf("Font renderer: %d, fontSize: %d, charHeight: %d, silverReading: %d, bpmfMode: %d\n",
+                renderer, fontSizePt, charHeight, silverReading, isBpmfZihiFont ? 1 : 0);
   Serial.printf("Layout: rdLeft=%d rdRight=%d rdTop=%d rdMaxY=%d charsPerCol=%d columnX=%d\n",
                 rdLeft, rdRight, rdTop, rdMaxY, charsPerColumn, columnX);
   int charsDrawn = 0;
@@ -242,7 +250,7 @@ void drawChineseReading() {
       linkColumnX = -1;
       continue;
     }
-    // Collapse consecutive spaces into one; render as blank cell
+    // Space handling for Chinese text
     if (unicode == 0x3000 || unicode == ' ') {
       // When paragraphIndent is enabled, allow up to 2 U+3000 at paragraph start
       if (paragraphIndent && unicode == 0x3000 && indentCount < 2) {
@@ -261,7 +269,79 @@ void drawChineseReading() {
         }
         continue;
       }
-      if (lastWasSpace) continue;  // Skip consecutive spaces
+
+      // Rule 1: Two full-width spaces (U+3000) after punctuation → paragraph break
+      if (unicode == 0x3000 && isPunctuation(lastRenderedUnicode)) {
+        int peekPos = i;
+        if (peekPos < (int)sampleText.length()) {
+          uint32_t nextCp = utf8Decode(sampleText, peekPos);
+          if (nextCp == 0x3000) {
+            // Found two consecutive U+3000 after punctuation → new paragraph
+            i = peekPos;  // Consume second U+3000
+            lastWasSpace = true;
+            indentCount = 0;
+            if (charIndex > 0) {
+              columnX -= columnSpacing;
+              currentY = startY;
+              charIndex = 0;
+              if (columnX - columnSpacing / 2 < rdLeft) {
+                renderStopByte = i;
+                break;
+              }
+            }
+            continue;
+          }
+        }
+      }
+
+      // Peek ahead to find next non-space character
+      int peekPos = i;
+      uint32_t nextNonSpace = 0;
+      while (peekPos < (int)sampleText.length()) {
+        uint32_t pCp = utf8Decode(sampleText, peekPos);
+        if (pCp != ' ' && pCp != 0x3000) {
+          nextNonSpace = pCp;
+          break;
+        }
+      }
+
+      // Rule 2: Space between 句號/問號/感嘆號 and CJK character → new line (paragraph break)
+      if (isSentenceEnd(lastRenderedUnicode) && isCJKChar(nextNonSpace)) {
+        lastWasSpace = true;
+        indentCount = 0;
+        if (charIndex > 0) {
+          columnX -= columnSpacing;
+          currentY = startY;
+          charIndex = 0;
+          if (columnX - columnSpacing / 2 < rdLeft) {
+            renderStopByte = i;
+            break;
+          }
+        }
+        continue;
+      }
+
+      // Rule 3: Space between CJK character and punctuation → remove
+      if (isCJKChar(lastRenderedUnicode) && isPunctuation(nextNonSpace)) {
+        continue;
+      }
+
+      // Rule 4: Space between punctuation and CJK character or punctuation → remove
+      // (covers ：" → ：", opening quotes/brackets like " 「 《, comma ，, etc.)
+      // Sentence-end punctuation (。？！) already handled by Rule 2 above.
+      if (isPunctuation(lastRenderedUnicode) && (isCJKChar(nextNonSpace) || isPunctuation(nextNonSpace))) {
+        continue;
+      }
+
+      // Rule 5: Remove space between two non-punctuation characters
+      if (!isPunctuation(lastRenderedUnicode)) {
+        if (nextNonSpace == 0 || !isPunctuation(nextNonSpace)) {
+          continue;
+        }
+      }
+
+      // Rule 6: Collapse consecutive spaces into one
+      if (lastWasSpace) continue;
       lastWasSpace = true;
       // Render space as empty cell (advance position without drawing)
       currentY += charHeight;
@@ -280,6 +360,7 @@ void drawChineseReading() {
       continue;
     }
     lastWasSpace = false;
+    indentCount = 2;  // Disable paragraph indent after any real character is rendered
 
     // Detect chapter heading "第XXX回/章/節/篇/卷" → force page break (next page starts at 第)
     // Applied to all books: TXT, EPUBs with/without TOC.
@@ -499,19 +580,35 @@ void drawChineseReading() {
         esp_task_wdt_reset();
         Serial.printf("EPUB IMG: extracting '%s'...\n", imgPath.c_str());
         unsigned long imgStart = millis();
-        bool imgDrawn = epubExtractAndDrawImage(imgPath, imgX, imgY, imgW, imgH);
-        Serial.printf("EPUB IMG: extraction took %lu ms, drawn=%d\n", millis() - imgStart, imgDrawn);
+        int imgRenderedH = 0;
+        bool imgDrawn = epubExtractAndDrawImage(imgPath, imgX, imgY, imgW, imgH,
+                                                -1, 0.5f, 0.5f, &imgRenderedH);
+        Serial.printf("EPUB IMG: extraction took %lu ms, drawn=%d, renderedH=%d\n",
+                      millis() - imgStart, imgDrawn, imgRenderedH);
         esp_task_wdt_reset();
         M5.Display.startWrite();
         
         if (imgDrawn) {
           pageHasImage = true;
-          // Image drawn — this page is done, break to next page
-          renderStopByte = i;
-          Serial.printf("EPUB IMG: page %d endPageRender at renderStopByte=%d of %d, offset=%d, freePSRAM=%u\n",
-                        currentPage, renderStopByte, (int)sampleText.length(),
-                        (int)currentPageByteOffset, ESP.getFreePsram());
-          goto endPageRender;
+          // Check if image fills the page or leaves room for text below
+          int imgBottom = imgY + imgRenderedH;
+          int remainingH = rdMaxY - imgBottom;
+          if (remainingH < charHeight * 2) {
+            // Image fills page — break to next page
+            renderStopByte = i;
+            Serial.printf("EPUB IMG: page %d endPageRender at renderStopByte=%d of %d, offset=%d, freePSRAM=%u\n",
+                          currentPage, renderStopByte, (int)sampleText.length(),
+                          (int)currentPageByteOffset, ESP.getFreePsram());
+            goto endPageRender;
+          }
+          // Image is small — continue rendering text below it
+          // Shift text area top below the image with a gap
+          startY = imgBottom + charHeight / 2;
+          currentY = startY;
+          charIndex = 0;
+          // Reset column to rightmost position for the narrowed area
+          columnX = rdRight - columnSpacing / 2;
+          Serial.printf("EPUB IMG: small image, continuing text at y=%d\n", startY);
         } else {
           // Image failed — show placeholder text
           Serial.printf("EPUB: Image not rendered: %s\n", imgPath.c_str());
@@ -522,6 +619,19 @@ void drawChineseReading() {
     
     // Hard newline → start a new column (paragraph break in vertical text)
     if (unicode == '\n') {
+      // Suppress paragraph break when last rendered char is an opening quote/bracket
+      // (dialogue continues across HTML paragraphs, e.g., ："\n老爺 should flow together)
+      bool isOpenQuote = (lastRenderedUnicode == 0x300C || lastRenderedUnicode == 0x300E ||  // 「『
+                          lastRenderedUnicode == 0x300A || lastRenderedUnicode == 0x3008 ||  // 《〈
+                          lastRenderedUnicode == 0x3010 || lastRenderedUnicode == 0xFF08 ||  // 【（
+                          lastRenderedUnicode == 0x201C || lastRenderedUnicode == 0x2018 ||  // ""
+                          lastRenderedUnicode == 0xFE41 || lastRenderedUnicode == 0xFE43 ||  // ﹁﹃ (vertical forms)
+                          lastRenderedUnicode == 0xFE3D || lastRenderedUnicode == 0xFE3F ||  // ︽︿
+                          lastRenderedUnicode == 0xFE3B || lastRenderedUnicode == 0xFE35);   // ︻︵
+      if (isOpenQuote) {
+        // Treat as a space (will be removed by space rules if adjacent to CJK)
+        continue;
+      }
       lastWasSpace = true;  // Skip leading spaces/U+3000 at start of new column (paragraph indent)
       indentCount = 0;      // Reset indent counter for new paragraph
       if (charIndex > 0) {  // Only if current column has content
@@ -541,6 +651,9 @@ void drawChineseReading() {
     unicode = halfToFullWidth(unicode);
     // Apply vertical punctuation mapping
     unicode = toVerticalPunct(unicode);
+
+    // Track last rendered codepoint for space-after-punctuation logic
+    lastRenderedUnicode = unicode;
 
     // Draw character using the selected renderer
     draw_normal_char:
@@ -572,7 +685,12 @@ void drawChineseReading() {
         int drawX, drawY;
         if (g_binFont.version >= 2) {
           drawX = emX + (int)(glyph->bearingX * binScale + 0.5f);
-          drawY = emY + (int)(glyph->bearingY * binScale + 0.5f);
+          if (isBpmfZihiFont) {
+            // Bpmf Zihi: keep X from bearings but center Y in the em-square.
+            drawY = emY + (fontSizePt - scaledH) / 2;
+          } else {
+            drawY = emY + (int)(glyph->bearingY * binScale + 0.5f);
+          }
         } else {
           drawX = columnX - scaledW / 2;
           drawY = emY + (fontSizePt - scaledH) / 2;
@@ -633,13 +751,17 @@ void drawChineseReading() {
             if (glyph && glyph->width > 0) {
               int emY = currentY + (charHeight - fontSizePt) / 2;
               int emX = columnX - fontSizePt / 2;
+              int kScaledW = (int)(glyph->width * binScale + 0.5f);
+              int kScaledH = (int)(glyph->height * binScale + 0.5f);
               int kx, ky;
               if (g_binFont.version >= 2) {
                 kx = emX + (int)(glyph->bearingX * binScale + 0.5f);
-                ky = emY + (int)(glyph->bearingY * binScale + 0.5f);
+                if (isBpmfZihiFont) {
+                  ky = emY + (fontSizePt - kScaledH) / 2;
+                } else {
+                  ky = emY + (int)(glyph->bearingY * binScale + 0.5f);
+                }
               } else {
-                int kScaledW = (int)(glyph->width * binScale + 0.5f);
-                int kScaledH = (int)(glyph->height * binScale + 0.5f);
                 kx = columnX - kScaledW / 2;
                 ky = emY + (fontSizePt - kScaledH) / 2;
               }
@@ -667,17 +789,34 @@ void drawChineseReading() {
   }
   endPageRender:  // Jump target for image rendering page break
   
+  // Auto-skip blank pages: if nothing was rendered (e.g., cover page with
+  // unrenderable image or empty metadata chapter), advance to the next page.
+  if (charsDrawn == 0 && !pageHasImage && currentPage < totalPages - 1) {
+    Serial.printf("Blank page %d: auto-advancing to page %d\n", currentPage, currentPage + 1);
+    M5.Display.endWrite();
+    currentPage++;
+    if (loadCurrentPage()) {
+      saveReadingPosition();
+      drawReading();
+    }
+    return;
+  }
+  
   // OFR Latin font (ET Book embedded) is intentionally kept loaded — avoids
   // re-initialisation on every page turn.  BIN font stays in
   // memory regardless; renderer selection uses readingFontFile extension.
   
-  // Redraw nav bar on top of image — image rendering may have overlapped the nav area
+  // Redraw nav arrows + return on top of image — image rendering may have overlapped the nav area
+  // Use reading-mode nav (arrows + top-center return), not book-list drawVerticalNavBar
+  // which would add a second return icon at the lower-right corner.
   if (pageHasImage) {
     lastPageWasImage = true;
     bool hasPrev = (currentPage > 0);
     bool hasNext = (currentPage < totalPages - 1);
-    drawVerticalNavBar(hasPrev, hasNext);
-    Serial.printf("EPUB IMG: Redrawn nav bar (hasPrev=%d, hasNext=%d, page=%d/%d)\n",
+    if (hasNext) drawNavIcon("back.png", NAV_PREV_X, NAV_Y);
+    if (hasPrev) drawNavIcon("next.png", NAV_NEXT_X, NAV_Y);
+    drawReadingReturnButton();
+    Serial.printf("EPUB IMG: Redrawn nav icons (hasPrev=%d, hasNext=%d, page=%d/%d)\n",
                   hasPrev, hasNext, currentPage, totalPages);
   } else {
     lastPageWasImage = false;
@@ -702,6 +841,13 @@ void drawChineseReading() {
                       currentPage + 1, (int)pageByteOffsets[currentPage + 1], (int)correctedNextStart,
                       renderStopByte, (int)sampleText.length());
         pageByteOffsets[currentPage + 1] = correctedNextStart;
+        // Invalidate all offsets beyond currentPage+1 since they depend on the old value
+        // This prevents cascading stale offsets causing page jumps during backward navigation
+        if (currentPage + 2 < pageOffsetsCount) {
+          Serial.printf("Invalidating page offsets %d-%d (stale after correction)\n",
+                        currentPage + 2, pageOffsetsCount - 1);
+          pageOffsetsCount = currentPage + 2;
+        }
       }
     } else if (currentPage + 1 == pageOffsetsCount && pageOffsetsCount < MAX_PAGE_OFFSETS) {
       // Extend offset array — next page wasn't tracked yet

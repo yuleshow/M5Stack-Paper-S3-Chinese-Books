@@ -11,7 +11,6 @@ This document describes all files and directories the M5Stack Paper S3 firmware 
 ```
 SD Card Root/
 ├── config.ini                ← WiFi, timezone, weather, BLE unlock
-├── weather.cfg               ← Legacy weather config (optional fallback)
 ├── mottos.txt                ← Sleep-screen mottos, one per line
 ├── cangjie5.bin              ← Cangjie input method dictionary
 ├── shopping_list.csv         ← Shopping list
@@ -66,16 +65,6 @@ device_name=M5Paper-BLE
 
 See `assets/config.ini.example` for a template.
 
-### `weather.cfg` (optional)
-
-Legacy weather-only config. Used as a fallback if `config.ini` does not contain weather settings.
-
-```
-apikey=YOUR_OPENWEATHERMAP_API_KEY
-city=Los Angeles,US
-units=metric
-```
-
 ### `mottos.txt` (optional)
 
 One motto per line (UTF-8). Displayed on the wallpaper / sleep screen. If not present, a built-in default motto is used.
@@ -124,7 +113,7 @@ Custom calendar events displayed on the calendar screen.
 | `*.txt`   | UTF-8 plain text books |
 | `*.epub`  | EPUB e-books |
 
-- Maximum **20** books displayed in the list.
+- Maximum **100** books displayed in the list.
 - The firmware auto-creates sidecar files alongside each book:
   - `<name>.txt.pos` / `<name>.epub.pos` — reading position
   - `<name>.txt.bm` / `<name>.epub.bm` — bookmarks (up to 5)

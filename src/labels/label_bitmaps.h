@@ -1417,6 +1417,7 @@
 #include "label_s40_select_font_en.h"
 #include "label_s40_tools.h"
 #include "label_s40_fortune.h"
+#include "label_solar_term_tz_note.h"
 #include "label_mchar_2014.h"
 #include "label_mchar_3002.h"
 #include "label_mchar_300c.h"
@@ -1574,7 +1575,7 @@ struct LabelBitmap {
   const uint8_t* bitmap;
 };
 
-const int kLabelBitmapCount = 1558;
+const int kLabelBitmapCount = 1559;
 
 const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"電子書", 32, label_ebook_w, label_ebook_h, label_ebook_bitmap},
@@ -2988,6 +2989,7 @@ const LabelBitmap kLabelBitmaps[] PROGMEM = {
   {"Select Font", 40, label_s40_select_font_en_w, label_s40_select_font_en_h, label_s40_select_font_en_bitmap},
   {"工具", 40, label_s40_tools_w, label_s40_tools_h, label_s40_tools_bitmap},
   {"求籖", 40, label_s40_fortune_w, label_s40_fortune_h, label_s40_fortune_bitmap},
+  {"節氣依當地時間，與北京或差一天", 18, label_solar_term_tz_note_w, label_solar_term_tz_note_h, label_solar_term_tz_note_bitmap},
   {"—", 48, label_mchar_2014_w, label_mchar_2014_h, label_mchar_2014_bitmap},
   {"。", 48, label_mchar_3002_w, label_mchar_3002_h, label_mchar_3002_bitmap},
   {"「", 48, label_mchar_300c_w, label_mchar_300c_h, label_mchar_300c_bitmap},

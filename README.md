@@ -1,11 +1,22 @@
 # 梅花小民
 # M5Stack Paper S3 — Chinese Book Reader & Almanac Calendar
+### 一個讀書人寫的讀書項目
 
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-Firmware-blue)
 ![E-Ink](https://img.shields.io/badge/540×960-E--Ink-gray)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-Build-green)
 ![License](https://img.shields.io/badge/License-GPLv2-red)
 ![CJK](https://img.shields.io/badge/CJK-繁體中文-orange)
+![C++](https://img.shields.io/badge/C%2B%2B-Language-blue)
+![Arduino](https://img.shields.io/badge/Arduino-Framework-teal)
+![BLE](https://img.shields.io/badge/BLE-Bluetooth-blue)
+![WiFi](https://img.shields.io/badge/WiFi-Enabled-blue)
+![EPUB](https://img.shields.io/badge/EPUB-Reader-green)
+![SD Card](https://img.shields.io/badge/SD_Card-Storage-yellow)
+![PSRAM](https://img.shields.io/badge/PSRAM-OPI-purple)
+![Calendar](https://img.shields.io/badge/農民曆-Almanac-red)
+![Cangjie](https://img.shields.io/badge/倉頡-Input-orange)
+![Weather](https://img.shields.io/badge/Weather-Dashboard-blue)
 
 ![alt text](assets/s3cover.jpg)
 
@@ -112,6 +123,10 @@ A complete traditional Chinese almanac with:
 Calendar page comparison (March 20, 2026 — 農曆二月初二，春分):
 
 ![Calendar Comparison](output/calendar_comparison.png)
+
+Dashboard comparison:
+
+![Fonts Dashboard](output/fonts_dashboard.png)
 
 ## Hardware
 
@@ -231,7 +246,6 @@ Place the following files on the SD card:
 | `todo_list.csv` | Optional | Todo list (`date,task` format) |
 | `wallpapers/*.jpg` | Optional | JPG wallpapers |
 | `icons/icon1.png`–`icon8.png` | Optional | Custom dashboard icons (PNG) |
-| `weather.cfg` | Optional | Alternative weather-only config |
 
 ### Configuration
 

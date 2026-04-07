@@ -54,45 +54,14 @@ static void drawRefreshIcon() {
 }
 
 void loadWeatherConfig() {
-  // Weather config is now loaded from [weather] section in config.ini
-  // by loadWiFiConfig(). This function serves as fallback for legacy weather.cfg.
-  if (weatherConfig.configured) return;  // Already loaded from config.ini
+  // Weather config is loaded from [weather] section in config.ini
+  // by loadWiFiConfig(). Nothing to do if already configured.
+  if (weatherConfig.configured) return;
 
   weatherConfig.configured = false;
   weatherConfig.units = "metric";
   weatherConfig.city = "";
   weatherConfig.apiKey = "";
-
-  if (!sdCardAvailable) return;
-
-  // Fallback: try legacy weather.cfg
-  File f = SD.open("/weather.cfg");
-  if (!f) {
-    Serial.println("No weather.cfg found (use [weather] section in config.ini)");
-    return;
-  }
-  Serial.println("Loading weather from legacy weather.cfg");
-
-  while (f.available()) {
-    String line = f.readStringUntil('\n');
-    line.trim();
-    int eq = line.indexOf('=');
-    if (eq < 0) continue;
-    String key = line.substring(0, eq);
-    String val = line.substring(eq + 1);
-    key.trim(); val.trim();
-
-    if (key == "apikey") weatherConfig.apiKey = val;
-    else if (key == "city") weatherConfig.city = val;
-    else if (key == "units") weatherConfig.units = val;
-  }
-  f.close();
-
-  if (weatherConfig.apiKey.length() > 0 && weatherConfig.city.length() > 0) {
-    weatherConfig.configured = true;
-    Serial.printf("Weather config (legacy): city=%s, units=%s\n",
-      weatherConfig.city.c_str(), weatherConfig.units.c_str());
-  }
 }
 
 // Map OpenWeatherMap description to Chinese

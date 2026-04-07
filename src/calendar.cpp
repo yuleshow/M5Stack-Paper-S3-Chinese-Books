@@ -419,7 +419,7 @@ static void computeTermDates(int year) {
       // Map calendar index to ecliptic index
       int eclipticIdx = (i + 19) % 24;
       int cycleYear = (eclipticIdx >= 19) ? year - 1 : year;
-      int k = (cycleYear - 2000) * 24 + eclipticIdx;
+      int k = (cycleYear - 2000) * 24 + eclipticIdx + 24;
       double W = k * M_PI / 12.0;
       double j2k = sxwnl_qi_low(W);
       double jd = j2k + 2451545.0;
@@ -1852,6 +1852,12 @@ void drawCalendar() {
       drawSystemText("天", xp, secYSolar, 20);
     }
   }
+
+  // Note for non-Beijing timezones: solar term dates may differ by one day
+  if (timeConfig.gmtOffset != 28800) {
+    drawSystemText("節氣依當地時間，與北京或差一天", 20, 940, 18, EPD_LIGHT_GRAY);
+  }
+
   M5.Display.endWrite();
   M5.Display.display();
   Serial.println("drawCalendar() done");

@@ -148,7 +148,8 @@ enum Mode {
   MODE_MED_REMINDER,
   MODE_MED_PASSCODE,
   MODE_ABOUT,
-  MODE_DICT_POPUP
+  MODE_DICT_POPUP,
+  MODE_FILE_MANAGER
 };
 
 // ==================== Struct Definitions ====================
@@ -472,6 +473,7 @@ static const int TOC_PER_PAGE = 13;
 struct TocEntry {
   String label;           // Chapter title
   int chapterIndex;       // Index into epubChapters[]
+  size_t byteOffset;      // Exact byte offset in virtual text stream (0 = use chapter start)
 };
 extern TocEntry* epubTocEntries;
 extern int epubTocCount;
@@ -663,17 +665,19 @@ bool epubLoadChapterRange(int startChapter);
 bool epubLoadSingleChapter(int chapterIndex);
 int epubChapterForOffset(size_t offset);
 bool epubParseToc();
+bool epubGenerateVirtualToc();
 void epubFreeToc();
 void epubCleanup();
 bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH,
-                             int quadrant = -1, float zoomCenterX = 0.5f, float zoomCenterY = 0.5f);
+                             int quadrant = -1, float zoomCenterX = 0.5f, float zoomCenterY = 0.5f,
+                             int* outRenderedH = nullptr);
 
 // book_reader
 extern int comicZoomQuadrant;  // -1 = full view, 0=TL, 1=TR, 2=BL, 3=BR, or 100 = free-point
 extern int comicZoomMode;      // 0 = quadrant zoom, 1 = free-point zoom
 extern float comicZoomCX;      // free-point center X (0.0-1.0)
 extern float comicZoomCY;      // free-point center Y (0.0-1.0)
-extern int pageRefreshMode;    // 0=system default, 1=every page, 2=every 10 pages
+extern int pageRefreshMode;    // 0=system default (fast+quality every 10 pages), 1=every page quality, 2=fastest only
 extern bool paragraphIndent;   // true=首行縮進(2 chars), false=首行不縮進
 extern int pagesSinceFullRefresh;
 void scanBooks();
@@ -770,6 +774,17 @@ void mottoBuiltinPrev();
 
 // tools menu
 void drawToolsMenu();
+
+// file manager
+static const int FM_MAX_ENTRIES = 100;
+extern String fmPath;
+extern String fmEntries[FM_MAX_ENTRIES];
+extern bool   fmIsDir[FM_MAX_ENTRIES];
+extern size_t fmSizes[FM_MAX_ENTRIES];
+extern int    fmCount;
+extern int    fmScrollOffset;
+void loadFileManagerDir();
+void drawFileManager();
 
 // wallpaper
 void loadWallpaperFiles();

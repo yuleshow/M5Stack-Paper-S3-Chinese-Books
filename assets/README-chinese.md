@@ -11,8 +11,6 @@ M5Stack Paper S3 韌體的 SD 卡內容及建置時資產。
 |------|------|
 | `config.ini` | 主設定檔：WiFi 憑證、時區、天氣 API 金鑰（已加入 gitignore） |
 | `config.ini.example` | `config.ini` 範本 — 複製到 SD 卡並填入您的資訊 |
-| `weather.cfg` | 替代的天氣專用設定（已加入 gitignore） |
-| `weather.cfg.example` | `weather.cfg` 範本 |
 | `cangjie5.bin` | 編譯後的倉頡輸入法字典（二進位，執行時從 SD 載入） |
 | `mottos.txt` | 睡眠畫面顯示的每日格言，每行一句 |
 | `shopping_list.csv` | 購物清單資料（`分組|項目` 格式） |

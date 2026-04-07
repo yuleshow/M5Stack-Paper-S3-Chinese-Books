@@ -178,6 +178,8 @@ inline uint32_t halfToFullWidth(uint32_t cp) {
     case '}':  return 0xFF5D; // ｝
     case '"':  return 0x300C; // 「
     case '\'': return 0x300E; // 『
+    case 0x2018: return 0x300E; // ' → 『
+    case 0x2019: return 0x300F; // ' → 』
     case '~':  return 0xFF5E; // ～
     case ' ':  return 0x3000; // 　(ideographic space)
     case 0x00A0: return 0x3000; // non-breaking space → ideographic space
@@ -254,6 +256,50 @@ inline bool isColumnStartProhibited(uint32_t cp) {
     default:
       return false;
   }
+}
+
+// Check if a codepoint is a punctuation mark (CJK or ASCII).
+// Used to decide whether a following space should be kept in Chinese reading.
+inline bool isPunctuation(uint32_t cp) {
+  // CJK full-width punctuation
+  if (cp == 0x3002 || cp == 0xFF0C || cp == 0x3001 || cp == 0xFF1B ||
+      cp == 0xFF1A || cp == 0xFF01 || cp == 0xFF1F || cp == 0x30FB ||
+      cp == 0x2026 || cp == 0x2025 || cp == 0x2014 || cp == 0x2013)
+    return true;
+  // CJK brackets / quotes
+  if (cp == 0x300C || cp == 0x300D || cp == 0x300E || cp == 0x300F ||
+      cp == 0x300A || cp == 0x300B || cp == 0x3008 || cp == 0x3009 ||
+      cp == 0x3010 || cp == 0x3011 || cp == 0x3014 || cp == 0x3015 ||
+      cp == 0x3016 || cp == 0x3017 || cp == 0xFF08 || cp == 0xFF09 ||
+      cp == 0xFF5B || cp == 0xFF5D || cp == 0xFF3B || cp == 0xFF3D ||
+      cp == 0x201C || cp == 0x201D || cp == 0x2018 || cp == 0x2019)
+    return true;
+  // Vertical presentation forms
+  if (cp >= 0xFE17 && cp <= 0xFE48) return true;
+  // ASCII punctuation
+  if (cp == ',' || cp == '.' || cp == '!' || cp == '?' || cp == ':' ||
+      cp == ';' || cp == ')' || cp == ']' || cp == '}' || cp == '"' ||
+      cp == '\'' || cp == '(' || cp == '[' || cp == '{')
+    return true;
+  return false;
+}
+
+// Check if a codepoint is a CJK ideograph (Chinese character, not punctuation).
+inline bool isCJKChar(uint32_t cp) {
+  // CJK Unified Ideographs
+  if (cp >= 0x4E00 && cp <= 0x9FFF) return true;
+  // CJK Extension A
+  if (cp >= 0x3400 && cp <= 0x4DBF) return true;
+  // CJK Extension B
+  if (cp >= 0x20000 && cp <= 0x2A6DF) return true;
+  // CJK Compatibility Ideographs
+  if (cp >= 0xF900 && cp <= 0xFAFF) return true;
+  return false;
+}
+
+// Check if a codepoint is a sentence-ending punctuation (。？！)
+inline bool isSentenceEnd(uint32_t cp) {
+  return cp == 0x3002 || cp == 0xFF1F || cp == 0xFF01;  // 。？！
 }
 
 // Extract one UTF-8 character as a substring from a String at position `pos`.

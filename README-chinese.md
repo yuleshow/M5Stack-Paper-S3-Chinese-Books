@@ -1,11 +1,22 @@
 # 梅花小民
 # M5Stack Paper S3 — 中文電子書閱讀器 & 農民曆
+### 一個讀書人寫的讀書項目
 
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-韌體-blue)
 ![E-Ink](https://img.shields.io/badge/540×960-電子墨水-gray)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-編譯-green)
 ![License](https://img.shields.io/badge/授權-GPLv2-red)
 ![CJK](https://img.shields.io/badge/CJK-繁體中文-orange)
+![C++](https://img.shields.io/badge/C%2B%2B-語言-blue)
+![Arduino](https://img.shields.io/badge/Arduino-框架-teal)
+![BLE](https://img.shields.io/badge/BLE-藍牙-blue)
+![WiFi](https://img.shields.io/badge/WiFi-無線網路-blue)
+![EPUB](https://img.shields.io/badge/EPUB-閱讀器-green)
+![SD Card](https://img.shields.io/badge/SD_Card-儲存-yellow)
+![PSRAM](https://img.shields.io/badge/PSRAM-OPI-purple)
+![Calendar](https://img.shields.io/badge/農民曆-老黃曆-red)
+![Cangjie](https://img.shields.io/badge/倉頡-輸入法-orange)
+![Weather](https://img.shields.io/badge/天氣-面板-blue)
 
 ![alt text](assets/s3cover.jpg)
 
@@ -105,7 +116,11 @@
 - **USB 大容量儲存** — 將 SD 卡作為 USB 磁碟直接存取檔案（MSC 期間自動關閉 WiFi）
 - **圖標來源** — SD 卡（可自訂）或內建（開機較快）
 - **曆法計算** — Meeus 算法 vs 壽星天文曆算法
-- **系統字型** — GenYoMinTW（預設）或 Silver（像素風格）；Silver 標籤以逐尺寸縮放因子預渲染，兩種字型產生一致的視覺大小
+- **系統字型** — GenYoMinTW（預設）或 Silver（像素風格）；Silver 標籤以逐尺寸縮放因子預渲染，兩種字型產生一致的視覺大小：
+
+主畫面對比：
+
+![字型主畫面](output/fonts_dashboard.png)
 
 ## 硬體
 

@@ -1417,6 +1417,7 @@
 #include "slabel_s40_select_font_en.h"
 #include "slabel_s40_tools.h"
 #include "slabel_s40_fortune.h"
+#include "slabel_solar_term_tz_note.h"
 #include "slabel_mchar_2014.h"
 #include "slabel_mchar_3002.h"
 #include "slabel_mchar_300c.h"
@@ -1566,7 +1567,7 @@
 #include "slabel_mchar_fe42.h"
 
 // Reuse LabelBitmap struct from label_bitmaps.h
-const int kSilverLabelBitmapCount = 1558;
+const int kSilverLabelBitmapCount = 1559;
 
 const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"電子書", 32, slabel_ebook_w, slabel_ebook_h, slabel_ebook_bitmap},
@@ -2980,6 +2981,7 @@ const LabelBitmap kSilverLabelBitmaps[] PROGMEM = {
   {"Select Font", 40, slabel_s40_select_font_en_w, slabel_s40_select_font_en_h, slabel_s40_select_font_en_bitmap},
   {"工具", 40, slabel_s40_tools_w, slabel_s40_tools_h, slabel_s40_tools_bitmap},
   {"求籖", 40, slabel_s40_fortune_w, slabel_s40_fortune_h, slabel_s40_fortune_bitmap},
+  {"節氣依當地時間，與北京或差一天", 18, slabel_solar_term_tz_note_w, slabel_solar_term_tz_note_h, slabel_solar_term_tz_note_bitmap},
   {"—", 48, slabel_mchar_2014_w, slabel_mchar_2014_h, slabel_mchar_2014_bitmap},
   {"。", 48, slabel_mchar_3002_w, slabel_mchar_3002_h, slabel_mchar_3002_bitmap},
   {"「", 48, slabel_mchar_300c_w, slabel_mchar_300c_h, slabel_mchar_300c_bitmap},

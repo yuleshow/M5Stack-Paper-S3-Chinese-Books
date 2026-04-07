@@ -131,6 +131,7 @@ void drawEnglishReading() {
   int currentY = rdTop;
   int renderStopByte = displayText.length();
   int charsDrawn = 0;
+  bool pageHasImage = false;
   int i = 0;
 
   // Clear word positions for dictionary tap lookup
@@ -230,12 +231,21 @@ void drawEnglishReading() {
         }
         M5.Display.endWrite();
         esp_task_wdt_reset();
-        bool imgDrawn = epubExtractAndDrawImage(imgPath, rdLeft, currentY, availW, imgAvailH);
+        int imgRenderedH = 0;
+        bool imgDrawn = epubExtractAndDrawImage(imgPath, rdLeft, currentY, availW, imgAvailH,
+                                                -1, 0.5f, 0.5f, &imgRenderedH);
         esp_task_wdt_reset();
         M5.Display.startWrite();
         if (imgDrawn) {
-          renderStopByte = i;
-          goto endHorizPage;
+          pageHasImage = true;
+          // Advance Y past the image + gap, continue rendering text below
+          currentY += imgRenderedH + lineHeight;
+          if (currentY + lineHeight > rdBottom) {
+            // No room for text below — end page here
+            renderStopByte = i;
+            goto endHorizPage;
+          }
+          // Otherwise continue the render loop to draw text below the image
         }
       } else {
         i++;
@@ -380,6 +390,18 @@ void drawEnglishReading() {
     charsDrawn += currentLine.length();
   }
   endHorizPage:
+
+  // Auto-skip blank pages (same as Chinese reader)
+  if (charsDrawn == 0 && !pageHasImage && currentPage < totalPages - 1) {
+    Serial.printf("Blank page %d: auto-advancing to page %d\n", currentPage, currentPage + 1);
+    M5.Display.endWrite();
+    currentPage++;
+    if (loadCurrentPage()) {
+      saveReadingPosition();
+      drawReading();
+    }
+    return;
+  }
 
   // Page offset correction (same logic as vertical)
   if (renderStopByte <= (int)displayText.length()) {

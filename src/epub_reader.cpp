@@ -1197,6 +1197,236 @@ void epubFreeToc() {
   tocListPage = 0;
 }
 
+// Generate virtual TOC by scanning epubFullText for 第X回/章/節/篇/卷 patterns.
+// Called as fallback when no .ncx TOC exists. Requires epubFullText to be loaded.
+// Also collects heading text after the keyword (e.g., "第三回 託孤寄命").
+bool epubGenerateVirtualToc() {
+  if (!epubFullText || epubFullTextLen == 0) return false;
+  if (!epubChapters || epubChapterCount == 0) return false;
+
+  epubFreeToc();
+
+  // Allocate TOC entries
+  epubTocEntries = (TocEntry*)ps_malloc(sizeof(TocEntry) * MAX_TOC_ENTRIES);
+  if (!epubTocEntries) return false;
+  for (int e = 0; e < MAX_TOC_ENTRIES; e++) new (&epubTocEntries[e]) TocEntry();
+
+  // Scan epubFullText for 第X回/章/節/篇/卷 patterns
+  int pos = 0;
+  while (pos < (int)epubFullTextLen && epubTocCount < MAX_TOC_ENTRIES) {
+    uint32_t cp = utf8Decode(epubFullText, pos);
+    if (cp != 0x7B2C) continue;  // Not 第
+
+    int headingStart = pos - 3;  // Back up to include 第 (3 bytes in UTF-8)
+    if (headingStart < 0) headingStart = 0;
+
+    // Scan number part: CJK numerals or Arabic digits
+    int numPos = pos;
+    bool hasNumber = false;
+    uint32_t terminator = 0;
+    while (numPos < (int)epubFullTextLen) {
+      int beforeDecode = numPos;
+      uint32_t numCp = utf8Decode(epubFullText, numPos);
+      bool isCJKNum = (numCp == 0x4E00 || numCp == 0x4E8C || numCp == 0x4E09 || numCp == 0x56DB ||
+                       numCp == 0x4E94 || numCp == 0x516D || numCp == 0x4E03 || numCp == 0x516B ||
+                       numCp == 0x4E5D || numCp == 0x5341 || numCp == 0x767E || numCp == 0x5343 ||
+                       numCp == 0x96F6 || numCp == 0x3007);
+      bool isDigit = (numCp >= '0' && numCp <= '9') ||
+                     (numCp >= 0xFF10 && numCp <= 0xFF19);
+      if (isCJKNum || isDigit) {
+        hasNumber = true;
+      } else if (hasNumber &&
+                 (numCp == 0x56DE ||   // 回
+                  numCp == 0x7AE0 ||   // 章
+                  numCp == 0x7BC0 ||   // 節
+                  numCp == 0x7BC7 ||   // 篇
+                  numCp == 0x5377)) {  // 卷
+        terminator = numCp;
+        break;
+      } else {
+        numPos = beforeDecode;  // Not a match, rewind
+        break;
+      }
+    }
+
+    if (!hasNumber || terminator == 0) continue;  // Not a valid chapter heading
+
+    // Extract heading label from the rest of the line (up to 60 chars)
+    // Rules:
+    //   - If no punctuation in the line → whole line is the chapter title
+    //   - If only 1 punctuation in middle (not at end) → whole line is the title
+    //   - If 2+ punctuation → title ends at the last space before the first punctuation
+    int labelEnd = numPos;
+    int charCount = 0;
+    int firstPunctByte = -1;   // Byte offset of first punctuation in line
+    int lastSpaceBeforePunct = -1;  // Byte offset of last space before first punctuation
+    int punctCount = 0;        // Total punctuation count in line
+    int lastCharByte = -1;     // Byte offset of last non-newline char start
+    int lastPunctByte = -1;    // Byte offset of last punctuation
+    while (labelEnd < (int)epubFullTextLen && charCount < 60) {
+      unsigned char c = (unsigned char)epubFullText[labelEnd];
+      if (c == '\n' || c == '\r' || c == EPUB_CHAPTER_BREAK) break;
+      // Decode codepoint to check for punctuation/space
+      int cpStart = labelEnd;
+      uint32_t lineCp = utf8Decode(epubFullText, labelEnd);
+      lastCharByte = cpStart;
+      if (isPunctuation(lineCp)) {
+        punctCount++;
+        if (firstPunctByte < 0) firstPunctByte = cpStart;
+        lastPunctByte = cpStart;
+      }
+      if (firstPunctByte < 0 && (lineCp == ' ' || lineCp == 0x3000)) {
+        lastSpaceBeforePunct = cpStart;
+      }
+      charCount++;
+    }
+    int titleEnd;
+    if (firstPunctByte < 0) {
+      // No punctuation → whole line is the title
+      titleEnd = labelEnd;
+    } else if (punctCount == 1 && lastPunctByte != lastCharByte) {
+      // Only 1 punctuation and it's not at the end → whole line is the title
+      titleEnd = labelEnd;
+    } else if (lastSpaceBeforePunct > numPos) {
+      // Multiple punctuation (or 1 at end) and a space before first → cut at the space
+      titleEnd = lastSpaceBeforePunct;
+    } else {
+      // Multiple punctuation (or 1 at end) but no space before it → cut at the punctuation
+      titleEnd = firstPunctByte;
+    }
+    String label = String(epubFullText + headingStart, titleEnd - headingStart);
+    label.trim();
+
+    // Map byte position (in epubFullText buffer) to absolute offset
+    size_t absOffset = epubLoadedBaseOffset + headingStart;
+
+    // Find which chapter this belongs to
+    int chapterIdx = -1;
+    for (int c = epubChapterCount - 1; c >= 0; c--) {
+      if (absOffset >= epubChapters[c].cumulativeOffset) {
+        chapterIdx = c;
+        break;
+      }
+    }
+
+    if (chapterIdx >= 0 && label.length() > 0) {
+      // Avoid duplicate entries for the same chapter
+      bool duplicate = false;
+      for (int d = 0; d < epubTocCount; d++) {
+        if (epubTocEntries[d].chapterIndex == chapterIdx &&
+            epubTocEntries[d].label == label) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!duplicate) {
+        epubTocEntries[epubTocCount].label = label;
+        epubTocEntries[epubTocCount].chapterIndex = chapterIdx;
+        epubTocEntries[epubTocCount].byteOffset = absOffset;
+        epubTocCount++;
+        Serial.printf("VirtualTOC[%d]: \"%s\" → ch %d\n", epubTocCount - 1, label.c_str(), chapterIdx);
+      }
+    }
+
+    yield();
+  }
+
+  Serial.printf("EPUB Virtual TOC: %d entries generated\n", epubTocCount);
+
+  if (epubTocCount == 0) {
+    epubFreeToc();
+    return false;
+  }
+
+  // Sort TOC entries by the Chinese/Arabic numeral after 第
+  // Parse 第X回/章/節/篇/卷 → extract numeric value of X for sorting
+  auto parseCjkNumber = [](const String& label) -> int {
+    // Find 第 (U+7B2C, 3 bytes: E7 AC AC)
+    int pos = label.indexOf("\xe7\xac\xac");
+    if (pos < 0) return 99999;
+    pos += 3;  // Skip 第
+
+    int value = 0;
+    bool found = false;
+    // Parse CJK numerals: 零一二三四五六七八九十百千
+    // Also supports Arabic digits and full-width digits
+    while (pos < (int)label.length()) {
+      int cpStart = pos;
+      uint32_t cp = utf8Decode(label, pos);
+      int digit = -1;
+      switch (cp) {
+        case 0x96F6: case 0x3007: digit = 0; break;  // 零 〇
+        case 0x4E00: digit = 1; break;  // 一
+        case 0x4E8C: digit = 2; break;  // 二
+        case 0x4E09: digit = 3; break;  // 三
+        case 0x56DB: digit = 4; break;  // 四
+        case 0x4E94: digit = 5; break;  // 五
+        case 0x516D: digit = 6; break;  // 六
+        case 0x4E03: digit = 7; break;  // 七
+        case 0x516B: digit = 8; break;  // 八
+        case 0x4E5D: digit = 9; break;  // 九
+        case 0x5341: // 十
+          if (!found) { value = 10; found = true; continue; }
+          else { value = value * 10; continue; }
+        case 0x767E: // 百
+          if (value == 0) value = 1;
+          value *= 100; continue;
+        case 0x5343: // 千
+          if (value == 0) value = 1;
+          value *= 1000; continue;
+        default:
+          // Arabic digits 0-9
+          if (cp >= '0' && cp <= '9') { digit = cp - '0'; break; }
+          // Full-width digits ０-９
+          if (cp >= 0xFF10 && cp <= 0xFF19) { digit = cp - 0xFF10; break; }
+          // Terminator (回章節篇卷) or unknown → stop
+          goto done_parsing;
+      }
+      if (digit >= 0) {
+        found = true;
+        // For positional notation (〇-style): 第一〇三回 = 103
+        // For value notation: 第十三回 = 13
+        // Heuristic: if we see 〇, treat digits as positional
+        if (cp == 0x3007) {
+          value = value * 10 + digit;
+        } else if (value > 0 && value % 10 == 0 && digit > 0) {
+          // After 十/百/千: e.g., 十三 = 10+3, 百二 = 100+20? No, 百二十 = 120
+          // Simple: just add digit
+          value += digit;
+        } else if (value == 0) {
+          value = digit;
+        } else {
+          // Multiple single digits: treat as positional (一〇三 = 103)
+          value = value * 10 + digit;
+        }
+      }
+    }
+    done_parsing:
+    return found ? value : 99999;
+  };
+
+  // Bubble sort (small array, on ESP32, simple is fine)
+  for (int i = 0; i < epubTocCount - 1; i++) {
+    for (int j = 0; j < epubTocCount - 1 - i; j++) {
+      int a = parseCjkNumber(epubTocEntries[j].label);
+      int b = parseCjkNumber(epubTocEntries[j + 1].label);
+      if (a > b) {
+        String tmpLabel = epubTocEntries[j].label;
+        int tmpIdx = epubTocEntries[j].chapterIndex;
+        epubTocEntries[j].label = epubTocEntries[j + 1].label;
+        epubTocEntries[j].chapterIndex = epubTocEntries[j + 1].chapterIndex;
+        epubTocEntries[j + 1].label = tmpLabel;
+        epubTocEntries[j + 1].chapterIndex = tmpIdx;
+      }
+    }
+    yield();
+  }
+
+  Serial.printf("EPUB Virtual TOC: sorted %d entries by chapter number\n", epubTocCount);
+
+  return true;
+}
+
 // Parse TOC from EPUB's toc.ncx file
 // Extracts <navPoint> entries: label text and content src → mapped to chapter index
 bool epubParseToc() {
@@ -1363,7 +1593,8 @@ bool getPngDimensions(const uint8_t* data, size_t len, int& width, int& height) 
 // Extract an image from the EPUB ZIP and draw it on the display
 // Returns true if image was drawn successfully
 bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH,
-                             int quadrant, float zoomCenterX, float zoomCenterY) {
+                             int quadrant, float zoomCenterX, float zoomCenterY,
+                             int* outRenderedH) {
   if (epubFilePath.isEmpty() || !epubZipEntries || epubZipEntryCount == 0) {
     Serial.println("EPUB IMG: No persistent ZIP data");
     return false;
@@ -1510,7 +1741,8 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
     Serial.printf("EPUB IMG: Could not parse dimensions, using default scale\n");
   }
 
-  // Center the scaled image in the available area (full view only)
+  // Center the scaled image horizontally, keep top-aligned vertically
+  // so text can flow below the image and outRenderedH is accurate.
   int drawX = x;
   int drawY = y;
   int clipW = maxW;
@@ -1519,8 +1751,7 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
     int outW = (int)(imgW * scale_x);
     int outH = (int)(imgH * (scale_y > 0 ? scale_y : scale_x));
     if (outW < maxW) drawX = x + (maxW - outW) / 2;
-    if (outH < maxH) drawY = y + (maxH - outH) / 2;
-    // Use actual output size as clip bounds so image doesn't occupy extra space
+    // Keep drawY = y (top-aligned) so text can continue below
     clipW = outW < maxW ? outW : maxW;
     clipH = outH < maxH ? outH : maxH;
   } else {
@@ -1549,8 +1780,17 @@ bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, in
 
   if (drawn) {
     Serial.printf("EPUB IMG: Drew %s successfully\n", imagePath.c_str());
+    if (outRenderedH) {
+      if (gotDims && imgW > 0 && imgH > 0) {
+        int outH = (int)(imgH * (scale_y > 0 ? scale_y : scale_x));
+        *outRenderedH = (outH < maxH) ? outH : maxH;
+      } else {
+        *outRenderedH = maxH;
+      }
+    }
   } else {
     Serial.printf("EPUB IMG: Failed to decode %s\n", imagePath.c_str());
+    if (outRenderedH) *outRenderedH = 0;
   }
   return drawn;
 }

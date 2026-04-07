@@ -817,7 +817,7 @@ void drawSetupMenu() {
 
     drawSystemText("時區設定", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
-    drawSystemText("已設定", 40, y + 50, 22, TFT_BLACK, cardTextBg);
+    drawSystemText(timezones[selectedTimezone].name, 40, y + 50, 22, TFT_BLACK, cardTextBg);
 
     y += itemHeight + itemGap;
 
@@ -941,7 +941,7 @@ void drawSetupMenu() {
     if (pageRefreshMode == 1) {
       drawSystemText("每頁全刷新", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else if (pageRefreshMode == 2) {
-      drawSystemText("每10頁全刷新", 40, y + 50, 22, TFT_BLACK, cardTextBg);
+      drawSystemText("最快優先", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else {
       drawSystemText("系統預設", 40, y + 50, 22, TFT_BLACK, cardTextBg);
     }

@@ -809,7 +809,12 @@ static CachedGlyph* cacheFind(uint32_t unicode) {
 
 static void cacheInsert(uint32_t unicode, const uint8_t* bitmap, uint16_t bitmapSize, uint16_t w, uint16_t h, int8_t ox = 0, int8_t oy = 0) {
   if (!glyphCache || !glyphBitmapPool) return;
-  if (glyphPoolUsed + bitmapSize > GLYPH_POOL_SIZE) return;  // Pool full
+  if (glyphPoolUsed + bitmapSize > GLYPH_POOL_SIZE) {
+    // Pool full — evict entire cache (ring-buffer reset) so new glyphs can always be cached.
+    // Better than silently dropping: avoids repeated SD reads for uncached characters.
+    for (int i = 0; i < GLYPH_CACHE_SIZE; i++) glyphCache[i].occupied = false;
+    glyphPoolUsed = 0;
+  }
 
   uint32_t idx = (unicode * 2654435761u) & (GLYPH_CACHE_SIZE - 1);
   for (int probe = 0; probe < 8; probe++) {

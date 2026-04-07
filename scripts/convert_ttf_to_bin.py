@@ -316,6 +316,12 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
     # Prepare index and bitmap data
     index_entries = []
     bitmap_data = bytearray()
+
+    # Bpmf Zihi Kai glyphs are naturally rectangular; preserve native bearings
+    # for primary glyphs to avoid forcing square-cell visual alignment.
+    keep_native_bearing = is_bpmfzihi_font(ttf_path, font_family)
+    if keep_native_bearing:
+        print("Bpmf Zihi mode: preserving native glyph bearings for primary glyphs")
     
     # First pass: render all glyphs to get dimensions and bitmap data
     print("Rendering glyphs...")
@@ -331,6 +337,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
         in_fallback = cp in fallback_cmap
 
         img = None
+        glyph_from_primary = False
         if use_fallback_first and in_fallback:
             img, width, height, bearing_x, bearing_y = render_glyph(fallback_font, char, fallback_render_size)
             if img is not None:
@@ -338,6 +345,8 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
 
         if img is None and in_primary:
             img, width, height, bearing_x, bearing_y = render_glyph(font, char, render_size)
+            if img is not None:
+                glyph_from_primary = True
         
         # For missing vertical bracket forms: try rotating the horizontal counterpart
         if img is None and cp in VERT_BRACKETS_TO_HORIZ:
@@ -346,6 +355,7 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
                 img, width, height, bearing_x, bearing_y = render_rotated_glyph(font, chr(horiz_cp), render_size)
                 if img is not None:
                     rotated_count += 1
+                    glyph_from_primary = True
         
         # Try fallback font if still missing (skip if already tried above)
         if img is None and fallback_font and not use_fallback_first and in_fallback:
@@ -357,10 +367,11 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
             # Skip characters that can't be rendered
             continue
         
-        # Always center glyph within the em-square cell.
-        # This ensures proper alignment in vertical CJK text rendering.
-        bearing_x = (font_size - width) // 2
-        bearing_y = (font_size - height) // 2
+        # Default: center glyph in em-square for stable vertical CJK layout.
+        # Bpmf Zihi only: keep native bearings for primary glyphs.
+        if not (keep_native_bearing and glyph_from_primary):
+            bearing_x = (font_size - width) // 2
+            bearing_y = (font_size - height) // 2
         
         # Convert to bitmap bytes
         bitmap_bytes = bitmap_to_bytes(img)
@@ -452,6 +463,17 @@ def silver_scaled_size(nominal):
 
 def is_silver_font(path):
     return 'silver' in os.path.basename(path).lower()
+
+def is_bpmfzihi_font(path, family_name=None):
+    """Detect Bpmf Zihi Kai Std font for font-specific glyph placement."""
+    base = os.path.basename(path).lower()
+    if 'bpmf' in base and 'zihi' in base:
+        return True
+    if family_name:
+        fam = family_name.lower()
+        if 'bpmf' in fam and 'zihi' in fam:
+            return True
+    return False
 
 if __name__ == '__main__':
     import argparse

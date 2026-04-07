@@ -1527,6 +1527,9 @@ LABELS = [
     ("Select Font",                40, "s40_select_font_en"),
     ("工具",                       40, "s40_tools"),
     ("求籖",                       40, "s40_fortune"),
+
+    # ── Calendar timezone note ──
+    ("節氣依當地時間，與北京或差一天", 18, "solar_term_tz_note"),
 ]
 
 # ── Built-in motto characters (auto-generated per-character labels) ──────────

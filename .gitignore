@@ -9,7 +9,6 @@
 
 # Sensitive files (contain passwords/API keys)
 assets/config.ini
-assets/weather.cfg
 
 # Font binaries and source fonts (too large for git)
 assets/fonts/*.ttf
