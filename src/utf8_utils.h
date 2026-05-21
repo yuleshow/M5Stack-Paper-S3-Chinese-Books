@@ -155,6 +155,7 @@ inline uint32_t toVerticalPunct(uint32_t cp) {
     case 0x2026: return 0xFE19; // … → ︙
     case 0x2025: return 0xFE30; // ‥ → ︰
     case 0x2014: return 0xFE31; // — → ︱
+    case 0xFF0D: return 0xFE31; // － → ︱
     case 0xFE4F: return 0xFE34; // ﹏ → ︴
     default: return cp;
   }
@@ -256,6 +257,28 @@ inline bool isColumnStartProhibited(uint32_t cp) {
     default:
       return false;
   }
+}
+
+// Check if a codepoint is an opening paired punctuation (left bracket/quote).
+inline bool isOpeningPunctuation(uint32_t cp) {
+  return cp == 0x201C || cp == 0x2018 ||  // " '
+         cp == 0xFF08 ||                   // （
+         cp == 0x300C || cp == 0x300E ||   // 「 『
+         cp == 0x300A || cp == 0x3008 ||   // 《 〈
+         cp == 0x3010 || cp == 0x3014 ||   // 【 〔
+         cp == 0x3016 ||                   // 〖
+         cp == '(' || cp == '[' || cp == '{';
+}
+
+// Check if a codepoint is a closing paired punctuation (right bracket/quote).
+inline bool isClosingPunctuation(uint32_t cp) {
+  return cp == 0x201D || cp == 0x2019 ||  // " '
+         cp == 0xFF09 ||                   // ）
+         cp == 0x300D || cp == 0x300F ||   // 」 』
+         cp == 0x300B || cp == 0x3009 ||   // 》 〉
+         cp == 0x3011 || cp == 0x3015 ||   // 】 〕
+         cp == 0x3017 ||                   // 〗
+         cp == ')' || cp == ']' || cp == '}';
 }
 
 // Check if a codepoint is a punctuation mark (CJK or ASCII).

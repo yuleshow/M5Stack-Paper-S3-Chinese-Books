@@ -1,4 +1,5 @@
 {
+  "java.jdt.ls.java.home": "/opt/homebrew/opt/openjdk@17",
   "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/compile_commands.json",
   "C_Cpp.default.systemIncludePath": [

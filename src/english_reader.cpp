@@ -145,6 +145,7 @@ void drawEnglishReading() {
   // Chinese mode). After first page, all common glyphs are cached — no FreeType.
   // English text is ASCII — skip UTF-8 decoding entirely.
   String currentLine = "";
+  currentLine.reserve(160);
   int currentLineW = 0;
   bool pendingSpace = false;
   int lineStartByte = 0;  // byte offset where current line's first word started
@@ -315,6 +316,7 @@ void drawEnglishReading() {
     // Collect a word (bytes until whitespace/control, including UTF-8 sequences)
     int wordStart = i;
     String word = "";
+    word.reserve(48);
     while (i < (int)displayText.length()) {
       unsigned char wc = (unsigned char)displayText.charAt(i);
       if (wc == ' ' || wc == '\t' || wc == '\n' || wc == '\r' || wc == EPUB_IMG_MARKER || (wc < 0x20)) break;
@@ -392,15 +394,21 @@ void drawEnglishReading() {
   endHorizPage:
 
   // Auto-skip blank pages (same as Chinese reader)
-  if (charsDrawn == 0 && !pageHasImage && currentPage < totalPages - 1) {
-    Serial.printf("Blank page %d: auto-advancing to page %d\n", currentPage, currentPage + 1);
-    M5.Display.endWrite();
-    currentPage++;
-    if (loadCurrentPage()) {
-      saveReadingPosition();
-      drawReading();
+  // Limit skips to avoid runaway recursion through many empty chapters.
+  {
+    static int blankSkips = 0;
+    if (charsDrawn == 0 && !pageHasImage && currentPage < totalPages - 1 && blankSkips < 5) {
+      Serial.printf("Blank page %d: auto-advancing to page %d\n", currentPage, currentPage + 1);
+      M5.Display.endWrite();
+      currentPage++;
+      if (loadCurrentPage()) {
+        blankSkips++;
+        saveReadingPosition();
+        drawReading();
+      }
+      return;
     }
-    return;
+    blankSkips = 0;
   }
 
   // Page offset correction (same logic as vertical)
@@ -424,7 +432,8 @@ void drawEnglishReading() {
     }
     if (currentPage + 1 >= pageOffsetsCount && pageOffsetsCount < MAX_PAGE_OFFSETS) {
       pageByteOffsets[pageOffsetsCount] = correctedNextStart;
-      pageOffsetsCount = currentPage + 2;
+      int newCount = currentPage + 2;
+      pageOffsetsCount = (newCount > MAX_PAGE_OFFSETS) ? MAX_PAGE_OFFSETS : newCount;
     }
   }
   skipEnglishOffsetTracking:

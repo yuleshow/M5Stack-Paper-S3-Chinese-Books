@@ -48,8 +48,8 @@ int loadReadingPosition() {
     // Extend pageByteOffsets up to this page, estimating backward from the known offset
     while (pageOffsetsCount <= page && pageOffsetsCount < MAX_PAGE_OFFSETS) {
       int gap = page - pageOffsetsCount;
-      size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                   savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+      size_t est = (savedOffset > (size_t)gap * bytesPerPage) ?
+                   savedOffset - (size_t)gap * bytesPerPage : 0;
       pageByteOffsets[pageOffsetsCount] = est;
       pageOffsetsCount++;
     }
@@ -293,6 +293,135 @@ bool isReadingFontSilver() {
   return systemFontChoice == 1;
 }
 
+static bool isReaderTocHeadingNumber(uint32_t cp) {
+  return cp == 0x4E00 || cp == 0x4E8C || cp == 0x4E09 || cp == 0x56DB ||
+         cp == 0x4E94 || cp == 0x516D || cp == 0x4E03 || cp == 0x516B ||
+         cp == 0x4E5D || cp == 0x5341 || cp == 0x767E || cp == 0x5343 ||
+         cp == 0x96F6 || cp == 0x3007;
+}
+
+static bool isReaderTocHeadingDigit(uint32_t cp) {
+  return (cp >= '0' && cp <= '9') || (cp >= 0xFF10 && cp <= 0xFF19);
+}
+
+static bool isReaderTocChapterTerminator(uint32_t cp) {
+  return cp == 0x56DE || cp == 0x7AE0 || cp == 0x7BC0 || cp == 0x7BC7 || cp == 0x5377;
+}
+
+static int skipReaderTocInlineSpaces(const String& text, int pos) {
+  while (pos < (int)text.length()) {
+    unsigned char byte = (unsigned char)text[pos];
+    if (byte == STYLE_ITALIC_ON || byte == STYLE_ITALIC_OFF ||
+        byte == STYLE_BOLD_ON || byte == STYLE_BOLD_OFF ||
+        byte == STYLE_UNDERLINE_ON || byte == STYLE_UNDERLINE_OFF) {
+      pos++;
+      continue;
+    }
+    if (byte == EPUB_LINK_MARKER) {
+      pos++;
+      while (pos < (int)text.length() && (unsigned char)text[pos] != EPUB_LINK_MARKER) pos++;
+      if (pos < (int)text.length()) pos++;
+      continue;
+    }
+    int nextPos = pos;
+    uint32_t cp = utf8Decode(text, nextPos);
+    if (cp != ' ' && cp != '\t' && cp != 0x3000) break;
+    pos = nextPos;
+  }
+  return pos;
+}
+
+static bool scanReaderTocHeadingLine(const String& text, int lineStart, int* lineEnd = nullptr) {
+  int len = text.length();
+  int pos = skipReaderTocInlineSpaces(text, lineStart);
+  int scanPos = pos;
+  uint32_t firstCp = (scanPos < len) ? utf8Decode(text, scanPos) : 0;
+  bool hasNumber = false;
+  bool valid = false;
+
+  if (firstCp == 0x7B2C) {
+    while (scanPos < len) {
+      int before = scanPos;
+      uint32_t cp = utf8Decode(text, scanPos);
+      if (isReaderTocHeadingNumber(cp) || isReaderTocHeadingDigit(cp)) {
+        hasNumber = true;
+      } else if (hasNumber && isReaderTocChapterTerminator(cp)) {
+        valid = true;
+        break;
+      } else {
+        scanPos = before;
+        break;
+      }
+    }
+  } else if (firstCp == 0x5377) {
+    while (scanPos < len) {
+      int before = scanPos;
+      uint32_t cp = utf8Decode(text, scanPos);
+      if (isReaderTocHeadingNumber(cp) || isReaderTocHeadingDigit(cp)) {
+        hasNumber = true;
+      } else {
+        scanPos = before;
+        break;
+      }
+    }
+    valid = hasNumber;
+  }
+
+  if (lineEnd) {
+    int end = lineStart;
+    while (end < len) {
+      unsigned char byte = (unsigned char)text[end];
+      if (byte == '\n' || byte == '\r' || byte == EPUB_CHAPTER_BREAK) break;
+      end++;
+    }
+    *lineEnd = end;
+  }
+  return valid;
+}
+
+static bool isReaderTocHeadingClusterAt(const String& text, int bytePos) {
+  int len = text.length();
+  int pos = bytePos;
+  int headingLines = 0;
+  int nonEmptyLines = 0;
+  const int maxLinesToScan = 8;
+  const int maxBytesToScan = 1400;
+
+  while (pos < len && nonEmptyLines < maxLinesToScan && pos - bytePos < maxBytesToScan) {
+    while (pos < len) {
+      unsigned char byte = (unsigned char)text[pos];
+      if (byte == '\n' || byte == '\r' || byte == EPUB_CHAPTER_BREAK) { pos++; continue; }
+      int nextPos = pos;
+      uint32_t cp = utf8Decode(text, nextPos);
+      if (cp == ' ' || cp == '\t' || cp == 0x3000) { pos = nextPos; continue; }
+      break;
+    }
+    if (pos >= len) break;
+
+    int lineEnd = pos;
+    bool heading = scanReaderTocHeadingLine(text, pos, &lineEnd);
+    if (!heading) break;
+
+    headingLines++;
+    nonEmptyLines++;
+    if (headingLines >= 2) return true;
+
+    pos = lineEnd;
+    while (pos < len && ((unsigned char)text[pos] == '\n' ||
+                         (unsigned char)text[pos] == '\r' ||
+                         (unsigned char)text[pos] == EPUB_CHAPTER_BREAK)) pos++;
+  }
+  return false;
+}
+
+static bool epubReaderPageLooksLikeTocCluster(const char* text, size_t len) {
+  if (!text || len == 0) return false;
+  String preview;
+  preview.reserve(min((size_t)1400, len));
+  for (size_t i = 0; i < len && i < 1400; i++) preview += text[i];
+  return isReaderTocHeadingClusterAt(preview, 0);
+}
+
 void updateBytesPerPage() {
   bool silverReading = isReadingFontSilver();
   int renderSize = silverReading ? silverScaledSize(readingFontSize) : readingFontSize;
@@ -430,6 +559,10 @@ bool loadCurrentPage() {
                     pageOffset, epubLoadedBaseOffset,
                     epubLoadedBaseOffset + epubFullTextLen, targetChapter + 1);
 
+      // Save old chapter start before reloading (cumulative offsets may shift)
+      size_t oldChapterStart = (targetChapter < epubChapterCount) ?
+                                epubChapters[targetChapter].cumulativeOffset : 0;
+
       // Load chapters starting from one before the target (for backward navigation)
       int loadFrom = max(0, targetChapter - 1);
       if (!epubLoadChapterRange(loadFrom)) {
@@ -438,14 +571,25 @@ bool loadCurrentPage() {
       }
 
       // After reloading, cumulativeOffset values are updated with actual sizes.
-      // Re-read the target chapter's offset so we land precisely at chapter start.
+      // Preserve relative position within the chapter instead of snapping to
+      // chapter start (which would lose reading progress after font changes).
       if (targetChapter < epubChapterCount) {
-        size_t corrected = epubChapters[targetChapter].cumulativeOffset;
-        if (corrected != pageOffset) {
-          Serial.printf("EPUB: Corrected page offset %u -> %u (chapter %d actual)\n",
-                        (unsigned)pageOffset, (unsigned)corrected, targetChapter + 1);
-          pageOffset = corrected;
+        size_t newChapterStart = epubChapters[targetChapter].cumulativeOffset;
+        if (newChapterStart != oldChapterStart && pageOffset >= oldChapterStart) {
+          size_t inChapterOffset = pageOffset - oldChapterStart;
+          size_t adjusted = newChapterStart + inChapterOffset;
+          Serial.printf("EPUB: Adjusted page offset %u -> %u (chapter %d shifted %d->%d, +%u within)\n",
+                        (unsigned)pageOffset, (unsigned)adjusted, targetChapter + 1,
+                        (unsigned)oldChapterStart, (unsigned)newChapterStart,
+                        (unsigned)inChapterOffset);
+          pageOffset = adjusted;
           currentPageByteOffset = pageOffset;
+        } else if (pageOffset < oldChapterStart) {
+          // Offset was before the chapter start — snap to chapter start
+          pageOffset = newChapterStart;
+          currentPageByteOffset = pageOffset;
+          Serial.printf("EPUB: Corrected page offset -> %u (chapter %d start)\n",
+                        (unsigned)pageOffset, targetChapter + 1);
         }
       }
 
@@ -460,8 +604,8 @@ bool loadCurrentPage() {
         // Fill up to current page with backward estimates from pageOffset
         while (pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
           int gap = currentPage - pageOffsetsCount;
-          size_t est = (pageOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                       pageOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+          size_t est = (pageOffset > (size_t)gap * bytesPerPage) ?
+                       pageOffset - (size_t)gap * bytesPerPage : 0;
           pageByteOffsets[pageOffsetsCount] = est;
           pageOffsetsCount++;
         }
@@ -487,20 +631,43 @@ bool loadCurrentPage() {
       localOffset = 0;  // Shouldn't happen after reload, but safety
     }
 
-    // Safety: check if localOffset lands inside a \x01...\x01 image marker pair
-    // Count marker bytes from buffer start to detect odd/even parity
+    // Safety: check if localOffset lands inside a short \x01...\x01 image marker pair.
+    // Scan only near the page boundary; counting every prior marker made later EPUB pages slower.
     if (localOffset > 0 && localOffset < epubFullTextLen) {
-      int markerCount = 0;
-      for (size_t k = 0; k < localOffset; k++) {
-        if (epubFullText[k] == EPUB_IMG_MARKER) markerCount++;
+      const size_t MAX_MARKER_PATH = 512;
+      size_t scanStart = (localOffset > MAX_MARKER_PATH) ? localOffset - MAX_MARKER_PATH : 0;
+      int prevMarker = -1;
+      for (size_t k = localOffset; k > scanStart; k--) {
+        if (epubFullText[k - 1] == EPUB_IMG_MARKER) {
+          prevMarker = (int)(k - 1);
+          break;
+        }
       }
-      if (markerCount & 1) {
-        // Odd markers = we're inside a marker pair, skip past closing marker
-        while (localOffset < epubFullTextLen && epubFullText[localOffset] != EPUB_IMG_MARKER)
-          localOffset++;
-        if (localOffset < epubFullTextLen) localOffset++;  // skip the marker
-        if (localOffset < epubFullTextLen && epubFullText[localOffset] == '\n') localOffset++;
-        Serial.printf("EPUB: Adjusted offset past image marker boundary (was mid-path)\n");
+      if (prevMarker >= 0) {
+        bool pathLikePrefix = true;
+        for (size_t k = (size_t)prevMarker + 1; k < localOffset; k++) {
+          char c = epubFullText[k];
+          if (c == '\n' || c == '\r' || c == ' ' || c == EPUB_CHAPTER_BREAK) {
+            pathLikePrefix = false;
+            break;
+          }
+        }
+        if (pathLikePrefix) {
+          size_t nextMarker = localOffset;
+          while (nextMarker < epubFullTextLen &&
+                 nextMarker - (size_t)prevMarker <= MAX_MARKER_PATH &&
+                 epubFullText[nextMarker] != EPUB_IMG_MARKER &&
+                 epubFullText[nextMarker] != '\n' &&
+                 epubFullText[nextMarker] != '\r' &&
+                 epubFullText[nextMarker] != EPUB_CHAPTER_BREAK) {
+            nextMarker++;
+          }
+          if (nextMarker < epubFullTextLen && epubFullText[nextMarker] == EPUB_IMG_MARKER) {
+            localOffset = nextMarker + 1;
+            if (localOffset < epubFullTextLen && epubFullText[localOffset] == '\n') localOffset++;
+            Serial.printf("EPUB: Adjusted offset past image marker boundary (was mid-path)\n");
+          }
+        }
       }
     }
 
@@ -542,6 +709,22 @@ bool loadCurrentPage() {
           if (wordBound > safeEnd / 2) {  // Don't snap too far back
             safeEnd = wordBound;
           }
+        }
+      }
+    }
+
+    if (!epubIsHorizontal && safeEnd < remaining) {
+      size_t previewLen = min(remaining, safeEnd + (size_t)900);
+      if (epubReaderPageLooksLikeTocCluster(epubFullText + localOffset, previewLen)) {
+        size_t expandedEnd = min(remaining, max((size_t)bytesPerPage * 3 + UTF8_READ_PADDING, (size_t)1600));
+        while (expandedEnd > safeEnd && expandedEnd < remaining &&
+               (epubFullText[localOffset + expandedEnd] & 0xC0) == 0x80) {
+          expandedEnd--;
+        }
+        if (expandedEnd > safeEnd) {
+          Serial.printf("EPUB TOC cluster: expanded page buffer %u -> %u bytes\n",
+                        (unsigned)safeEnd, (unsigned)expandedEnd);
+          safeEnd = expandedEnd;
         }
       }
     }
@@ -907,7 +1090,7 @@ bool openBookFromList(int bookIndex) {
   {
     unsigned long busyStart = millis();
     while (M5.Display.displayBusy()) {
-      if (webServerRunning && webServer) webServer->handleClient();
+      if (webServerRunning) handleWebClients();
       delay(10);
       esp_task_wdt_reset();
       if (millis() - busyStart > 3000) break;
@@ -954,6 +1137,7 @@ bool openBookFromList(int bookIndex) {
       WiFi.disconnect(true);
       delay(100);
       WiFi.mode(WIFI_STA);
+      WiFi.setSleep(false);
       WiFi.begin(wifiConfig.ssid.c_str(), wifiConfig.password.c_str());
       // Wait up to 5s for reconnect
       unsigned long wStart = millis();
@@ -1012,7 +1196,7 @@ void drawBookList() {
   {
     unsigned long busyStart = millis();
     while (M5.Display.displayBusy()) {
-      if (webServerRunning && webServer) webServer->handleClient();
+      if (webServerRunning) handleWebClients();
       delay(10);
       esp_task_wdt_reset();
       if (millis() - busyStart > 5000) {
@@ -1305,7 +1489,7 @@ void drawReading() {
   {
     unsigned long busyStart = millis();
     while (M5.Display.displayBusy()) {
-      if (webServerRunning && webServer) webServer->handleClient();
+      if (webServerRunning) handleWebClients();
       delay(10);
       esp_task_wdt_reset();
       if (millis() - busyStart > 5000) {
@@ -1340,6 +1524,232 @@ void drawReading() {
 }
 
 // ==================== Table of Contents ====================
+
+// Generate virtual TOC for plain text files by scanning for 第X回/章/節/篇/卷 patterns.
+// Reads file in chunks from SD card to avoid loading entire file into memory.
+bool txtGenerateVirtualToc() {
+  if (currentBookPath.length() == 0 || totalBookBytes == 0) return false;
+
+  epubFreeToc();
+
+  epubTocEntries = (TocEntry*)ps_malloc(sizeof(TocEntry) * MAX_TOC_ENTRIES);
+  if (!epubTocEntries) return false;
+  for (int e = 0; e < MAX_TOC_ENTRIES; e++) new (&epubTocEntries[e]) TocEntry();
+
+  const size_t CHUNK_SIZE = 8192;
+  const size_t OVERLAP = 256;  // Overlap between chunks to catch patterns at boundaries
+  char* buf = (char*)ps_malloc(CHUNK_SIZE + OVERLAP + 1);
+  if (!buf) { epubFreeToc(); return false; }
+
+  ScopedSDLock lock;
+  File file = SD.open(currentBookPath.c_str());
+  if (!file) { free(buf); epubFreeToc(); return false; }
+
+  size_t fileSize = file.size();
+  size_t filePos = 0;
+  size_t carryOver = 0;  // Bytes carried over from previous chunk
+
+  while (filePos < fileSize && epubTocCount < MAX_TOC_ENTRIES) {
+    size_t toRead = min(CHUNK_SIZE, fileSize - filePos);
+    // Read into buffer after any carry-over bytes
+    size_t bytesRead = file.read((uint8_t*)(buf + carryOver), toRead);
+    if (bytesRead == 0) break;
+    size_t totalBytes = carryOver + bytesRead;
+    buf[totalBytes] = '\0';
+
+    // The base offset for byte 0 of this buffer in the file
+    size_t bufBaseOffset = filePos - carryOver;
+
+    // Scan for 第 (E7 AC AC in UTF-8)
+    int pos = 0;
+    while (pos < (int)totalBytes && epubTocCount < MAX_TOC_ENTRIES) {
+      // Quick byte scan for 第 (0xE7 0xAC 0xAC) or 卷 (0xE5 0x8D 0xB7) at line start
+      unsigned char b0 = (unsigned char)buf[pos];
+      bool isDi = (b0 == 0xE7 && pos + 2 < (int)totalBytes &&
+                   (unsigned char)buf[pos+1] == 0xAC && (unsigned char)buf[pos+2] == 0xAC);
+      bool isJuanAtLineStart = false;
+      if (!isDi && b0 == 0xE5 && pos + 2 < (int)totalBytes &&
+          (unsigned char)buf[pos+1] == 0x8D && (unsigned char)buf[pos+2] == 0xB7) {
+        isJuanAtLineStart = (bufBaseOffset + pos == 0) ||
+                            (pos > 0 && ((unsigned char)buf[pos-1] == '\n' || (unsigned char)buf[pos-1] == '\r'));
+      }
+      if (!isDi && !isJuanAtLineStart) { pos++; continue; }
+
+      int headingStart = pos;
+      int scanPos = pos + 3;  // Skip past 第
+
+      // Scan number part
+      bool hasNumber = false;
+      uint32_t terminator = 0;
+      while (scanPos < (int)totalBytes) {
+        int beforeDecode = scanPos;
+        uint32_t numCp = utf8Decode(buf, scanPos);
+        bool isCJKNum = (numCp == 0x4E00 || numCp == 0x4E8C || numCp == 0x4E09 || numCp == 0x56DB ||
+                         numCp == 0x4E94 || numCp == 0x516D || numCp == 0x4E03 || numCp == 0x516B ||
+                         numCp == 0x4E5D || numCp == 0x5341 || numCp == 0x767E || numCp == 0x5343 ||
+                         numCp == 0x96F6 || numCp == 0x3007);
+        bool isDigit = (numCp >= '0' && numCp <= '9') ||
+                       (numCp >= 0xFF10 && numCp <= 0xFF19);
+        if (isCJKNum || isDigit) {
+          hasNumber = true;
+        } else if (isDi && hasNumber &&
+                   (numCp == 0x56DE || numCp == 0x7AE0 || numCp == 0x7BC0 ||
+                    numCp == 0x7BC7 || numCp == 0x5377)) {
+          terminator = numCp;
+          break;
+        } else {
+          scanPos = beforeDecode;
+          break;
+        }
+      }
+
+      // For 第+number+terminator, both must be present
+      if (isDi && (!hasNumber || terminator == 0)) { pos++; continue; }
+      // For 卷+number, just need a number after 卷
+      if (isJuanAtLineStart && !hasNumber) { pos++; continue; }
+
+      // Extract heading label (up to 60 chars from heading start)
+      int labelEnd = scanPos;
+
+      // If the rest of this line (after terminator) is only whitespace,
+      // merge the next line into the heading (e.g. "第一回\n靈根育孕源流出...")
+      {
+        int peekPos = labelEnd;
+        bool restIsEmpty = true;
+        while (peekPos < (int)totalBytes) {
+          unsigned char pc = (unsigned char)buf[peekPos];
+          if (pc == '\n' || pc == '\r') break;
+          int tmpPos = peekPos;
+          uint32_t peekCp = utf8Decode(buf, tmpPos);
+          if (peekCp != ' ' && peekCp != '\t' && peekCp != 0x3000) {
+            restIsEmpty = false;
+            break;
+          }
+          peekPos = tmpPos;
+        }
+        if (restIsEmpty && peekPos < (int)totalBytes) {
+          unsigned char nc = (unsigned char)buf[peekPos];
+          if (nc == '\r') peekPos++;
+          if (peekPos < (int)totalBytes && (unsigned char)buf[peekPos] == '\n') peekPos++;
+          if (peekPos < (int)totalBytes) {
+            labelEnd = peekPos;  // Start scanning from the next line
+          }
+        }
+      }
+
+      // Skip colon right after terminator (e.g., 第一回：title → 第一回 title)
+      if (labelEnd < (int)totalBytes) {
+        int peekColon = labelEnd;
+        uint32_t colonCp = utf8Decode(buf, peekColon);
+        if (colonCp == ':' || colonCp == 0xFF1A) labelEnd = peekColon;
+      }
+
+      // Scan line: title ends at line ending, or at last space before
+      // first punctuation (or at punctuation itself if no space precedes it)
+      int charCount = 0;
+      int firstPunctByte = -1;
+      int lastSpaceBeforePunct = -1;
+      while (labelEnd < (int)totalBytes && charCount < 60) {
+        unsigned char c = (unsigned char)buf[labelEnd];
+        if (c == '\n' || c == '\r') break;
+        int cpStart = labelEnd;
+        uint32_t lineCp = utf8Decode(buf, labelEnd);
+        if (isPunctuation(lineCp)) {
+          if (firstPunctByte < 0) firstPunctByte = cpStart;
+        }
+        if (firstPunctByte < 0 && (lineCp == ' ' || lineCp == 0x3000))
+          lastSpaceBeforePunct = cpStart;
+        charCount++;
+      }
+
+      int titleEnd;
+      if (firstPunctByte < 0) {
+        titleEnd = labelEnd;
+      } else if (lastSpaceBeforePunct > scanPos) {
+        titleEnd = lastSpaceBeforePunct;
+      } else {
+        titleEnd = firstPunctByte;
+      }
+
+      String label = String(buf + headingStart, titleEnd - headingStart);
+      label.replace("\r\n", " ");
+      label.replace("\r", " ");
+      label.replace("\n", " ");
+      label.replace("\xef\xbc\x9a", " ");  // U+FF1A fullwidth colon → space
+      label.replace(":", " ");             // ASCII colon → space
+      while (label.indexOf("  ") >= 0) label.replace("  ", " ");
+      label.trim();
+
+      // Insert a space after the chapter marker if none exists
+      if (isJuanAtLineStart) {
+        // For 卷+number, insert space after the number part
+        int spacePos = scanPos - headingStart;
+        if (spacePos > 0 && spacePos < (int)label.length()) {
+          int peekPos = spacePos;
+          uint32_t nextCp = utf8Decode(label, peekPos);
+          if (nextCp != ' ' && nextCp != 0x3000) {
+            label = label.substring(0, spacePos) + " " + label.substring(spacePos);
+          }
+        }
+      } else {
+        // For 第+number+terminator, insert space after the terminator character
+        int lp = 0, lLen = label.length();
+        while (lp < lLen) {
+          uint32_t lCp = utf8Decode(label, lp);
+          if (lCp == 0x56DE || lCp == 0x7AE0 || lCp == 0x7BC0 || lCp == 0x7BC7 || lCp == 0x5377) {
+            if (lp < lLen) {
+              int peekPos = lp;
+              uint32_t nextCp = utf8Decode(label, peekPos);
+              if (nextCp != ' ' && nextCp != 0x3000) {
+                label = label.substring(0, lp) + " " + label.substring(lp);
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      if (label.length() > 0) {
+        size_t absOffset = bufBaseOffset + headingStart;
+        // Avoid duplicates
+        bool duplicate = false;
+        for (int d = 0; d < epubTocCount; d++) {
+          if (epubTocEntries[d].byteOffset == absOffset) { duplicate = true; break; }
+        }
+        if (!duplicate) {
+          epubTocEntries[epubTocCount].label = label;
+          epubTocEntries[epubTocCount].chapterIndex = 0;
+          epubTocEntries[epubTocCount].byteOffset = absOffset;
+          epubTocCount++;
+          Serial.printf("TXT TOC[%d]: \"%s\" @ %u\n", epubTocCount - 1, label.c_str(), (unsigned)absOffset);
+        }
+      }
+
+      pos = scanPos;  // Continue scanning after this match
+    }
+
+    // Advance file position, keeping overlap for boundary patterns
+    filePos += bytesRead;
+    if (filePos < fileSize && totalBytes > OVERLAP) {
+      carryOver = OVERLAP;
+      memmove(buf, buf + totalBytes - OVERLAP, OVERLAP);
+    } else {
+      carryOver = 0;
+    }
+    yield();
+  }
+
+  file.close();
+  free(buf);
+
+  Serial.printf("TXT Virtual TOC: %d entries generated\n", epubTocCount);
+
+  if (epubTocCount == 0) {
+    epubFreeToc();
+    return false;
+  }
+  return true;
+}
 
 void drawTocList() {
   M5.Display.setEpdMode(epd_mode_t::epd_fast);
@@ -1377,68 +1787,245 @@ void drawTocList() {
   int listStartY = 100;
 
   // TOC layout depends on language
-  int tocFontSize = epubIsHorizontal ? 32 : 40;
-  int tocRowH = epubIsHorizontal ? 60 : 72;
-  int tocPerPage = (830 - listStartY) / tocRowH;
+  int tocFontSize = isReadingFontSilver() ? silverScaledSize(32) : 32;
+  int tocRowH = epubIsHorizontal ? 46 : 42;
+  int maxVisualRows = (914 - listStartY) / tocRowH - 1;  // Reserve last row for page indicator
+  // Max chars per line (CJK chars at tocFontSize ~32px, display width 540, left margin 40)
+  int maxCharsPerLine = 15;
+
+  auto displayTocLabel = [](const String& label) -> String {
+    String converted = label;
+    if (bookConvMode != CONV_ORIGINAL) applyConversion(converted, (ConvMode)bookConvMode);
+    return converted;
+  };
 
   if (tocTab == 0) {
     // === Chapter list ===
     if (epubTocEntries && epubTocCount > 0) {
-      int totalTocPages = (epubTocCount + tocPerPage - 1) / tocPerPage;
-      if (tocListPage >= totalTocPages) tocListPage = totalTocPages - 1;
-      if (tocListPage < 0) tocListPage = 0;
-      int startIdx = tocListPage * tocPerPage;
-      int endIdx = min(startIdx + tocPerPage, epubTocCount);
 
-      // Load reading font for chapter titles
-      loadReadingFont();
+      // Load reading font TTF for TOC chapter titles.
+      // When reading font is BIN, OFR may hold ETBook (Latin-only) → squares.
+      // Load the parent TTF (fontFileList[readingFontIndex]) which has CJK.
+      {
+        String tocFont;
+        if (readingFontIndex >= 0 && readingFontIndex < fontFileCount) {
+          tocFont = fontFileList[readingFontIndex];
+        }
+        if (tocFont.length() > 0 && tocFont != "ETBook-embedded") {
+          loadTTFFont(tocFont.c_str(), tocFontSize);
+        } else {
+          loadSystemFont();
+        }
+      }
       if (ofrFontLoaded) {
         ofr.setFontSize(tocFontSize);
         ofr.setFontColor(TFT_BLACK, TFT_WHITE);
         ofr.setDrawer(M5.Display);
       }
 
-      for (int i = startIdx; i < endIdx; i++) {
-        int row = i - startIdx;
-        int rowY = listStartY + row * tocRowH;
+      auto lineCapacity = [&](int indentChars) -> int {
+        int capacity = maxCharsPerLine - indentChars;
+        return capacity < 4 ? 4 : capacity;
+      };
 
-        String displayName = epubTocEntries[i].label;
-        int len = displayName.length();
-        if (len > 30) {
-          int charCount = 0, bytePos = 0;
-          while (bytePos < len) {
-            uint8_t c = (uint8_t)displayName[bytePos];
-            if (c < 0x80) bytePos += 1;
-            else if (c < 0xE0) bytePos += 2;
-            else if (c < 0xF0) bytePos += 3;
-            else bytePos += 4;
-            charCount++;
+      // Helper: count unicode chars in prefix up to the chapter terminator (not including the space)
+      // Returns the number of CJK chars to use as indent (using full-width spaces) for continuation lines
+      // Also returns whether a space follows the terminator (to replicate it in the indent)
+      auto countIndentChars = [](const String& label, bool& hasSpace) -> int {
+        int labelLen = label.length();
+        int bp = 0;
+        int charCount = 0;
+        bool foundTerminator = false;
+        hasSpace = false;
+        while (bp < labelLen) {
+          uint32_t cp = utf8Decode(label.c_str(), bp);
+          charCount++;
+          if (!foundTerminator) {
+            if (cp == 0x56DE || cp == 0x7AE0 || cp == 0x7BC0 || cp == 0x7BC7 || cp == 0x5377)
+              foundTerminator = true;
+          } else {
+            // First char after terminator — check if it's a space
+            if (cp == ' ' || cp == 0x3000) { hasSpace = true; return charCount - 1; }
+            return charCount - 1;
           }
-          if (charCount > 17) {
-            int targetChars = 16;
-            bytePos = 0;
-            int count = 0;
-            while (bytePos < len && count < targetChars) {
-              uint8_t c = (uint8_t)displayName[bytePos];
-              if (c < 0x80) bytePos += 1;
-              else if (c < 0xE0) bytePos += 2;
-              else if (c < 0xF0) bytePos += 3;
-              else bytePos += 4;
-              count++;
+        }
+        return 0;
+      };
+
+      // Helper: count lines needed for a TOC entry with space-based indent
+      auto countEntryLines = [&](const String& label, int indentChars) -> int {
+        int labelLen = label.length();
+        int bp = 0;
+        int charCount = 0;
+        int lineChars = 0;
+        int lines = 1;
+        bool firstLine = true;
+        int maxOnLine = firstLine ? maxCharsPerLine : lineCapacity(indentChars);
+        int lastSpaceBp = -1;
+        int lastSpaceCharIdx = -1;
+        int lastSpaceLineChars = 0;
+        int lineStartBp = 0;
+        int lineStartChar = 0;
+
+        while (bp < labelLen) {
+          int prevBp = bp;
+          uint32_t cp = utf8Decode(label.c_str(), bp);
+          lineChars++;
+          charCount++;
+          if (cp == ' ' || cp == 0x3000) {
+            lastSpaceBp = prevBp;
+            lastSpaceCharIdx = charCount;
+            lastSpaceLineChars = lineChars;
+          }
+          if (lineChars > maxOnLine) {
+            // Only break at space if it gives a reasonably long line
+            // (avoid breaking right after 第X回 which is too short)
+            if (lastSpaceBp > lineStartBp && lastSpaceLineChars >= maxOnLine / 2) {
+              bp = lastSpaceBp;
+              // Skip the space
+              utf8Decode(label.c_str(), bp);
             }
-            displayName = displayName.substring(0, bytePos) + "\xe2\x80\xa6";
+            lines++;
+            firstLine = false;
+            maxOnLine = lineCapacity(indentChars);
+            lineStartBp = bp;
+            lineStartChar = charCount;
+            lineChars = 0;
+            lastSpaceBp = -1;
+            lastSpaceLineChars = 0;
           }
         }
+        return lines;
+      };
 
-        if (ofrFontLoaded) {
-          ofr.drawString(displayName.c_str(), 40, rowY);
-        } else {
-          drawSystemText(displayName.c_str(), 40, rowY, tocFontSize);
+      auto tocEntryRows = [&](const String& label) -> int {
+        bool hasSpace = false;
+        int indentChars = countIndentChars(label, hasSpace);
+        int totalIndent = indentChars + (hasSpace ? 1 : 0);
+        int rows = countEntryLines(label, totalIndent);
+        if (rows < 1) rows = 1;
+        if (rows > maxVisualRows) rows = maxVisualRows;
+        return rows;
+      };
+
+      int totalTocPages = 1;
+      {
+        int tmpEntry = 0, tmpRow = 0, tmpPage = 0;
+        while (tmpEntry < epubTocCount) {
+          String label = displayTocLabel(epubTocEntries[tmpEntry].label);
+          int lines = tocEntryRows(label);
+          if (tmpRow + lines > maxVisualRows) {
+            tmpPage++;
+            tmpRow = 0;
+          }
+          tmpRow += lines;
+          tmpEntry++;
         }
+        totalTocPages = tmpPage + 1;
+      }
+
+      if (tocListPage >= totalTocPages) tocListPage = totalTocPages - 1;
+      if (tocListPage < 0) tocListPage = 0;
+
+      // Skip entries for previous pages
+      int entryIdx = 0;
+      for (int p = 0; p < tocListPage && entryIdx < epubTocCount; p++) {
+        int rowsUsed = 0;
+        while (entryIdx < epubTocCount && rowsUsed < maxVisualRows) {
+          String label = displayTocLabel(epubTocEntries[entryIdx].label);
+          int lines = tocEntryRows(label);
+          if (rowsUsed + lines > maxVisualRows) break;
+          rowsUsed += lines;
+          entryIdx++;
+        }
+      }
+
+      // Build indent string: full-width spaces for CJK chars, plus the space after terminator
+      auto makeIndent = [](int n, bool addSpace) -> String {
+        String s;
+        for (int i = 0; i < n; i++) s += "\xe3\x80\x80";  // U+3000
+        if (addSpace) s += " ";
+        return s;
+      };
+
+      // Now render entries for the current page
+      int visualRow = 0;
+      tocVisualRowCount = 0;
+
+      for (int i = entryIdx; i < epubTocCount && visualRow < maxVisualRows; i++) {
+        String label = displayTocLabel(epubTocEntries[i].label);
+        int labelLen = label.length();
+        bool hasSpace = false;
+        int indentChars = countIndentChars(label, hasSpace);
+        int totalIndent = indentChars + (hasSpace ? 1 : 0);
+        String indentStr = makeIndent(indentChars, hasSpace);
+
+        // Break title into lines by character count, breaking at spaces
+        String displayLines[MAX_TOC_VISUAL_ROWS];
+        int lineCount = 0;
+        int bp = 0;
+        int lineChars = 0;
+        int lineStartBp = 0;
+        int lastSpaceBp = -1;
+        int lastSpaceBpAfter = -1;
+        int lastSpaceLineChars = 0;
+        bool firstLine = true;
+        int maxOnLine = maxCharsPerLine;
+
+        while (bp < labelLen && lineCount < MAX_TOC_VISUAL_ROWS) {
+          int prevBp = bp;
+          uint32_t cp = utf8Decode(label.c_str(), bp);
+          lineChars++;
+          if (cp == ' ' || cp == 0x3000) {
+            lastSpaceBp = prevBp;
+            lastSpaceBpAfter = bp;
+            lastSpaceLineChars = lineChars;
+          }
+          if (lineChars > maxOnLine) {
+            // Line overflow — break at last space if it gives a reasonably long line
+            // (avoid breaking right after 第X回 which looks ugly)
+            if (lastSpaceBp > lineStartBp && lastSpaceLineChars >= maxOnLine / 2) {
+              displayLines[lineCount++] = label.substring(lineStartBp, lastSpaceBp);
+              bp = lastSpaceBpAfter;
+            } else {
+              displayLines[lineCount++] = label.substring(lineStartBp, prevBp);
+              bp = prevBp;
+            }
+            firstLine = false;
+            maxOnLine = lineCapacity(totalIndent);
+            lineStartBp = bp;
+            lineChars = 0;
+            lastSpaceBp = -1;
+            lastSpaceLineChars = 0;
+          }
+        }
+        // Remaining text
+        if (lineStartBp < labelLen && lineCount < MAX_TOC_VISUAL_ROWS) {
+          displayLines[lineCount++] = label.substring(lineStartBp, labelLen);
+        }
+
+        // Check if all lines fit on this page
+        if (visualRow + lineCount > maxVisualRows) break;
+
+        // Render each line
+        for (int ln = 0; ln < lineCount; ln++) {
+          int rowY = listStartY + visualRow * tocRowH;
+          String lineTxt = (ln == 0) ? displayLines[ln] : indentStr + displayLines[ln];
+
+          if (ofrFontLoaded) {
+            ofr.drawString(lineTxt.c_str(), 40, rowY);
+          } else {
+            drawSystemText(lineTxt.c_str(), 40, rowY, tocFontSize);
+          }
+
+          if (visualRow < MAX_TOC_VISUAL_ROWS) {
+            tocRowToEntry[visualRow] = i;
+          }
+          visualRow++;
+        }
+        tocVisualRowCount = visualRow;
         yield();
       }
-      // Restore system font for UI elements below
-      loadSystemFont();
 
       bool hasPrev = (tocListPage > 0);
       bool hasNext = (tocListPage < totalTocPages - 1);

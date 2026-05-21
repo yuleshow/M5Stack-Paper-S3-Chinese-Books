@@ -91,6 +91,12 @@
 - 搖晃裝置抽籤（加速度感測器偵測）
 - 預封裝二進位格式 (FSLP) 快速載入
 - 籤詩圖片來源：[www.chance.org.tw](https://www.chance.org.tw)
+- **歌子靈籖** — 隱藏彩蛋，內建一隻名為「歌子」的電子寵物。狀態依實際時間衰退，
+  存於 SD 卡 `/tamagotchi.dat`；提供 餵食 / 逗玩 / 清掃 / 醫治 四種動作，
+  具備疾病與以「德」為分支條件的成長樹
+  （籖子 → 寶寶 → 小童／頑童 → 少年／浪子 → 士人／工匠／商賈／野人 → 長者）。
+
+  ![歌子 sprite sheet](output/tamagotchi_sprites.png)
 
 ### 🖼️ 桌布瀏覽器 ![功能](https://img.shields.io/badge/功能-桌布-blue)
 - 瀏覽並顯示 SD 卡中的 JPG 桌布

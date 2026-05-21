@@ -7,7 +7,6 @@
 #include <SPI.h>
 #include <Preferences.h>
 #include <WiFi.h>
-#include <WebServer.h>
 #include <time.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -142,6 +141,7 @@ enum Mode {
   MODE_FORTUNE_SLIP_VIEW,
   MODE_FORTUNE_SLIP_WORDING,
   MODE_FORTUNE_SLIP_STORY,
+  MODE_TAMAGOTCHI,          // Easter egg hidden behind 歌子靈籖
   MODE_PAGE_JUMP,
   MODE_TOC,
   MODE_TOOLS_MENU,
@@ -330,7 +330,6 @@ extern bool autoSleepEnabled;  // Toggle for idle auto-sleep feature
 extern bool usbMSCEnabled;
 extern bool useSDCardIcons;
 extern bool usbMSCActive;
-extern WebServer* webServer;
 extern bool webServerEnabled;
 extern bool webServerRunning;
 extern int setupFastRefreshCount;
@@ -468,8 +467,8 @@ extern bool epubHasMultiImageChapters;  // Warning flag: some chapters have mult
 extern bool epubIsHorizontal;          // True for English/Latin EPUBs → horizontal LTR rendering
 
 // EPUB Table of Contents
-static const int MAX_TOC_ENTRIES = 200;
-static const int TOC_PER_PAGE = 13;
+static const int MAX_TOC_ENTRIES = 512;
+static const int TOC_PER_PAGE = 18;
 struct TocEntry {
   String label;           // Chapter title
   int chapterIndex;       // Index into epubChapters[]
@@ -479,6 +478,11 @@ extern TocEntry* epubTocEntries;
 extern int epubTocCount;
 extern int tocListPage;
 extern int tocTab;  // 0 = chapters, 1 = bookmarks
+
+// TOC visual row mapping (for multi-line chapter titles)
+static const int MAX_TOC_VISUAL_ROWS = 40;
+extern int tocRowToEntry[MAX_TOC_VISUAL_ROWS];  // Maps visual row → TOC entry index
+extern int tocVisualRowCount;                    // Number of visual rows on current page
 
 // Todo
 static const int MAX_TODO = 50;
@@ -666,6 +670,8 @@ bool epubLoadSingleChapter(int chapterIndex);
 int epubChapterForOffset(size_t offset);
 bool epubParseToc();
 bool epubGenerateVirtualToc();
+bool txtGenerateVirtualToc();
+void tocPolishLabels();
 void epubFreeToc();
 void epubCleanup();
 bool epubExtractAndDrawImage(const String& imagePath, int x, int y, int maxW, int maxH,
@@ -807,6 +813,12 @@ void pollFortuneShake();
 void drawFortuneSlipWording();
 void drawFortuneSlipStory();
 
+// tamagotchi (easter egg — hidden behind 歌子靈籖 on the fortune slips menu)
+void drawTamagotchi();
+void pollTamagotchi();
+void tamagotchiHandleTap(int x, int y);
+void tamagotchiExit();
+
 // image dimension helpers
 bool getJpegDimensions(const uint8_t* data, size_t len, int& width, int& height);
 bool getPngDimensions(const uint8_t* data, size_t len, int& width, int& height);
@@ -817,6 +829,7 @@ void sdLog(const char* fmt, ...);
 // web_server_handler
 void startWebServer();
 void stopWebServer();
+void handleWebClients();
 void updateScreenCapture();
 
 // usb_msc_handler

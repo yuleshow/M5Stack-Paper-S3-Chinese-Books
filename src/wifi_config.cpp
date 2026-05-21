@@ -185,6 +185,7 @@ void scanWiFiNetworks() {
   wifiScanning = true;
   
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   
   Serial.println("Scanning for WiFi networks...");
   int n = WiFi.scanNetworks();
@@ -250,6 +251,7 @@ bool connectToWiFi() {
   }
   
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.disconnect(true);
   delay(100);
   

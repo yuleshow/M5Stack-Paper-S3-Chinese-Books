@@ -3,7 +3,6 @@
 // ==================== Global Variable Definitions ====================
 
 // Web server
-WebServer* webServer = nullptr;
 bool webServerEnabled = false;
 bool webServerRunning = false;
 
@@ -312,6 +311,8 @@ TocEntry* epubTocEntries = nullptr;
 int epubTocCount = 0;
 int tocListPage = 0;
 int tocTab = 0;
+int tocRowToEntry[MAX_TOC_VISUAL_ROWS] = {};
+int tocVisualRowCount = 0;
 InlineLink inlineLinks[MAX_INLINE_LINKS];
 int inlineLinkCount = 0;
 int comicZoomQuadrant = -1;

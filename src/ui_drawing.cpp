@@ -60,9 +60,60 @@ bool checkNavTouch() {
   return false;
 }
 
+// ==================== Icon Sprite Cache ====================
+// Cache decoded PNG icons as LGFX_Sprite objects in PSRAM to avoid
+// re-decoding PNGs on every page turn (~5-15ms per icon saved).
+static const int ICON_CACHE_MAX = 8;
+struct CachedIconSprite {
+  char name[32];
+  LGFX_Sprite* sprite;
+};
+static CachedIconSprite iconCache[ICON_CACHE_MAX];
+static int iconCacheCount = 0;
+
+static LGFX_Sprite* findCachedIcon(const char* iconName) {
+  for (int i = 0; i < iconCacheCount; i++) {
+    if (strcmp(iconCache[i].name, iconName) == 0) return iconCache[i].sprite;
+  }
+  return nullptr;
+}
+
+static LGFX_Sprite* cacheIconFromPng(const char* iconName, const uint8_t* pngData, size_t pngLen) {
+  if (iconCacheCount >= ICON_CACHE_MAX) return nullptr;
+  if (pngLen < 24) return nullptr;
+  // Parse PNG IHDR for width/height (bytes 16-23 in PNG file)
+  int pngW = (pngData[16] << 24) | (pngData[17] << 16) | (pngData[18] << 8) | pngData[19];
+  int pngH = (pngData[20] << 24) | (pngData[21] << 16) | (pngData[22] << 8) | pngData[23];
+  if (pngW <= 0 || pngH <= 0 || pngW > 960 || pngH > 960) return nullptr;
+  
+  LGFX_Sprite* spr = new LGFX_Sprite(&M5.Display);
+  if (!spr) return nullptr;
+  spr->setPsram(true);
+  if (!spr->createSprite(pngW, pngH)) {
+    delete spr;
+    return nullptr;
+  }
+  spr->fillSprite(TFT_WHITE);
+  spr->drawPng(pngData, pngLen, 0, 0);
+  
+  strncpy(iconCache[iconCacheCount].name, iconName, sizeof(iconCache[0].name) - 1);
+  iconCache[iconCacheCount].name[sizeof(iconCache[0].name) - 1] = '\0';
+  iconCache[iconCacheCount].sprite = spr;
+  iconCacheCount++;
+  Serial.printf("Icon cached: %s (%dx%d) psram=%u\n", iconName, pngW, pngH, ESP.getFreePsram());
+  return spr;
+}
+
 // Draw a PNG icon at specified position
-// Priority: SD card (if enabled) -> embedded in firmware
+// Priority: sprite cache -> SD card (if enabled) -> embedded in firmware
 bool drawNavIcon(const char* iconName, int x, int y) {
+  // Check sprite cache first (fastest path — no PNG decode)
+  LGFX_Sprite* cached = findCachedIcon(iconName);
+  if (cached) {
+    cached->pushSprite(x, y);
+    return true;
+  }
+
   // Try SD card first (user can override embedded icons)
   if (useSDCardIcons && sdCardAvailable) {
     char iconPath[48];
@@ -87,7 +138,13 @@ bool drawNavIcon(const char* iconName, int x, int y) {
     }
     if (buffer) {
       if (bytesRead == fileSize) {
-        M5.Display.drawPng(buffer, fileSize, x, y);
+        // Cache the SD card icon for future use
+        LGFX_Sprite* spr = cacheIconFromPng(iconName, buffer, fileSize);
+        if (spr) {
+          spr->pushSprite(x, y);
+        } else {
+          M5.Display.drawPng(buffer, fileSize, x, y);
+        }
         free(buffer);
         return true;
       }
@@ -98,7 +155,13 @@ bool drawNavIcon(const char* iconName, int x, int y) {
   // Fall back to embedded icon
   const EmbeddedIcon* icon = findEmbeddedIcon(iconName);
   if (icon) {
-    M5.Display.drawPng(icon->data, icon->length, x, y);
+    // Cache the embedded icon for future use
+    LGFX_Sprite* spr = cacheIconFromPng(iconName, icon->data, icon->length);
+    if (spr) {
+      spr->pushSprite(x, y);
+    } else {
+      M5.Display.drawPng(icon->data, icon->length, x, y);
+    }
     return true;
   }
   

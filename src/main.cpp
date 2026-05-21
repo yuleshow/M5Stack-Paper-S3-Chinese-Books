@@ -19,6 +19,83 @@ RTC_DATA_ATTR int setupCrashCount = 0;  // counts consecutive incomplete boots
 RTC_DATA_ATTR bool loadBookCrashed = false;  // set before loadBook, cleared after success
 bool safeMode = false;  // skip dangerous SD ops if boot keeps crashing
 
+static bool seedExactPageOffsetForJump(size_t targetOffset) {
+  if (bytesPerPage <= 0 || totalPages <= 0) return false;
+
+  int estimatedPage = targetOffset / bytesPerPage;
+  if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
+  if (estimatedPage < 0) estimatedPage = 0;
+  currentPage = estimatedPage;
+
+  lastRenderedForPage = currentPage - 1;
+  lastRenderedNextOffset = targetOffset;
+
+  if (pageByteOffsets && currentPage < MAX_PAGE_OFFSETS) {
+    while (pageOffsetsCount < currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
+      int gap = currentPage - pageOffsetsCount;
+      size_t est = (targetOffset > (size_t)gap * bytesPerPage) ?
+                   targetOffset - (size_t)gap * bytesPerPage : 0;
+      pageByteOffsets[pageOffsetsCount] = est;
+      pageOffsetsCount++;
+    }
+    pageByteOffsets[currentPage] = targetOffset;
+    if (pageOffsetsCount <= currentPage) pageOffsetsCount = currentPage + 1;
+  }
+
+  return true;
+}
+
+static bool jumpToEpubChapterOffset(int chapterIdx, size_t storedOffset, bool hasStoredOffset) {
+  if (!epubChapters || chapterIdx < 0 || chapterIdx >= epubChapterCount) return false;
+
+  if (epubIsImageBased) {
+    currentPage = chapterIdx;
+    return true;
+  }
+
+  size_t oldChapterStart = epubChapters[chapterIdx].cumulativeOffset;
+  size_t relativeOffset = (hasStoredOffset && storedOffset >= oldChapterStart) ?
+                          storedOffset - oldChapterStart : 0;
+
+  bool chapterLoaded = (epubFullText &&
+      chapterIdx >= epubLoadedStartChapter &&
+      chapterIdx < epubLoadedEndChapter);
+  if (!chapterLoaded) {
+    if (!epubLoadChapterRange(chapterIdx)) return false;
+    totalBookBytes = epubEstimatedTotalBytes;
+    if (bytesPerPage > 0) totalPages = (totalBookBytes / bytesPerPage) + 1;
+  }
+
+  size_t newChapterStart = epubChapters[chapterIdx].cumulativeOffset;
+  size_t actualSize = epubChapters[chapterIdx].actualTextSize;
+  if (actualSize > 0 && relativeOffset >= actualSize) relativeOffset = 0;
+
+  size_t targetOffset = newChapterStart + relativeOffset;
+  if (targetOffset >= epubEstimatedTotalBytes) targetOffset = newChapterStart;
+
+  return seedExactPageOffsetForJump(targetOffset);
+}
+
+static int resolveEpubHrefToChapter(const String& href) {
+  String targetFile = href;
+  int hashPos = targetFile.indexOf('#');
+  if (hashPos >= 0) targetFile = targetFile.substring(0, hashPos);
+  targetFile = pathNormalize(targetFile);
+
+  if (targetFile.length() == 0 || targetFile.endsWith("/")) {
+    int sourceChapter = epubChapterForOffset(currentPageByteOffset);
+    if (sourceChapter >= 0 && sourceChapter < epubChapterCount) return sourceChapter;
+  }
+
+  for (int ci = 0; ci < epubChapterCount; ci++) {
+    int zi = epubChapters[ci].zipEntryIndex;
+    if (zi >= 0 && zi < epubZipEntryCount) {
+      if (epubZipEntries[zi].filename == targetFile) return ci;
+    }
+  }
+  return -1;
+}
+
 // Check if external power (USB) is connected
 bool isExternalPowerConnected() {
   return (M5.Power.isCharging() == m5::Power_Class::is_charging_t::is_charging)
@@ -534,6 +611,7 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
     Serial.println("Deep sleep wake: deferring WiFi to loop() for faster resume");
     if (wifiConfig.configured) {
       WiFi.mode(WIFI_STA);
+      WiFi.setSleep(false);
       WiFi.begin(wifiConfig.ssid.c_str(), wifiConfig.password.c_str());
       // Non-blocking: let it connect in background, loop() will pick it up
     }
@@ -550,9 +628,8 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   }
   Serial.println("========================\n");
   
-  // Load web server preference
-  webServerEnabled = true;  // Always enable web server by default
-  savePrefBool("m5paper", "webServer", true);
+  // Load web server preference. Default to enabled, but respect the settings toggle.
+  webServerEnabled = loadPrefBool("m5paper", "webServer", true);
   usbMSCEnabled = loadPrefBool("m5paper", "usbMSC", false);
   useSDCardIcons = loadPrefBool("m5paper", "sdIcons", false);
   useSxwnlCalendar = loadPrefBool("m5paper", "sxwnl", false);
@@ -592,6 +669,16 @@ rtcTime.time.hours, rtcTime.time.minutes, rtcTime.time.seconds);
   
   lastActivityTime = millis();
   setupCrashCount = 0;  // setup completed successfully - reset crash counter
+
+  // If the last book load crashed (WDT reset mid-loadBook), clear the
+  // "last book" preference so the user isn't stuck in a crash loop when
+  // tapping "最後閱讀".
+  if (loadBookCrashed) {
+    Serial.println("WARNING: previous loadBook() crashed — clearing lastBook preference");
+    savePrefStr("ereader", "lastBook", "");
+    loadBookCrashed = false;
+  }
+
   Serial.println("Setup complete!");
 }
 
@@ -602,6 +689,11 @@ void loop() {
   // Poll IMU for fortune slip shake detection
   if (currentMode == MODE_FORTUNE_SHAKE) {
     pollFortuneShake();
+  }
+
+  // Tamagotchi tick (easter egg)
+  if (currentMode == MODE_TAMAGOTCHI) {
+    pollTamagotchi();
   }
   
   // Auto-refresh weather every 15 minutes while on weather screen
@@ -628,17 +720,17 @@ void loop() {
 
   // Handle web server if enabled (skip while USB MSC active — SD card not accessible)
   if (webServerEnabled && !usbMSCActive) {
-    // Start server if WiFi connected but server not running
-    if (WiFi.status() == WL_CONNECTED && !webServerRunning) {
+    // Start server on router WiFi when available, otherwise via fallback AP.
+    if (!webServerRunning) {
       startWebServer();
     }
-    // Stop server if WiFi disconnected
-    else if (WiFi.status() != WL_CONNECTED && webServerRunning) {
+    // Stop only if both router WiFi and fallback AP are unavailable.
+    else if (WiFi.status() != WL_CONNECTED && (WiFi.getMode() & WIFI_AP) == 0) {
       stopWebServer();
     }
     // Handle client requests
-    if (webServerRunning && webServer != nullptr) {
-      webServer->handleClient();
+    if (webServerRunning) {
+      handleWebClients();
       updateScreenCapture();
     }
   }
@@ -663,9 +755,10 @@ void loop() {
           millis() - lastReconnectAttempt > 60000) {
         lastReconnectAttempt = millis();
         sdLog("WiFi reconnect attempt (status=%d)", st);
-        WiFi.disconnect(true);
+        WiFi.disconnect(false);
         delay(100);
-        WiFi.mode(WIFI_STA);
+        WiFi.mode(webServerRunning ? WIFI_AP_STA : WIFI_STA);
+        WiFi.setSleep(false);
         WiFi.begin(wifiConfig.ssid.c_str(), wifiConfig.password.c_str());
       }
     }
@@ -1226,8 +1319,8 @@ void loop() {
           if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
             while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
               int gap = currentPage - pageOffsetsCount;
-              size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                           savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+              size_t est = (savedOffset > (size_t)gap * bytesPerPage) ?
+                           savedOffset - (size_t)gap * bytesPerPage : 0;
               pageByteOffsets[pageOffsetsCount] = est;
               pageOffsetsCount++;
             }
@@ -1369,8 +1462,8 @@ void loop() {
                   if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
                     while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
                       int gap = currentPage - pageOffsetsCount;
-                      size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                                   savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+                      size_t est = (savedOffset > (size_t)gap * bytesPerPage) ?
+                                   savedOffset - (size_t)gap * bytesPerPage : 0;
                       pageByteOffsets[pageOffsetsCount] = est;
                       pageOffsetsCount++;
                     }
@@ -1531,53 +1624,10 @@ void loop() {
           InlineLink& lnk = inlineLinks[li];
           if (x >= lnk.x && x <= lnk.x + lnk.w && y >= lnk.y && y <= lnk.y + lnk.h) {
             Serial.printf("Link tapped: '%s'\n", lnk.href.c_str());
-            // Strip fragment (#section) for file matching
-            String targetFile = lnk.href;
-            int hashPos = targetFile.indexOf('#');
-            if (hashPos >= 0) targetFile = targetFile.substring(0, hashPos);
-            // Resolve href to chapter index by matching zip entry filename
-            int targetChapter = -1;
-            for (int ci = 0; ci < epubChapterCount; ci++) {
-              int zi = epubChapters[ci].zipEntryIndex;
-              if (zi >= 0 && zi < epubZipEntryCount) {
-                if (epubZipEntries[zi].filename == targetFile) {
-                  targetChapter = ci;
-                  break;
-                }
-              }
-            }
+            int targetChapter = resolveEpubHrefToChapter(lnk.href);
             if (targetChapter >= 0 && targetChapter < epubChapterCount) {
               Serial.printf("Link resolved to chapter %d\n", targetChapter);
-              if (epubIsImageBased) {
-                currentPage = targetChapter;
-              } else {
-                // Ensure target chapter is loaded so cumulativeOffset is actual, not estimated
-                bool chapterLoaded = (epubFullText &&
-                    targetChapter >= epubLoadedStartChapter &&
-                    targetChapter < epubLoadedEndChapter);
-                if (!chapterLoaded) {
-                  epubLoadChapterRange(targetChapter);
-                  totalBookBytes = epubEstimatedTotalBytes;
-                  if (bytesPerPage > 0) {
-                    totalPages = (totalBookBytes / bytesPerPage) + 1;
-                  }
-                }
-                size_t targetOffset = epubChapters[targetChapter].cumulativeOffset;
-                int estimatedPage = 0;
-                if (bytesPerPage > 0) {
-                  estimatedPage = targetOffset / bytesPerPage;
-                  if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
-                }
-                currentPage = estimatedPage;
-                lastRenderedForPage = -1;  // Invalidate sequential offset chain
-                if (pageByteOffsets) {
-                  pageByteOffsets[currentPage] = targetOffset;
-                  if (pageOffsetsCount <= currentPage) {
-                    pageOffsetsCount = currentPage + 1;
-                  }
-                }
-              }
-              if (loadCurrentPage()) {
+              if (jumpToEpubChapterOffset(targetChapter, 0, false) && loadCurrentPage()) {
                 saveReadingPosition();
                 drawReading();
               } else {
@@ -1585,7 +1635,7 @@ void loop() {
               }
               linkTapped = true;
             } else {
-              Serial.printf("Link target not found in chapters: '%s'\n", targetFile.c_str());
+              Serial.printf("Link target not found in chapters: '%s'\n", lnk.href.c_str());
             }
             break;
           }
@@ -1675,8 +1725,8 @@ void loop() {
             if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
               while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
                 int gap = currentPage - pageOffsetsCount;
-                size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                             savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+                size_t est = (savedOffset > (size_t)gap * bytesPerPage) ?
+                             savedOffset - (size_t)gap * bytesPerPage : 0;
                 pageByteOffsets[pageOffsetsCount] = est;
                 pageOffsetsCount++;
               }
@@ -1712,8 +1762,8 @@ void loop() {
             if (pageByteOffsets && currentPage > 0 && savedOffset > 0) {
               while ((int)pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
                 int gap = currentPage - pageOffsetsCount;
-                size_t est = (savedOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                             savedOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+                size_t est = (savedOffset > (size_t)gap * bytesPerPage) ?
+                             savedOffset - (size_t)gap * bytesPerPage : 0;
                 pageByteOffsets[pageOffsetsCount] = est;
                 pageOffsetsCount++;
               }
@@ -1759,6 +1809,7 @@ void loop() {
           Serial.println("Opening TOC...");
           if (!epubTocEntries || epubTocCount == 0) {
             epubParseToc();
+            tocPolishLabels();  // Polish embedded TOC labels (strip punct, split couplets)
           }
           // If TOC has only a license entry (e.g., Project Gutenberg), treat as no TOC
           if (epubTocCount == 1 && epubTocEntries) {
@@ -1770,20 +1821,28 @@ void loop() {
             }
           }
           if (!epubTocEntries || epubTocCount == 0) {
+            // Virtual TOC scans epubFullText — ensure all chapters are loaded from the start
+            if (!epubFullText || epubLoadedStartChapter != 0) {
+              Serial.println("TOC: loading all chapters from start for virtual TOC scan");
+              epubLoadChapterRange(0);
+            }
             epubGenerateVirtualToc();
           }
-          if (!epubTocEntries || epubTocCount == 0) {
-            Serial.println("TOC: no entries found, staying in reading mode");
-          } else {
-            tocListPage = 0;
-            tocTab = 0;
-            currentMode = MODE_TOC;
-            drawTocList();
-          }
-        } else {
-          // TXT: open bookmark tab directly
           tocListPage = 0;
-          tocTab = 1;
+          tocTab = (epubTocEntries && epubTocCount > 0) ? 0 : 1;
+          currentMode = MODE_TOC;
+          if (!epubTocEntries || epubTocCount == 0) {
+            Serial.println("TOC: no entries found, showing bookmarks tab");
+          }
+          drawTocList();
+        } else {
+          // TXT: generate virtual TOC from chapter patterns
+          if (!epubTocEntries || epubTocCount == 0) {
+            txtGenerateVirtualToc();
+            tocPolishLabels();  // Polish TXT TOC labels (strip punct, split couplets)
+          }
+          tocListPage = 0;
+          tocTab = (epubTocEntries && epubTocCount > 0) ? 0 : 1;
           currentMode = MODE_TOC;
           drawTocList();
         }
@@ -1842,8 +1901,7 @@ void loop() {
     }
     else if (currentMode == MODE_TOC) {
       // TOC layout (must match drawTocList)
-      int tocRowH = epubIsHorizontal ? 60 : 72;
-      int tocPerPage = (830 - 100) / tocRowH;
+      int tocRowH = epubIsHorizontal ? 46 : 42;
 
       // Return button → back to reading
       if (touchedReturnButton(x, y)) {
@@ -1864,11 +1922,8 @@ void loop() {
       // Pagination: next page (left arrow, CJK forward)
       else if (touchedPrevPage(x, y)) {
         if (tocTab == 0) {
-          int totalTocPages = (epubTocCount + tocPerPage - 1) / tocPerPage;
-          if (tocListPage < totalTocPages - 1) {
-            tocListPage++;
-            drawTocList();
-          }
+          tocListPage++;
+          drawTocList();  // drawTocList will clamp tocListPage
         }
       }
       // Pagination: prev page (right arrow, CJK backward)
@@ -1881,55 +1936,53 @@ void loop() {
         }
       }
       // Tap on list entries
-      else if (y >= 100 && y <= 100 + tocPerPage * tocRowH) {
+      else if (y >= 100 && y <= 100 + tocVisualRowCount * tocRowH) {
         int row = (y - 100) / tocRowH;
 
         if (tocTab == 0) {
-          // Chapter list tap
-          int tocIdx = tocListPage * tocPerPage + row;
+          // Chapter list tap — use tocRowToEntry mapping for multi-line titles
+          int tocIdx = (row >= 0 && row < tocVisualRowCount) ? tocRowToEntry[row] : -1;
           if (tocIdx >= 0 && tocIdx < epubTocCount) {
-            int chapterIdx = epubTocEntries[tocIdx].chapterIndex;
-            Serial.printf("TOC: jumping to chapter %d (%s)\n",
-                          chapterIdx, epubTocEntries[tocIdx].label.c_str());
-            if (chapterIdx >= 0 && chapterIdx < epubChapterCount) {
-              if (epubIsImageBased) {
-                currentPage = chapterIdx;
-              } else {
-                // Ensure target chapter is loaded so cumulativeOffset is actual, not estimated
-                bool chapterLoaded = (epubFullText &&
-                    chapterIdx >= epubLoadedStartChapter &&
-                    chapterIdx < epubLoadedEndChapter);
-                if (!chapterLoaded) {
-                  epubLoadChapterRange(chapterIdx);
-                  totalBookBytes = epubEstimatedTotalBytes;
-                  if (bytesPerPage > 0) {
-                    totalPages = (totalBookBytes / bytesPerPage) + 1;
-                  }
+            size_t targetOffset = epubTocEntries[tocIdx].byteOffset;
+            Serial.printf("TOC: jumping to \"%s\" @ offset %u\n",
+                          epubTocEntries[tocIdx].label.c_str(), (unsigned)targetOffset);
+
+            if (currentBookIsEpub) {
+              int chapterIdx = epubTocEntries[tocIdx].chapterIndex;
+              if (chapterIdx >= 0 && chapterIdx < epubChapterCount) {
+                jumpToEpubChapterOffset(chapterIdx, targetOffset, targetOffset != 0);
+              }
+            } else {
+              // TXT file: jump by byte offset
+              int estimatedPage = 0;
+              if (bytesPerPage > 0) {
+                estimatedPage = targetOffset / bytesPerPage;
+                if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
+              }
+              currentPage = estimatedPage;
+              lastRenderedForPage = -1;
+              if (pageByteOffsets) {
+                // Fill gap entries with backward estimates to avoid uninitialized garbage
+                while (pageOffsetsCount < currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
+                  int gap = currentPage - pageOffsetsCount;
+                  size_t est = (targetOffset > (size_t)gap * bytesPerPage) ?
+                               targetOffset - (size_t)gap * bytesPerPage : 0;
+                  pageByteOffsets[pageOffsetsCount] = est;
+                  pageOffsetsCount++;
                 }
-                size_t targetOffset = epubTocEntries[tocIdx].byteOffset > 0
-                    ? epubTocEntries[tocIdx].byteOffset
-                    : epubChapters[chapterIdx].cumulativeOffset;
-                int estimatedPage = 0;
-                if (bytesPerPage > 0) {
-                  estimatedPage = targetOffset / bytesPerPage;
-                  if (estimatedPage >= totalPages) estimatedPage = totalPages - 1;
-                }
-                currentPage = estimatedPage;
-                lastRenderedForPage = -1;  // Invalidate sequential offset chain
-                if (pageByteOffsets) {
-                  pageByteOffsets[currentPage] = targetOffset;
-                  if (pageOffsetsCount <= currentPage) {
-                    pageOffsetsCount = currentPage + 1;
-                  }
+                pageByteOffsets[currentPage] = targetOffset;
+                if (pageOffsetsCount <= currentPage) {
+                  pageOffsetsCount = currentPage + 1;
                 }
               }
-              currentMode = MODE_READING;
-              if (loadCurrentPage()) {
-                saveReadingPosition();
-                drawReading();
-              } else {
-                drawReading();
-              }
+            }
+
+            currentMode = MODE_READING;
+            if (loadCurrentPage()) {
+              saveReadingPosition();
+              drawReading();
+            } else {
+              drawReading();
             }
           }
         } else {
@@ -3012,9 +3065,7 @@ void loop() {
           
           if (webServerEnabled) {
             Serial.println("Web server enabled");
-            if (WiFi.status() == WL_CONNECTED) {
-              startWebServer();
-            }
+            startWebServer();
           } else {
             Serial.println("Web server disabled");
             stopWebServer();
@@ -3698,19 +3749,25 @@ void loop() {
         currentMode = MODE_DASHBOARD;
         drawDashboard();
       }
-      // Option 1: 觀音靈籖 (y=200..310)
-      else if (x >= 40 && x <= 500 && y >= 200 && y <= 310) {
+      // Option 1: 觀音靈籖 (y=180..280)
+      else if (x >= 40 && x <= 500 && y >= 180 && y <= 280) {
         Serial.println("Fortune slips: kuanyin selected");
         fortuneSlipCategory = 0;
         currentMode = MODE_FORTUNE_SHAKE;
         drawFortuneShakeScreen();
       }
-      // Option 2: 淺草寺靈籖 (y=340..450)
-      else if (x >= 40 && x <= 500 && y >= 340 && y <= 450) {
+      // Option 2: 淺草寺靈籖 (y=320..420)
+      else if (x >= 40 && x <= 500 && y >= 320 && y <= 420) {
         Serial.println("Fortune slips: senso-ji selected");
         fortuneSlipCategory = 1;
         currentMode = MODE_FORTUNE_SHAKE;
         drawFortuneShakeScreen();
+      }
+      // Option 3: 歌子靈籖 (y=460..560) — easter egg, launches tamagotchi
+      else if (x >= 40 && x <= 500 && y >= 460 && y <= 560) {
+        Serial.println("Fortune slips: tamagotchi easter egg!");
+        currentMode = MODE_TAMAGOTCHI;
+        drawTamagotchi();
       }
     }
     else if (currentMode == MODE_FORTUNE_SHAKE) {
@@ -3718,6 +3775,16 @@ void loop() {
       Serial.println("Fortune shake: return to menu");
       currentMode = MODE_FORTUNE_SLIPS;
       drawFortuneSlipsMenu();
+    }
+    else if (currentMode == MODE_TAMAGOTCHI) {
+      if (touchedReturnButton(x, y)) {
+        Serial.println("Tamagotchi: return to fortune slips menu");
+        tamagotchiExit();
+        currentMode = MODE_FORTUNE_SLIPS;
+        drawFortuneSlipsMenu();
+      } else {
+        tamagotchiHandleTap(x, y);
+      }
     }
     else if (currentMode == MODE_FORTUNE_SLIP_VIEW) {
       if (touchedReturnButton(x, y)) {

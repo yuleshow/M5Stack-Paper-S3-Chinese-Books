@@ -1,6 +1,185 @@
 #include "globals.h"
 #include "esp_task_wdt.h"
 
+static bool isCjkHeadingNumber(uint32_t cp) {
+  return cp == 0x4E00 || cp == 0x4E8C || cp == 0x4E09 || cp == 0x56DB ||
+         cp == 0x4E94 || cp == 0x516D || cp == 0x4E03 || cp == 0x516B ||
+         cp == 0x4E5D || cp == 0x5341 || cp == 0x767E || cp == 0x5343 ||
+         cp == 0x96F6 || cp == 0x3007;
+}
+
+static bool isHeadingDigit(uint32_t cp) {
+  return (cp >= '0' && cp <= '9') || (cp >= 0xFF10 && cp <= 0xFF19);
+}
+
+static bool isChapterTerminator(uint32_t cp) {
+  return cp == 0x56DE || cp == 0x7AE0 || cp == 0x7BC0 || cp == 0x7BC7 || cp == 0x5377;
+}
+
+static int skipInlineSpaces(const String& text, int pos) {
+  while (pos < (int)text.length()) {
+    unsigned char byte = (unsigned char)text[pos];
+    if (byte == STYLE_ITALIC_ON || byte == STYLE_ITALIC_OFF ||
+        byte == STYLE_BOLD_ON || byte == STYLE_BOLD_OFF ||
+        byte == STYLE_UNDERLINE_ON || byte == STYLE_UNDERLINE_OFF) {
+      pos++;
+      continue;
+    }
+    if (byte == EPUB_LINK_MARKER) {
+      pos++;
+      while (pos < (int)text.length() && (unsigned char)text[pos] != EPUB_LINK_MARKER) pos++;
+      if (pos < (int)text.length()) pos++;
+      continue;
+    }
+    int nextPos = pos;
+    uint32_t cp = utf8Decode(text, nextPos);
+    if (cp != ' ' && cp != '\t' && cp != 0x3000) break;
+    pos = nextPos;
+  }
+  return pos;
+}
+
+static bool scanHeadingLine(const String& text, int lineStart, int* lineEnd = nullptr) {
+  int len = text.length();
+  int pos = skipInlineSpaces(text, lineStart);
+  int scanPos = pos;
+  uint32_t firstCp = (scanPos < len) ? utf8Decode(text, scanPos) : 0;
+  bool hasNumber = false;
+  bool valid = false;
+
+  if (firstCp == 0x7B2C) {  // 第
+    while (scanPos < len) {
+      int before = scanPos;
+      uint32_t cp = utf8Decode(text, scanPos);
+      if (isCjkHeadingNumber(cp) || isHeadingDigit(cp)) {
+        hasNumber = true;
+      } else if (hasNumber && isChapterTerminator(cp)) {
+        valid = true;
+        break;
+      } else {
+        scanPos = before;
+        break;
+      }
+    }
+  } else if (firstCp == 0x5377) {  // 卷
+    while (scanPos < len) {
+      int before = scanPos;
+      uint32_t cp = utf8Decode(text, scanPos);
+      if (isCjkHeadingNumber(cp) || isHeadingDigit(cp)) {
+        hasNumber = true;
+      } else {
+        scanPos = before;
+        break;
+      }
+    }
+    valid = hasNumber;
+  }
+
+  if (lineEnd) {
+    int end = lineStart;
+    while (end < len) {
+      unsigned char byte = (unsigned char)text[end];
+      if (byte == '\n' || byte == '\r' || byte == EPUB_CHAPTER_BREAK) break;
+      end++;
+    }
+    *lineEnd = end;
+  }
+  return valid;
+}
+
+static bool isTocHeadingClusterAt(const String& text, int bytePos) {
+  int len = text.length();
+  int pos = bytePos;
+  int headingLines = 0;
+  int nonEmptyLines = 0;
+  const int maxLinesToScan = 8;
+  const int maxBytesToScan = 1400;
+
+  while (pos < len && nonEmptyLines < maxLinesToScan && pos - bytePos < maxBytesToScan) {
+    while (pos < len) {
+      unsigned char byte = (unsigned char)text[pos];
+      if (byte == '\n' || byte == '\r') { pos++; continue; }
+      int nextPos = pos;
+      uint32_t cp = utf8Decode(text, nextPos);
+      if (cp == ' ' || cp == '\t' || cp == 0x3000) { pos = nextPos; continue; }
+      break;
+    }
+    if (pos >= len || text[pos] == EPUB_CHAPTER_BREAK) break;
+
+    int lineEnd = pos;
+    bool heading = scanHeadingLine(text, pos, &lineEnd);
+    if (!heading) break;
+
+    headingLines++;
+    nonEmptyLines++;
+    if (headingLines >= 2) return true;
+
+    pos = lineEnd;
+    while (pos < len && ((unsigned char)text[pos] == '\n' ||
+                         (unsigned char)text[pos] == '\r' ||
+                         (unsigned char)text[pos] == EPUB_CHAPTER_BREAK)) pos++;
+  }
+  return false;
+}
+
+static bool isTocChapterBreakAt(const String& text, int breakPos) {
+  int len = text.length();
+  int prevStart = breakPos;
+  while (prevStart > 0) {
+    unsigned char byte = (unsigned char)text[prevStart - 1];
+    if (byte == '\n' || byte == '\r' || byte == EPUB_CHAPTER_BREAK) break;
+    prevStart--;
+  }
+
+  int nextStart = breakPos + 1;
+  while (nextStart < len) {
+    unsigned char byte = (unsigned char)text[nextStart];
+    if (byte == '\n' || byte == '\r') { nextStart++; continue; }
+    int afterSpace = skipInlineSpaces(text, nextStart);
+    if (afterSpace != nextStart) { nextStart = afterSpace; continue; }
+    break;
+  }
+
+  if (nextStart >= len || text[nextStart] == EPUB_CHAPTER_BREAK) return false;
+  return scanHeadingLine(text, prevStart) && scanHeadingLine(text, nextStart);
+}
+
+static bool isTocLineBreakAt(const String& text, int breakPos) {
+  int len = text.length();
+  int prevStart = breakPos;
+  while (prevStart > 0) {
+    unsigned char byte = (unsigned char)text[prevStart - 1];
+    if (byte == '\n' || byte == '\r' || byte == EPUB_CHAPTER_BREAK) break;
+    prevStart--;
+  }
+
+  int nextStart = breakPos + 1;
+  while (nextStart < len) {
+    unsigned char byte = (unsigned char)text[nextStart];
+    if (byte == '\n' || byte == '\r') { nextStart++; continue; }
+    int afterSpace = skipInlineSpaces(text, nextStart);
+    if (afterSpace != nextStart) { nextStart = afterSpace; continue; }
+    break;
+  }
+
+  if (nextStart >= len || text[nextStart] == EPUB_CHAPTER_BREAK) return false;
+  return scanHeadingLine(text, prevStart) && scanHeadingLine(text, nextStart);
+}
+
+static uint32_t nextVisibleCodepointAfterBreak(const String& text, int pos) {
+  int len = text.length();
+  while (pos < len) {
+    unsigned char byte = (unsigned char)text[pos];
+    if (byte == '\n' || byte == '\r' || byte == ' ' || byte == '\t') { pos++; continue; }
+    if (byte == EPUB_CHAPTER_BREAK) return 0;
+    int afterMarkers = skipInlineSpaces(text, pos);
+    if (afterMarkers != pos) { pos = afterMarkers; continue; }
+    int nextPos = pos;
+    return utf8Decode(text, nextPos);
+  }
+  return 0;
+}
+
 // Draw vertical Chinese/CJK text reading mode.
 // Called from drawReading() after common preamble (screen clear, status bar).
 // Expects: startWrite() already called, screen cleared, status bar drawn.
@@ -82,6 +261,7 @@ void drawChineseReading() {
   }
   
   String sampleText = displayText;
+  bool tocClusterPage = isTocHeadingClusterAt(sampleText, 0);
   
   // Vertical text rendering: right-to-left columns, top-to-bottom characters
   int fontSizePt;
@@ -113,10 +293,14 @@ void drawChineseReading() {
   int layoutSize = readingFontSize;
   charHeight = layoutSize + (layoutSize / 5);
   // Bpmf Zihi: increase horizontal column spacing only.
-  int horizontalSpacingDiv = isBpmfZihiFont ? 3 : 5;
+  int horizontalSpacingDiv = (!tocClusterPage && isBpmfZihiFont) ? 3 : 5;
   columnSpacing = layoutSize + (layoutSize / horizontalSpacingDiv);
   rdLeft = READING_AREA_LEFT; rdRight = READING_AREA_RIGHT;
   rdTop = READING_AREA_TOP;   rdMaxY = VERTICAL_TEXT_MAX_Y;
+  if (tocClusterPage) {
+    rdLeft = 0;
+    rdRight = DISPLAY_WIDTH;
+  }
   // Safety: guard against zero char dimensions (would cause div-by-zero or infinite loop)
   if (charHeight < 1) charHeight = 1;
   if (columnSpacing < 1) columnSpacing = 1;
@@ -149,6 +333,17 @@ void drawChineseReading() {
   bool pageHasImage = false;  // Track if this page rendered a cover/inline image
   int indentCount = 0;        // Track paragraph indent spaces rendered (for paragraphIndent mode)
   uint32_t lastRenderedUnicode = 0;  // Track last drawn codepoint (for space-after-punctuation check)
+  bool lastRenderedWasChapterTerminator = false;  // True only when the last drawn char was the
+                                                  // specific 回/章/節/篇/卷 that follows 第+number
+                                                  // (not the same glyph appearing inside 春節 etc.)
+  bool chapterHeadingPage = false;   // True if this page starts with 第x回/章/節/篇/卷 pattern
+  int chapterTerminatorByte = -1;    // Byte offset of the chapter terminator char (回/章/節/篇/卷)
+                                     // — only that specific glyph gets a trailing space, so
+                                     // occurrences of 節 inside words like 春節/中秋節 are untouched.
+  int chapterTitleEndByte = -1;      // Byte past the last char of the chapter title line
+                                     // (first \n after terminator).  All spaces within this span
+                                     // are preserved so the polished couplet halves render with a gap.
+  bool injectSpaceNext = false;      // Inject a space cell before drawing the next character
   bool underlineActive = false;  // For EPUB <a> link underline rendering
   String currentLinkHref = "";   // Current link href being rendered
   int linkStartY = -1;           // Y of first underlined char in current link
@@ -171,7 +366,7 @@ void drawChineseReading() {
   
   int renderStopByte = sampleText.length();  // Track actual bytes consumed by rendering
   int loopSafety = 0;  // Safety counter to prevent infinite loops
-  
+
   for (int i = 0; i < (int)sampleText.length(); ) {
     // Safety: detect infinite loop (no byte progress)
     if (++loopSafety > (int)sampleText.length() + 1000) {
@@ -203,6 +398,20 @@ void drawChineseReading() {
 
     // EPUB chapter break → force new page (only if we've drawn something)
     if (unicode == EPUB_CHAPTER_BREAK && currentBookIsEpub) {
+      if (isTocChapterBreakAt(sampleText, charStart)) {
+        lastWasSpace = true;
+        indentCount = 0;
+        if (charIndex > 0) {
+          columnX -= columnSpacing;
+          currentY = startY;
+          charIndex = 0;
+          if (columnX - columnSpacing / 2 < rdLeft) {
+            renderStopByte = i;
+            break;
+          }
+        }
+        continue;
+      }
       if (charsDrawn > 0) {
         renderStopByte = i;
         goto endPageRender;
@@ -333,9 +542,14 @@ void drawChineseReading() {
         continue;
       }
 
-      // Rule 5: Remove space between two non-punctuation characters
+      // Rule 5: Remove space between two CJK characters (not punctuation).
+      // Preserve space after chapter terminators (回章節篇卷) only inside a chapter heading,
+      // and preserve ALL spaces within the chapter title line (between terminator and first \n)
+      // so that polished couplet halves render with a visible gap in the same column.
       if (!isPunctuation(lastRenderedUnicode)) {
-        if (nextNonSpace == 0 || !isPunctuation(nextNonSpace)) {
+        bool isChapterTerminatorSpace = chapterHeadingPage && lastRenderedWasChapterTerminator;
+        bool isWithinChapterTitle = chapterHeadingPage && chapterTitleEndByte >= 0 && charStart < chapterTitleEndByte;
+        if (!isChapterTerminatorSpace && !isWithinChapterTitle && (nextNonSpace == 0 || !isPunctuation(nextNonSpace))) {
           continue;
         }
       }
@@ -364,26 +578,19 @@ void drawChineseReading() {
 
     // Detect chapter heading "第XXX回/章/節/篇/卷" → force page break (next page starts at 第)
     // Applied to all books: TXT, EPUBs with/without TOC.
-    // Only triggers when charsDrawn > 0, so it won't break if 第 is already the first char.
-    if (unicode == 0x7B2C && charsDrawn > 0) {  // 第
+    // Only triggers when 第 is the first character in a column (i.e. at the start of a paragraph
+    // after a newline), not when it appears mid-text (e.g. "第三回合").
+    if (unicode == 0x7B2C && charsDrawn > 0 && charIndex == 0 &&
+        !isTocHeadingClusterAt(sampleText, charStart)) {  // 第
       int scanPos = i;
       bool hasNumber = false;
       while (scanPos < (int)sampleText.length()) {
         uint32_t numCp = utf8Decode(sampleText, scanPos);
-        bool isCJKNum = (numCp == 0x4E00 || numCp == 0x4E8C || numCp == 0x4E09 || numCp == 0x56DB ||
-                         numCp == 0x4E94 || numCp == 0x516D || numCp == 0x4E03 || numCp == 0x516B ||
-                         numCp == 0x4E5D || numCp == 0x5341 || numCp == 0x767E || numCp == 0x5343 ||
-                         numCp == 0x96F6 || numCp == 0x3007);
-        bool isDigit = (numCp >= '0' && numCp <= '9') ||
-                       (numCp >= 0xFF10 && numCp <= 0xFF19);
+        bool isCJKNum = isCjkHeadingNumber(numCp);
+        bool isDigit = isHeadingDigit(numCp);
         if (isCJKNum || isDigit) {
           hasNumber = true;
-        } else if (hasNumber &&
-                   (numCp == 0x56DE ||   // 回
-                    numCp == 0x7AE0 ||   // 章
-                    numCp == 0x7BC0 ||   // 節
-                    numCp == 0x7BC7 ||   // 篇
-                    numCp == 0x5377)) {  // 卷
+        } else if (hasNumber && isChapterTerminator(numCp)) {
           renderStopByte = charStart;  // Next page starts at 第
           columnX = rdLeft - columnSpacing;
           Serial.printf("Chapter break: 第...%c at byte %d\n", (char)numCp, charStart);
@@ -393,6 +600,105 @@ void drawChineseReading() {
         }
       }
       if (columnX - columnSpacing / 2 < rdLeft) break;
+    }
+
+    // Detect chapter heading at page start → set flag for heading page behavior
+    if (unicode == 0x7B2C && charsDrawn == 0 && !isTocHeadingClusterAt(sampleText, charStart)) {  // 第 at start of page
+      int scanPos = i;
+      int terminatorEnd = -1;  // Byte position right after the terminator (回/章/節/篇/卷)
+      bool hasNumber = false;
+      while (scanPos < (int)sampleText.length()) {
+        uint32_t numCp = utf8Decode(sampleText, scanPos);
+        bool isCJKNum = isCjkHeadingNumber(numCp);
+        bool isDigit = isHeadingDigit(numCp);
+        if (isCJKNum || isDigit) {
+          hasNumber = true;
+        } else if (hasNumber && isChapterTerminator(numCp)) {
+          chapterHeadingPage = true;
+          terminatorEnd = scanPos;  // scanPos already advanced past terminator
+          chapterTerminatorByte = scanPos - 3;  // Terminator is 3 UTF-8 bytes (all in U+4E00-U+9FFF)
+          // Find end of the title line so we can preserve all spaces within it.
+          // Primary: stop at \n or chapter break.
+          // Fallback: if no \n found before punctuation like ：，。etc.,
+          // end the title at the last space before the first punctuation.
+          // This handles epubs where raw \n was collapsed to space (e.g. Gutenberg
+          // plaintext-in-XHTML), so "第九卷...清安寺夫婦笑啼緣 詩曰：" breaks
+          // the title at the space before 詩曰.
+          {
+            int te = scanPos;
+            int lastSpacePos = -1;  // byte position of last space/U+3000 seen
+            while (te < (int)sampleText.length()) {
+              unsigned char c = (unsigned char)sampleText[te];
+              if (c == '\n' || c == '\r' || c == EPUB_CHAPTER_BREAK) break;
+              // Track spaces
+              if (c == ' ') {
+                lastSpacePos = te;
+                te++;
+                continue;
+              }
+              // Check for U+3000 (E3 80 80) — ideographic space
+              if (c == 0xE3 && te + 2 < (int)sampleText.length() &&
+                  (unsigned char)sampleText[te+1] == 0x80 &&
+                  (unsigned char)sampleText[te+2] == 0x80) {
+                lastSpacePos = te;
+                te += 3;
+                continue;
+              }
+              // Check for CJK punctuation — if we hit one after a space, title ends at that space
+              int tmpTe = te;
+              uint32_t cp = utf8Decode(sampleText, tmpTe);
+              if (lastSpacePos >= 0) {
+                // Common CJK punctuation that indicates end of title text
+                if (cp == 0xFF1A || cp == 0x3002 || cp == 0xFF0C || cp == 0x3001 ||  // ：。，、
+                    cp == 0xFF01 || cp == 0xFF1F || cp == 0xFF1B ||  // ！？；
+                    cp == 0x300C || cp == 0x300E || cp == 0x300A ||  // 「『《
+                    cp == 0x201C || cp == 0x2018 ||  // ""
+                    cp == ':' || cp == ',' || cp == '.' || cp == '!' || cp == '?') {
+                  chapterTitleEndByte = lastSpacePos;
+                  break;
+                }
+              }
+              te = tmpTe;
+            }
+            if (chapterTitleEndByte < 0) {
+              chapterTitleEndByte = te;  // Fallback: \n or end of text
+            }
+          }
+          break;
+        } else {
+          break;
+        }
+      }
+    }
+
+    // Inject space after chapter terminator if source text has none.
+    // Only the specific terminator at chapterTerminatorByte qualifies — this prevents
+    // words like 春節/中秋節 appearing in a heading from gaining a trailing space.
+    // Also: if a single punctuation mark follows the terminator (e.g. 第一回：title),
+    // treat it as a space — skip the punctuation and inject a space instead.
+    if (chapterHeadingPage && charStart == chapterTerminatorByte) {
+      int peekNext = i;
+      uint32_t nextCp = (peekNext < (int)sampleText.length()) ? utf8Decode(sampleText, peekNext) : 0;
+      if (nextCp == 0xFF1A || nextCp == 0xFF0C || nextCp == 0x3001 ||  // ：，、
+          nextCp == ':' || nextCp == ',') {
+        // Skip the punctuation (advance i past it) and inject a space
+        i = peekNext;
+        injectSpaceNext = true;
+      } else if (nextCp != ' ' && nextCp != 0x3000) {
+        injectSpaceNext = true;
+      }
+    }
+
+    // Force column break after chapter title line ends — body text starts in new column
+    if (chapterHeadingPage && chapterTitleEndByte >= 0 && charStart >= chapterTitleEndByte) {
+      chapterHeadingPage = false;
+      columnX -= columnSpacing;
+      currentY = startY;
+      charIndex = 0;
+      if (columnX - columnSpacing / 2 < rdLeft) {
+        renderStopByte = charStart;
+        break;
+      }
     }
     
     // Latin text run: collect consecutive printable ASCII chars and render rotated 90° CW
@@ -619,6 +925,26 @@ void drawChineseReading() {
     
     // Hard newline → start a new column (paragraph break in vertical text)
     if (unicode == '\n') {
+      if (isTocLineBreakAt(sampleText, charStart)) {
+        lastWasSpace = true;
+        indentCount = 0;
+        if (charIndex > 0) {
+          columnX -= columnSpacing;
+          currentY = startY;
+          charIndex = 0;
+          if (columnX - columnSpacing / 2 < rdLeft) {
+            renderStopByte = i;
+            break;
+          }
+        }
+        continue;
+      }
+      {
+        uint32_t nextCp = nextVisibleCodepointAfterBreak(sampleText, i);
+        if (isCJKChar(lastRenderedUnicode) && isCJKChar(nextCp) && !isSentenceEnd(lastRenderedUnicode)) {
+          continue;
+        }
+      }
       // Suppress paragraph break when last rendered char is an opening quote/bracket
       // (dialogue continues across HTML paragraphs, e.g., ："\n老爺 should flow together)
       bool isOpenQuote = (lastRenderedUnicode == 0x300C || lastRenderedUnicode == 0x300E ||  // 「『
@@ -632,9 +958,34 @@ void drawChineseReading() {
         // Treat as a space (will be removed by space rules if adjacent to CJK)
         continue;
       }
+      // Suppress paragraph break when next non-space character is column-start-prohibited
+      // (e.g., ！？。etc.) — keeps punctuation attached to preceding text.
+      {
+        int peekI = i;
+        while (peekI < (int)sampleText.length()) {
+          unsigned char pb = (unsigned char)sampleText[peekI];
+          if (pb == ' ' || pb == '\t' || pb == '\n' || pb == '\r') { peekI++; continue; }
+          // Check for U+3000 (E3 80 80)
+          if (pb == 0xE3 && peekI + 2 < (int)sampleText.length() &&
+              (unsigned char)sampleText[peekI+1] == 0x80 &&
+              (unsigned char)sampleText[peekI+2] == 0x80) { peekI += 3; continue; }
+          break;
+        }
+        if (peekI < (int)sampleText.length()) {
+          int tmpPeek = peekI;
+          uint32_t nextCp = utf8Decode(sampleText, tmpPeek);
+          uint32_t mappedNext = toVerticalPunct(nextCp);
+          if (isColumnStartProhibited(nextCp) || isColumnStartProhibited(mappedNext)) {
+            continue;  // Don't break column — let punct attach to current column
+          }
+        }
+      }
       lastWasSpace = true;  // Skip leading spaces/U+3000 at start of new column (paragraph indent)
       indentCount = 0;      // Reset indent counter for new paragraph
-      if (charIndex > 0) {  // Only if current column has content
+      if (charIndex > 0 || chapterHeadingPage) {
+        // On chapter heading pages, force column break even if charIndex == 0
+        // (heading may have exactly filled the previous column, resetting charIndex)
+        chapterHeadingPage = false;  // Only force once (the first \n after heading)
         columnX -= columnSpacing;
         currentY = startY;
         charIndex = 0;
@@ -654,6 +1005,26 @@ void drawChineseReading() {
 
     // Track last rendered codepoint for space-after-punctuation logic
     lastRenderedUnicode = unicode;
+    lastRenderedWasChapterTerminator =
+        chapterHeadingPage && charStart == chapterTerminatorByte;
+
+    // Consume injected space: render an empty cell before the next character
+    // Skip if we're on the terminator itself (space goes AFTER the terminator, not before)
+    if (injectSpaceNext && !(chapterHeadingPage && charStart == chapterTerminatorByte)) {
+      injectSpaceNext = false;
+      currentY += charHeight;
+      charIndex++;
+      charsDrawn++;
+      if (currentY + charHeight > rdMaxY || charIndex >= charsPerColumn) {
+        columnX -= columnSpacing;
+        currentY = startY;
+        charIndex = 0;
+        if (columnX - columnSpacing / 2 < rdLeft) {
+          renderStopByte = charStart;
+          break;
+        }
+      }
+    }
 
     // Draw character using the selected renderer
     draw_normal_char:
@@ -791,15 +1162,21 @@ void drawChineseReading() {
   
   // Auto-skip blank pages: if nothing was rendered (e.g., cover page with
   // unrenderable image or empty metadata chapter), advance to the next page.
-  if (charsDrawn == 0 && !pageHasImage && currentPage < totalPages - 1) {
-    Serial.printf("Blank page %d: auto-advancing to page %d\n", currentPage, currentPage + 1);
-    M5.Display.endWrite();
-    currentPage++;
-    if (loadCurrentPage()) {
-      saveReadingPosition();
-      drawReading();
+  // Limit skips to avoid runaway looping through many empty chapters.
+  {
+    static int blankSkips = 0;
+    if (charsDrawn == 0 && !pageHasImage && currentPage < totalPages - 1 && blankSkips < 5) {
+      Serial.printf("Blank page %d: auto-advancing to page %d\n", currentPage, currentPage + 1);
+      M5.Display.endWrite();
+      currentPage++;
+      if (loadCurrentPage()) {
+        blankSkips++;
+        saveReadingPosition();
+        drawReading();
+      }
+      return;
     }
-    return;
+    blankSkips = 0;
   }
   
   // OFR Latin font (ET Book embedded) is intentionally kept loaded — avoids
@@ -863,8 +1240,8 @@ void drawChineseReading() {
       // This is more accurate than N*bytesPerPage when early pages consume few bytes (e.g., cover images)
       while (pageOffsetsCount <= currentPage && pageOffsetsCount < MAX_PAGE_OFFSETS) {
         int gap = currentPage - pageOffsetsCount;
-        size_t est = (currentPageByteOffset > (size_t)(gap + 1) * bytesPerPage) ?
-                     currentPageByteOffset - (size_t)(gap + 1) * bytesPerPage : 0;
+        size_t est = (currentPageByteOffset > (size_t)gap * bytesPerPage) ?
+                     currentPageByteOffset - (size_t)gap * bytesPerPage : 0;
         pageByteOffsets[pageOffsetsCount] = est;
         pageOffsetsCount++;
       }
@@ -875,7 +1252,8 @@ void drawChineseReading() {
     // Extend for next page if needed after filling gaps
     if (currentPage + 1 >= pageOffsetsCount && pageOffsetsCount < MAX_PAGE_OFFSETS) {
       pageByteOffsets[pageOffsetsCount] = correctedNextStart;
-      pageOffsetsCount = currentPage + 2;
+      int newCount = currentPage + 2;
+      pageOffsetsCount = (newCount > MAX_PAGE_OFFSETS) ? MAX_PAGE_OFFSETS : newCount;
       Serial.printf("Page offset gap-filled: page %d offset %d\n",
                     currentPage + 1, (int)correctedNextStart);
     }

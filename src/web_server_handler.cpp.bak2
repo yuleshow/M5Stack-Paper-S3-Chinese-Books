@@ -1,6 +1,19 @@
 // ==================== Raw-Socket Web Server (SPA + JSON API) ====================
-// Direct WiFiServer/WiFiClient — zero heap for UI (SPA in flash).
-// API returns JSON with Content-Length.  PUT upload with raw body.
+// Replaces the Arduino WebServer library with a direct WiFiServer/WiFiClient
+// implementation.  All HTML/CSS/JS lives in flash (.rodata) — zero heap for UI.
+// API responses use small stack buffers — no Arduino String objects in hot paths.
+// File uploads use PUT with a raw binary body (no multipart parsing needed).
+//
+// Endpoints:
+//   GET  /             → static SPA page (from flash)
+//   GET  /api/ls       → JSON directory listing  (?dir=...)
+//   GET  /api/dl       → file download           (?f=...)
+//   PUT  /api/up       → file upload (raw body)   (?f=...)
+//   GET  /api/rm       → delete file/dir          (?f=...)
+//   GET  /api/health   → plain-text health info
+//   GET  /api/screen   → BMP screenshot
+//   GET  /api/log      → debug log text
+//   GET  /api/log/clear→ clear debug log
 // ========================================================================
 
 #include "globals.h"
@@ -14,287 +27,100 @@ static const char* WEB_AP_PASS = "m5paper123";
 static bool webServerStartedAP = false;
 static WiFiServer rawServer(80);
 static bool rawServerStarted = false;
-static const uint32_t HTTP_IDLE_ACCEPT_MS = 150;
-static const uint32_t HTTP_LINE_TIMEOUT_MS = 750;
-static const uint32_t CAPTURE_BUSY_WAIT_MS = 3000;
 
 // ── SPA HTML/CSS/JS (stored in flash, 0 heap) ─────────────────────────
-static const char SPA_HTML[] PROGMEM = R"rawhtml(<!DOCTYPE html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>M5Paper File Manager</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,system-ui,sans-serif;background:#f5f5f5;color:#333}
-.hdr{background:#1a6fb2;color:#fff;padding:14px 12px;text-align:center;font-size:18px;font-weight:bold}
-.tabs{display:flex;background:#e0e0e0;padding:4px}
-.tab{flex:1;padding:10px;text-align:center;background:none;border:none;cursor:pointer;font-size:14px;font-weight:500;color:#555}
-.tab.on{background:#fff;color:#1a6fb2;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.1)}
-.wrap{padding:10px}
-.card{background:#fff;border-radius:8px;padding:12px;margin:8px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.breadcrumb{font-family:monospace;font-size:13px;color:#666;word-break:break-all;padding:8px 12px;background:#fff;margin:8px 0;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.breadcrumb a{color:#1a6fb2;text-decoration:none}
-.fitem{display:flex;align-items:center;padding:10px 8px;border-bottom:1px solid #f0f0f0}
-.fitem:last-child{border:none}
-.ficon{width:28px;font-size:18px;text-align:center;flex-shrink:0}
-.fname{flex:1;font-size:14px;word-break:break-all}
-.fname a{color:#333;text-decoration:none}
-.fname a:hover{color:#1a6fb2}
-.fsize{color:#999;font-size:12px;min-width:55px;text-align:right;margin:0 8px}
-.btn{display:inline-block;padding:5px 12px;border:none;border-radius:4px;font-size:12px;cursor:pointer;color:#fff;text-decoration:none}
-.btn-get{background:#1a6fb2}.btn-del{background:#e74c3c}.btn-up{background:#27ae60}
-.btn:hover{opacity:0.85}
-.actions{display:flex;gap:4px;flex-shrink:0}
-#status{text-align:center;padding:8px;color:#999;font-size:12px}
-.upload-area{border:2px dashed #ccc;border-radius:8px;padding:16px;text-align:center;margin:8px 0}
-.upload-area input[type=file]{margin:8px 0}
-.upload-btn{width:100%;padding:10px;margin-top:6px}
-img#scr{max-width:100%;border-radius:6px;margin:8px 0}
-.scr-btns{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:8px 0}
-.scr-btns select{padding:5px;border:1px solid #bbb;border-radius:4px;background:#fff}
-pre{white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:50vh;overflow:auto;background:#f8f8f8;padding:8px;border-radius:4px}
-.log-btns{display:flex;gap:6px;margin-bottom:8px}
+static const char SPA_HTML[] = R"rawhtml(<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>M5Paper</title>
+<style>*{box-sizing:border-box;margin:0}
+body{font-family:system-ui,sans-serif;background:#f0f0f0;color:#333;padding:8px}
+.hdr{background:#1a6fb2;color:#fff;padding:12px;margin:-8px -8px 8px;text-align:center}
+.tabs{display:flex;gap:4px;margin-bottom:8px}
+.tab{flex:1;padding:8px;text-align:center;background:#ddd;border:none;border-radius:4px;cursor:pointer;font-size:14px}
+.tab.on{background:#1a6fb2;color:#fff}
+.card{background:#fff;border-radius:6px;padding:10px;margin:6px 0;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.path{font-family:monospace;font-size:13px;word-break:break-all}
+.row{display:flex;align-items:center;padding:8px 4px;border-bottom:1px solid #eee;gap:6px}
+.row:last-child{border:none}
+.name{flex:1;word-break:break-all}.name a{color:#1a6fb2;text-decoration:none}
+.sz{color:#888;font-size:12px;min-width:50px;text-align:right}
+.btn{padding:4px 10px;border:none;border-radius:3px;cursor:pointer;font-size:12px;color:#fff;text-decoration:none;display:inline-block}
+.bl{background:#1a6fb2}.rd{background:#c0392b}.gn{background:#27ae60}
+input[type=file]{width:100%;margin:6px 0}
+#status{text-align:center;color:#888;font-size:12px;margin:8px 0}
+img{max-width:100%;border-radius:4px}
+pre{white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:60vh;overflow:auto}
 </style></head><body>
-<div class="hdr">M5Paper File Manager</div>
+<div class="hdr"><b>M5Paper File Manager</b></div>
 <div class="tabs">
 <button class="tab on" onclick="showTab(0)">Files</button>
 <button class="tab" onclick="showTab(1)">Screen</button>
 <button class="tab" onclick="showTab(2)">System</button>
 </div>
-<div class="wrap">
 <div id="t0">
-<div class="breadcrumb" id="bcrumb"><a href="#" onclick="ls('/');return false">/</a></div>
-<div class="card" id="files" style="padding:0">Loading...</div>
-<div class="upload-area">
-<div style="font-weight:500;margin-bottom:4px">Upload Files</div>
+<div class="card path" id="cpath">/</div>
+<div class="card" id="files"></div>
+<div class="card">
+<b>Upload to current directory</b>
 <input type="file" id="upfile" multiple>
-<button class="btn btn-up upload-btn" onclick="doUpload()">Upload</button>
+<button class="btn gn" onclick="doUpload()" style="width:100%;padding:8px;margin-top:4px">Upload</button>
 </div>
 <div id="status"></div>
 </div>
 <div id="t1" style="display:none">
 <div class="card" style="text-align:center">
-<div class="scr-btns">
-<button class="btn btn-get" onclick="capture()">Capture Screen</button>
-<button class="btn btn-get" onclick="captureTest()">Test Pattern</button>
-<button class="btn btn-get" id="autobtn" onclick="toggleAuto()">Auto</button>
-<select id="capint" onchange="resetAuto()"><option value="5">5s</option><option value="10" selected>10s</option><option value="30">30s</option><option value="60">60s</option></select>
-<button class="btn btn-get" onclick="saveCapture()">Save</button>
-</div>
-<div id="scrstat" style="font-size:12px;color:#888;margin:4px 0"></div>
-<img id="scr" alt="">
+<button class="btn bl" onclick="capture()">Capture</button>
+<button class="btn bl" onclick="captureTest()">Test</button>
+<div id="scrstat" style="margin:8px 0;font-size:12px;color:#888"></div>
+<img id="scr" alt="No capture yet">
 </div>
 </div>
 <div id="t2" style="display:none">
-<div class="card" id="health">Loading...</div>
+<div class="card" id="health">Loading…</div>
 <div class="card">
-<div class="log-btns">
-<b style="flex:1">Debug Log</b>
-<button class="btn btn-get" onclick="loadLog()">Refresh</button>
-<button class="btn btn-del" onclick="clearLog()">Clear</button>
-</div>
-<pre id="log">Click Refresh to load</pre>
-</div>
+<b>Debug Log</b>
+<button class="btn bl" onclick="loadLog()">Refresh</button>
+<button class="btn rd" onclick="clearLog()">Clear</button>
+<pre id="log"></pre>
 </div>
 </div>
 <script>
-var D='/',F=[],activeTab=0,capBusy=false,capPoll=null,capTimer=null,capAuto=false,capSeq=0,capCtl=null;
+var D='/',F=[];
 function $(id){return document.getElementById(id)}
 function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function fmtSz(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'K';return(b/1048576).toFixed(1)+'M'}
-
-function showTab(n){
-  if(activeTab===1&&n!==1)cancelCapture();
-  activeTab=n;
-  for(var i=0;i<3;i++){
-    $('t'+i).style.display=i===n?'':'none';
-    document.querySelectorAll('.tab')[i].className='tab'+(i===n?' on':'');
-  }
-  if(n===0)ls(D);
-  if(n===2)loadHealth();
-  if(n===1&&!$('scr').src)$('scrstat').textContent='Tap Capture Screen';
-}
-
-function buildBreadcrumb(dir){
-  var parts=dir.split('/').filter(function(x){return x});
-  var h='<a href="#" onclick="ls(\'/\');return false">Root</a>';
-  var path='/';
-  for(var i=0;i<parts.length;i++){
-    path+=parts[i]+'/';
-    h+=' / <a href="#" onclick="ls(\''+esc(path)+'\');return false">'+esc(parts[i])+'</a>';
-  }
-  $('bcrumb').innerHTML=h;
-}
-
+function fmtSz(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB'}
+function showTab(n){for(var i=0;i<3;i++){$('t'+i).style.display=i==n?'':'none';document.querySelectorAll('.tab')[i].className='tab'+(i==n?' on':'')}if(n==2)loadHealth()}
 async function ls(dir){
-  D=dir||'/';
-  buildBreadcrumb(D);
-  $('status').textContent='Loading...';
-  $('files').innerHTML='<div style="padding:16px;text-align:center;color:#999">Loading...</div>';
-  try{
-    var r=await fetch('/api/ls?dir='+encodeURIComponent(D));
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    var j=await r.json();
-    F=j.f||[];
-    // Sort: directories first, then alphabetical
-    F.sort(function(a,b){
-      if(a.d&&!b.d)return -1;if(!a.d&&b.d)return 1;
-      return a.n.toLowerCase().localeCompare(b.n.toLowerCase());
-    });
-    var h='';
-    if(D!=='/'){
-      h+='<div class="fitem"><div class="ficon">\u2B06</div><div class="fname"><a href="#" onclick="goUp();return false">..(parent)</a></div></div>';
-    }
-    for(var i=0;i<F.length;i++){
-      h+='<div class="fitem">';
-      if(F[i].d){
-        h+='<div class="ficon">\uD83D\uDCC1</div>';
-        h+='<div class="fname"><a href="#" onclick="nav('+i+');return false">'+esc(F[i].n)+'</a></div>';
-        h+='<div class="fsize">DIR</div>';
-      }else{
-        h+='<div class="ficon">\uD83D\uDCC4</div>';
-        h+='<div class="fname">'+esc(F[i].n)+'</div>';
-        h+='<div class="fsize">'+fmtSz(F[i].s)+'</div>';
-        h+='<div class="actions"><a class="btn btn-get" href="/api/dl?f='+encodeURIComponent(D+F[i].n)+'" download>Get</a></div>';
-      }
-      h+='<div class="actions"><button class="btn btn-del" onclick="del('+i+')">Del</button></div>';
-      h+='</div>';
-    }
-    if(!F.length&&D==='/'){h='<div style="padding:16px;text-align:center;color:#999">No files found</div>';}
-    if(!F.length&&D!=='/'){h+='<div style="padding:16px;text-align:center;color:#999">Empty folder</div>';}
-    $('files').innerHTML=h;
-    $('status').textContent=F.length+' items';
-  }catch(e){
-    $('files').innerHTML='<div style="padding:16px;color:red">Error: '+esc(e.message)+'</div>';
-    $('status').textContent='Error loading';
-  }
-}
-
-function goUp(){var p=D.replace(/\/$/,'');ls(p.substring(0,p.lastIndexOf('/')+1)||'/')}
+D=dir||'/';$('cpath').textContent=D;$('status').textContent='Loading...';
+try{var r=await fetch('/api/ls?dir='+encodeURIComponent(D));var j=await r.json();F=j.f;var h='';
+if(D!='/'){h+='<div class="row"><a class="name" href="#" onclick="goUp();return false">\u2190 ..</a></div>'}
+for(var i=0;i<F.length;i++){h+='<div class="row">';
+if(F[i].d){h+='<a class="name" href="#" onclick="nav('+i+');return false">\uD83D\uDCC1 '+esc(F[i].n)+'</a><span class="sz">DIR</span>'}
+else{h+='<span class="name">'+esc(F[i].n)+'</span><span class="sz">'+fmtSz(F[i].s)+'</span><a class="btn bl" href="/api/dl?f='+encodeURIComponent(D+F[i].n)+'" download>Get</a> '}
+h+='<button class="btn rd" onclick="del('+i+')">Del</button></div>'}
+if(!F.length)h='<div class="row">Empty directory</div>';
+$('files').innerHTML=h;$('status').textContent=F.length+' items'}catch(e){$('status').textContent='Error: '+e.message}}
+function goUp(){var p=D.slice(0,-1);ls(p.substring(0,p.lastIndexOf('/')+1)||'/')}
 function nav(i){ls(D+F[i].n+'/')}
-
-async function del(i){
-  if(!confirm('Delete "'+F[i].n+'"?'))return;
-  $('status').textContent='Deleting...';
-  try{var r=await fetch('/api/rm?f='+encodeURIComponent(D+F[i].n));ls(D)}
-  catch(e){$('status').textContent='Error: '+e.message}
-}
-
-async function doUpload(){
-  var fl=$('upfile').files;
-  if(!fl.length)return alert('Select a file first');
-  for(var i=0;i<fl.length;i++){
-    $('status').textContent='Uploading '+fl[i].name+' ('+(i+1)+'/'+fl.length+')...';
-    try{
-      var r=await fetch('/api/up?f='+encodeURIComponent(D+fl[i].name),{method:'PUT',body:fl[i]});
-      if(!r.ok){$('status').textContent='Upload failed: '+(await r.text());return}
-    }catch(e){$('status').textContent='Error: '+e.message;return}
-  }
-  $('upfile').value='';
-  $('status').textContent='Upload complete!';
-  ls(D);
-}
-
-async function doCapture(url,n){
-  var seq=capSeq;
-  if(activeTab!==1||seq===0)return;
-  if(capBusy)return;
-  capBusy=true;
-  n=n||1;$('scrstat').textContent='Capturing... (attempt '+n+')';
-  capCtl=new AbortController();
-  try{
-    var r=await fetch(url,{signal:capCtl.signal});
-    if(r.status===202){
-      $('scrstat').textContent=await r.text();
-      capBusy=false;
-      if(activeTab===1&&seq===capSeq&&n<60)capPoll=setTimeout(function(){doCapture(url,n+1)},1000);
-      return;
-    }
-    if(!r.ok)throw new Error('HTTP '+r.status+' '+r.statusText);
-    var b=await r.blob();
-    if(b.size<100)throw new Error('Empty response ('+b.size+' bytes)');
-    var img=$('scr');
-    var old=img.src;
-    img.src=URL.createObjectURL(b);
-    if(old&&old.startsWith('blob:'))URL.revokeObjectURL(old);
-    $('scrstat').textContent='Captured '+new Date().toLocaleTimeString()+' ('+Math.round(b.size/1024)+'KB)';
-    capBusy=false;
-  }catch(e){
-    if(e.name==='AbortError'){capBusy=false;return}
-    $('scrstat').textContent='Error: '+e.message;
-    capBusy=false;
-    if(activeTab===1&&seq===capSeq&&n<5)capPoll=setTimeout(function(){doCapture(url,n+1)},2000);
-  }
-}
-function resetCaptureRequest(){
-  capSeq++;
-  clearTimeout(capPoll);
-  if(capCtl)try{capCtl.abort()}catch(e){}
-  capCtl=null;capBusy=false;
-}
-function stopAutoCapture(){
-  if(capAuto){capAuto=false;$('autobtn').textContent='Auto'}
-  clearInterval(capTimer);
-}
-function cancelCapture(){
-  resetCaptureRequest();
-  stopAutoCapture();
-}
-function capture(){
-  resetCaptureRequest();
-  activeTab=1;capSeq++;
-  doCapture('/api/screen?t='+Date.now(),1);
-}
-function captureTest(){
-  resetCaptureRequest();
-  activeTab=1;capSeq++;
-  doCapture('/api/screen?test=1&t='+Date.now(),1);
-}
-function toggleAuto(){
-  capAuto=!capAuto;
-  $('autobtn').textContent=capAuto?'Stop Auto':'Auto';
-  if(capAuto)startAuto();else{clearInterval(capTimer);resetCaptureRequest()}
-}
-function startAuto(){
-  clearInterval(capTimer);
-  capture();
-  capTimer=setInterval(capture,parseInt($('capint').value,10)*1000);
-}
-function resetAuto(){if(capAuto)startAuto()}
-function saveCapture(){
-  var img=$('scr');
-  if(!img.src)return;
-  try{
-    var c=document.createElement('canvas');
-    c.width=img.naturalWidth;c.height=img.naturalHeight;
-    c.getContext('2d').drawImage(img,0,0);
-    c.toBlob(function(b){
-      var a=document.createElement('a'),u=URL.createObjectURL(b);
-      a.href=u;a.download='m5paper_'+Date.now()+'.png';a.click();
-      setTimeout(function(){URL.revokeObjectURL(u)},1000);
-    },'image/png');
-  }catch(e){
-    var a=document.createElement('a');
-    a.href=img.src;a.download='m5paper_'+Date.now()+'.bmp';a.click();
-  }
-}
-
-async function loadHealth(){
-  try{var r=await fetch('/api/health');$('health').innerHTML='<pre>'+esc(await r.text())+'</pre>'}
-  catch(e){$('health').textContent='Error loading health'}
-}
-
-async function loadLog(){
-  $('log').textContent='Loading...';
-  try{var r=await fetch('/api/log');$('log').textContent=await r.text()}
-  catch(e){$('log').textContent='Error: '+e.message}
-}
-
-async function clearLog(){
-  await fetch('/api/log/clear');
-  $('log').textContent='(cleared)';
-}
-
-if(location.pathname==='/screen')showTab(1);else showTab(0);
+async function del(i){if(!confirm('Delete '+F[i].n+'?'))return;$('status').textContent='Deleting...';
+try{await fetch('/api/rm?f='+encodeURIComponent(D+F[i].n));ls(D)}catch(e){$('status').textContent='Error: '+e.message}}
+async function doUpload(){var fl=$('upfile').files;if(!fl.length)return alert('Select a file');
+for(var i=0;i<fl.length;i++){$('status').textContent='Uploading '+fl[i].name+' ('+fmtSz(fl[i].size)+')...';
+try{var r=await fetch('/api/up?f='+encodeURIComponent(D+fl[i].name),{method:'PUT',body:fl[i]});
+if(!r.ok){var t=await r.text();$('status').textContent='Upload error: '+t;return}}
+catch(e){$('status').textContent='Error: '+e.message;return}}
+$('upfile').value='';ls(D)}
+async function doCapture(url,n){n=n||1;$('scrstat').textContent='Capturing...';
+try{var r=await fetch(url);if(r.status==202){$('scrstat').textContent=await r.text();if(n<30)setTimeout(function(){doCapture(url,n+1)},1000);return}
+if(!r.ok)throw new Error('HTTP '+r.status);var b=await r.blob();var img=$('scr');var old=img.src;
+img.src=URL.createObjectURL(b);if(old&&old.startsWith('blob:'))URL.revokeObjectURL(old);
+$('scrstat').textContent='OK '+new Date().toLocaleTimeString()+' ('+Math.round(b.size/1024)+'KB)'}
+catch(e){$('scrstat').textContent='Error: '+e.message;if(n<5)setTimeout(function(){doCapture(url,n+1)},2000)}}
+function capture(){doCapture('/api/screen?t='+Date.now())}
+function captureTest(){doCapture('/api/screen?test=1&t='+Date.now())}
+async function loadHealth(){try{var r=await fetch('/api/health');$('health').innerHTML='<pre>'+esc(await r.text())+'</pre>'}catch(e){$('health').textContent='Error'}}
+async function loadLog(){try{var r=await fetch('/api/log');$('log').textContent=await r.text()}catch(e){$('log').textContent='Error'}}
+async function clearLog(){await fetch('/api/log/clear');$('log').textContent='(cleared)'}
+ls('/');
 </script></body></html>)rawhtml";
 
 // ── Utility functions ──────────────────────────────────────────────────
@@ -302,18 +128,17 @@ if(location.pathname==='/screen')showTab(1);else showTab(0);
 // Extract a query-string parameter value (URL-decoded) into dst.
 static bool getQueryParam(const char* query, const char* key,
                           char* dst, int maxLen) {
-  if (!query || !key || !query[0]) { dst[0] = '\0'; return false; }
+  if (!query || !key) { dst[0] = '\0'; return false; }
   int klen = strlen(key);
   const char* p = query;
-  while (p && *p) {
-    // p should be at the start of a key
+  while (*p) {
     if (strncmp(p, key, klen) == 0 && p[klen] == '=') {
       const char* val = p + klen + 1;
       const char* end = strchr(val, '&');
       if (!end) end = val + strlen(val);
       int i = 0;
       while (val < end && i < maxLen - 1) {
-        if (*val == '%' && (end - val) >= 3) {
+        if (*val == '%' && val + 2 <= end) {
           char hex[3] = {val[1], val[2], 0};
           dst[i++] = (char)strtol(hex, NULL, 16);
           val += 3;
@@ -332,11 +157,6 @@ static bool getQueryParam(const char* query, const char* key,
   }
   dst[0] = '\0';
   return false;
-}
-
-static bool getFileQueryParam(const char* query, char* dst, int maxLen) {
-  if (getQueryParam(query, "f", dst, maxLen)) return true;
-  return getQueryParam(query, "file", dst, maxLen);
 }
 
 // Escape a C string for JSON into dst, returns length written.
@@ -370,15 +190,11 @@ static void sendHeaders(WiFiClient& c, int code, const char* ctype,
   else if (code == 404) reason = "Not Found";
   else if (code == 202) reason = "Accepted";
   else if (code == 204) reason = "No Content";
-  else if (code == 405) reason = "Method Not Allowed";
   else if (code == 500) reason = "Internal Server Error";
-  else if (code == 503) reason = "Service Unavailable";
   c.printf("HTTP/1.1 %d %s\r\n", code, reason);
   c.printf("Content-Type: %s\r\n", ctype);
   if (contentLen >= 0) c.printf("Content-Length: %d\r\n", contentLen);
-  c.print("Connection: close\r\n");
-  c.print("Access-Control-Allow-Origin: *\r\n");
-  c.print("Cache-Control: no-store\r\n\r\n");
+  c.print("Connection: close\r\nCache-Control: no-store\r\n\r\n");
 }
 
 static void sendPlain(WiFiClient& c, int code, const char* body) {
@@ -387,7 +203,8 @@ static void sendPlain(WiFiClient& c, int code, const char* body) {
   c.write((const uint8_t*)body, len);
 }
 
-static void sendJsonStr(WiFiClient& c, int code, const char* json, int len) {
+static void sendJson(WiFiClient& c, int code, const char* json) {
+  int len = strlen(json);
   sendHeaders(c, code, "application/json", len);
   c.write((const uint8_t*)json, len);
 }
@@ -401,26 +218,21 @@ struct HttpReq {
   int  contentLen;
 };
 
-static bool readLine(WiFiClient& c, char* buf, int maxLen, uint32_t timeoutMs) {
+static bool readLine(WiFiClient& c, char* buf, int maxLen) {
   int i = 0;
   unsigned long t0 = millis();
-  while (i < maxLen - 1 && (c.connected() || c.available()) &&
-         millis() - t0 < timeoutMs) {
+  while (i < maxLen - 1 && millis() - t0 < 5000) {
     if (c.available()) {
       char ch = c.read();
-      if (ch == '\n') {
-        buf[i] = '\0';
-        return true;
-      }
+      if (ch == '\n') break;
       if (ch != '\r') buf[i++] = ch;
       t0 = millis();
     } else {
-      delay(1);
-      esp_task_wdt_reset();
+      yield();
     }
   }
   buf[i] = '\0';
-  return i > 0;
+  return i > 0 || (millis() - t0 < 5000);
 }
 
 static bool parseRequest(WiFiClient& c, HttpReq* req) {
@@ -428,15 +240,17 @@ static bool parseRequest(WiFiClient& c, HttpReq* req) {
   req->contentLen = -1;
 
   char line[512];
-  if (!readLine(c, line, sizeof(line), HTTP_LINE_TIMEOUT_MS)) return false;
+  if (!readLine(c, line, sizeof(line))) return false;
   if (line[0] == '\0') return false;
 
+  // Parse method
   char* sp1 = strchr(line, ' ');
   if (!sp1) return false;
   int mlen = min((int)(sp1 - line), (int)(sizeof(req->method) - 1));
   memcpy(req->method, line, mlen);
   req->method[mlen] = '\0';
 
+  // Parse URI
   char* uri = sp1 + 1;
   char* sp2 = strchr(uri, ' ');
   if (sp2) *sp2 = '\0';
@@ -448,9 +262,10 @@ static bool parseRequest(WiFiClient& c, HttpReq* req) {
   }
   strncpy(req->path, uri, sizeof(req->path) - 1);
 
+  // Read headers, extract Content-Length
   while (true) {
     char hdr[256];
-    if (!readLine(c, hdr, sizeof(hdr), HTTP_LINE_TIMEOUT_MS)) break;
+    readLine(c, hdr, sizeof(hdr));
     if (hdr[0] == '\0') break;
     if (strncasecmp(hdr, "Content-Length:", 15) == 0) {
       req->contentLen = atoi(hdr + 15);
@@ -459,7 +274,7 @@ static bool parseRequest(WiFiClient& c, HttpReq* req) {
   return true;
 }
 
-// ── API: Directory listing (builds JSON in PSRAM then sends with Content-Length) ─
+// ── API: Directory listing ─────────────────────────────────────────────
 
 static void apiLs(WiFiClient& c, const char* query) {
   char dirPath[256];
@@ -487,14 +302,8 @@ static void apiLs(WiFiClient& c, const char* query) {
   int olen = strlen(openPath);
   if (olen > 1 && openPath[olen - 1] == '/') openPath[olen - 1] = '\0';
 
-  // Build JSON in a PSRAM buffer so we can send Content-Length
-  const int JSON_BUF_SZ = 16384;
-  char* jsonBuf = (char*)ps_malloc(JSON_BUF_SZ);
-  if (!jsonBuf) {
-    sendPlain(c, 500, "out of memory"); return;
-  }
-  int pos = 0;
-  pos += snprintf(jsonBuf + pos, JSON_BUF_SZ - pos, "{\"f\":[");
+  sendHeaders(c, 200, "application/json");
+  c.print("{\"f\":[");
 
   bool first = true;
   {
@@ -505,26 +314,22 @@ static void apiLs(WiFiClient& c, const char* query) {
       while (entry) {
         yield();
         esp_task_wdt_reset();
-        const char* rawName = entry.name();
-        // Extract just the filename (last component)
-        const char* sl = strrchr(rawName, '/');
-        const char* entryName = sl ? sl + 1 : rawName;
+        String rawName = String(entry.name());
+        int sl = rawName.lastIndexOf('/');
+        String entryName = (sl >= 0) ? rawName.substring(sl + 1) : rawName;
 
-        if (entryName[0] != '\0') {
+        if (entryName.length() > 0) {
           char escaped[192];
-          jsonEscape(escaped, sizeof(escaped), entryName);
-          int needed = snprintf(NULL, 0, "%s{\"n\":\"%s\",\"s\":%lu,\"d\":%s}",
-                                first ? "" : ",", escaped,
-                                (unsigned long)entry.size(),
-                                entry.isDirectory() ? "true" : "false");
-          if (pos + needed + 4 < JSON_BUF_SZ) {
-            pos += snprintf(jsonBuf + pos, JSON_BUF_SZ - pos,
-                            "%s{\"n\":\"%s\",\"s\":%lu,\"d\":%s}",
-                            first ? "" : ",", escaped,
-                            (unsigned long)entry.size(),
-                            entry.isDirectory() ? "true" : "false");
-            first = false;
-          }
+          jsonEscape(escaped, sizeof(escaped), entryName.c_str());
+          char buf[280];
+          int n = snprintf(buf, sizeof(buf),
+                           "%s{\"n\":\"%s\",\"s\":%lu,\"d\":%s}",
+                           first ? "" : ",",
+                           escaped,
+                           (unsigned long)entry.size(),
+                           entry.isDirectory() ? "true" : "false");
+          c.write((const uint8_t*)buf, n);
+          first = false;
         }
         entry.close();
         entry = dir.openNextFile();
@@ -533,19 +338,15 @@ static void apiLs(WiFiClient& c, const char* query) {
     }
   }
 
-  pos += snprintf(jsonBuf + pos, JSON_BUF_SZ - pos, "]}");
-
-  // Send with Content-Length
-  sendJsonStr(c, 200, jsonBuf, pos);
-  free(jsonBuf);
+  c.print("]}");
 }
 
 // ── API: File download ─────────────────────────────────────────────────
 
 static void apiDl(WiFiClient& c, const char* query) {
   char filepath[256];
-  if (!getFileQueryParam(query, filepath, sizeof(filepath))) {
-    sendPlain(c, 400, "missing file param"); return;
+  if (!getQueryParam(query, "f", filepath, sizeof(filepath))) {
+    sendPlain(c, 400, "missing f param"); return;
   }
   if (!isValidPath(filepath)) { sendPlain(c, 400, "invalid path"); return; }
 
@@ -640,8 +441,8 @@ static void apiUp(WiFiClient& c, const char* query, int contentLen) {
 
   if (ok && remaining == 0) {
     char resp[64];
-    int rlen = snprintf(resp, sizeof(resp), "{\"ok\":true,\"s\":%u}", (unsigned)finalSize);
-    sendJsonStr(c, 200, resp, rlen);
+    snprintf(resp, sizeof(resp), "{\"ok\":true,\"s\":%u}", (unsigned)finalSize);
+    sendJson(c, 200, resp);
     Serial.printf("[web] upload done: %s (%u bytes)\n", filepath, (unsigned)finalSize);
   } else {
     ScopedSDLock lock;
@@ -655,8 +456,8 @@ static void apiUp(WiFiClient& c, const char* query, int contentLen) {
 
 static void apiRm(WiFiClient& c, const char* query) {
   char filepath[256];
-  if (!getFileQueryParam(query, filepath, sizeof(filepath))) {
-    sendPlain(c, 400, "missing file param"); return;
+  if (!getQueryParam(query, "f", filepath, sizeof(filepath))) {
+    sendPlain(c, 400, "missing f param"); return;
   }
   if (!isValidPath(filepath)) { sendPlain(c, 400, "invalid path"); return; }
 
@@ -673,9 +474,9 @@ static void apiRm(WiFiClient& c, const char* query) {
     }
   }
 
-  if (!existed) { sendPlain(c, 404, "not found"); return; }
-  if (ok) { sendPlain(c, 200, "ok"); }
-  else    { sendPlain(c, 500, "delete failed"); }
+  if (!existed) { sendJson(c, 404, "{\"ok\":false,\"e\":\"not found\"}"); return; }
+  if (ok) { sendJson(c, 200, "{\"ok\":true}"); }
+  else    { sendJson(c, 500, "{\"ok\":false,\"e\":\"delete failed\"}"); }
 }
 
 // ── API: Health ────────────────────────────────────────────────────────
@@ -701,7 +502,6 @@ static bool captureInProgress = false;
 static int captureY = 0;
 static uint8_t* captureRgbChunk = nullptr;
 static unsigned long captureStartTime = 0;
-static unsigned long captureRequestTime = 0;
 
 static const int SCR_W = 540;
 static const int SCR_H = 960;
@@ -711,12 +511,6 @@ static const int BMP_HDR_SZ = 14 + 40;
 static const int BMP_PAL_SZ = 256 * 4;
 static const int BMP_IMG_SZ = SCR_STRIDE * SCR_H;
 static const int BMP_TOTAL  = BMP_HDR_SZ + BMP_PAL_SZ + BMP_IMG_SZ;
-
-static void requestScreenCapture() {
-  if (captureInProgress) return;
-  captureRequested = true;
-  captureRequestTime = millis();
-}
 
 static bool initScreenBuffer() {
   if (cachedBmp) return true;
@@ -754,7 +548,6 @@ static void freeScreenBuffer() {
   if (captureRgbChunk) { free(captureRgbChunk); captureRgbChunk = nullptr; }
   captureInProgress = false;
   captureY = 0;
-  captureRequestTime = 0;
   if (cachedBmp) {
     free(cachedBmp); cachedBmp = nullptr;
     captureReady = false; captureRequested = false;
@@ -764,11 +557,8 @@ static void freeScreenBuffer() {
 void updateScreenCapture() {
   if (!cachedBmp) return;
   if (captureRequested && !captureInProgress) {
-    if (M5.Display.displayBusy() && millis() - captureRequestTime < CAPTURE_BUSY_WAIT_MS) return;
-    if (M5.Display.displayBusy()) {
-      sdLog("Capture: display busy timeout, reading anyway");
-    }
     captureRequested = false;
+    if (M5.Display.displayBusy()) { captureRequested = true; return; }
     captureRgbChunk = (uint8_t*)ps_malloc(SCR_W * 3 * CAPTURE_CHUNK);
     if (!captureRgbChunk) {
       sdLog("Capture: rgbChunk alloc failed psram=%u", (unsigned)ESP.getFreePsram());
@@ -809,20 +599,15 @@ static void serveBmp(WiFiClient& c) {
     size_t written = c.write(cachedBmp + sent, chunk);
     if (written == 0) break;
     sent += written;
-    esp_task_wdt_reset();
     yield();
   }
   Serial.printf("[web] screenshot served %d/%d bytes\n", sent, BMP_TOTAL);
 }
 
 static void apiScreen(WiFiClient& c, const char* query) {
-  static int lastLoggedState = -1;
-  int state = captureReady ? 2 : (captureInProgress ? 1 : (captureRequested ? 3 : 0));
-  if (state != lastLoggedState) {
-    lastLoggedState = state;
-    sdLog("Screenshot: state=%d y=%d heap=%u psram=%u",
-          state, captureY, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
-  }
+  sdLog("Screenshot: req ready=%d prog=%d y=%d heap=%u psram=%u",
+        (int)captureReady, (int)captureInProgress, captureY,
+        (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
 
   char tmp[8];
   if (getQueryParam(query, "test", tmp, sizeof(tmp))) {
@@ -839,15 +624,13 @@ static void apiScreen(WiFiClient& c, const char* query) {
     return;
   }
 
-  // If cached image ready, serve it and request a fresh one
   if (cachedBmp && captureReady) {
     serveBmp(c);
     captureReady = false;
-    requestScreenCapture();
+    captureRequested = true;
     return;
   }
 
-  // Capture in progress
   if (captureInProgress) {
     char buf[32];
     snprintf(buf, sizeof(buf), "capturing %d%%", captureY * 100 / SCR_H);
@@ -855,15 +638,33 @@ static void apiScreen(WiFiClient& c, const char* query) {
     return;
   }
 
-  // Start a deferred capture and let updateScreenCapture() advance it in small
-  // chunks from the main loop. This keeps the web server and touch UI responsive.
-  if (!cachedBmp && !initScreenBuffer()) {
-    sendPlain(c, 500, "alloc failed");
-    return;
+  if (cachedBmp || initScreenBuffer()) {
+    captureRgbChunk = (uint8_t*)ps_malloc(SCR_W * 3 * CAPTURE_CHUNK);
+    if (captureRgbChunk) {
+      captureInProgress = true; captureY = 0;
+      captureStartTime = millis();
+      uint8_t* pixels = cachedBmp + BMP_HDR_SZ + BMP_PAL_SZ;
+      for (int y = 0; y < SCR_H; y += CAPTURE_CHUNK) {
+        int rows = min(CAPTURE_CHUNK, SCR_H - y);
+        M5.Display.readRectRGB(0, y, SCR_W, rows, captureRgbChunk);
+        for (int r = 0; r < rows; r++) {
+          int bmpRow = SCR_H - 1 - (y + r);
+          uint8_t* src = captureRgbChunk + r * SCR_W * 3;
+          uint8_t* dst = pixels + bmpRow * SCR_STRIDE;
+          for (int xx = 0; xx < SCR_W; xx++)
+            dst[xx] = (uint8_t)((src[xx*3]*77 + src[xx*3+1]*150 + src[xx*3+2]*29) >> 8);
+        }
+        esp_task_wdt_reset(); yield();
+      }
+      free(captureRgbChunk); captureRgbChunk = nullptr;
+      captureInProgress = false; captureReady = true; captureRequested = false;
+      sdLog("Capture: blocking done %lu ms", millis() - captureStartTime);
+      serveBmp(c);
+      captureReady = false; captureRequested = true;
+      return;
+    }
   }
-  captureReady = false;
-  requestScreenCapture();
-  sendPlain(c, 202, "capturing 0%");
+  sendPlain(c, 500, "no capture available");
 }
 
 // ── API: Debug log ─────────────────────────────────────────────────────
@@ -877,7 +678,6 @@ static void apiLog(WiFiClient& c) {
   while (f.available() && c.connected()) {
     int n = f.read(buf, sizeof(buf));
     if (n > 0) c.write(buf, n);
-    esp_task_wdt_reset();
     yield();
   }
   f.close();
@@ -929,7 +729,6 @@ static void serveSPA(WiFiClient& c) {
     size_t written = c.write((const uint8_t*)(SPA_HTML + sent), chunk);
     if (written == 0) break;
     sent += written;
-    esp_task_wdt_reset();
     yield();
   }
 }
@@ -941,18 +740,7 @@ void handleWebClients() {
   if (!client) return;
 
   client.setNoDelay(true);
-  client.setTimeout(1);
-
-  unsigned long waitStart = millis();
-  while (!client.available() && client.connected() &&
-         millis() - waitStart < HTTP_IDLE_ACCEPT_MS) {
-    delay(1);
-    esp_task_wdt_reset();
-  }
-  if (!client.available()) {
-    client.stop();
-    return;
-  }
+  client.setTimeout(5);
 
   HttpReq req;
   if (!parseRequest(client, &req)) {
@@ -962,37 +750,33 @@ void handleWebClients() {
 
   Serial.printf("[web] %s %s heap=%u\n", req.method, req.path, (unsigned)ESP.getFreeHeap());
 
-  // Route
-  if ((strcmp(req.path, "/") == 0 || strcmp(req.path, "/screen") == 0) &&
-      strcmp(req.method, "GET") == 0) {
+  // Route request
+  if (strcmp(req.path, "/") == 0 && strcmp(req.method, "GET") == 0) {
     serveSPA(client);
   }
   else if (strcmp(req.path, "/api/ls") == 0) {
     apiLs(client, req.query);
   }
-  else if (strcmp(req.path, "/api/dl") == 0 || strcmp(req.path, "/download") == 0) {
+  else if (strcmp(req.path, "/api/dl") == 0) {
     apiDl(client, req.query);
   }
   else if (strcmp(req.path, "/api/up") == 0 && strcmp(req.method, "PUT") == 0) {
     apiUp(client, req.query, req.contentLen);
   }
-  else if (strcmp(req.path, "/upload") == 0) {
-    sendPlain(client, 405, "use PUT /api/up?f=/path/name");
-  }
-  else if (strcmp(req.path, "/api/rm") == 0 || strcmp(req.path, "/delete") == 0) {
+  else if (strcmp(req.path, "/api/rm") == 0) {
     apiRm(client, req.query);
   }
-  else if (strcmp(req.path, "/api/health") == 0 || strcmp(req.path, "/health") == 0) {
+  else if (strcmp(req.path, "/api/health") == 0) {
     apiHealth(client);
   }
-  else if (strcmp(req.path, "/api/screen") == 0 || strcmp(req.path, "/screenshot") == 0) {
+  else if (strcmp(req.path, "/api/screen") == 0) {
     apiScreen(client, req.query);
   }
-  else if (strcmp(req.path, "/api/log/clear") == 0 || strcmp(req.path, "/log/clear") == 0) {
-    apiLogClear(client);
-  }
-  else if (strcmp(req.path, "/api/log") == 0 || strcmp(req.path, "/log") == 0) {
+  else if (strcmp(req.path, "/api/log") == 0) {
     apiLog(client);
+  }
+  else if (strncmp(req.path, "/api/log/clear", 14) == 0) {
+    apiLogClear(client);
   }
   else if (strcmp(req.path, "/favicon.ico") == 0) {
     sendHeaders(client, 204, "text/plain", 0);
@@ -1001,6 +785,7 @@ void handleWebClients() {
     sendPlain(client, 404, "not found");
   }
 
+  client.flush();
   client.stop();
 }
 

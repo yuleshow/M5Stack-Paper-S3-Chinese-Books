@@ -1658,18 +1658,15 @@ void drawCalendar() {
   }
   
   // Month GanZhi + NaYin
-  int monthGanBase2;
-  int yearGan2 = (gzYear - 4) % 10;
-  switch (yearGan2 % 5) {
-    case 0: monthGanBase2 = 2; break;
-    case 1: monthGanBase2 = 4; break;
-    case 2: monthGanBase2 = 6; break;
-    case 3: monthGanBase2 = 8; break;
-    case 4: monthGanBase2 = 0; break;
-    default: monthGanBase2 = 0;
+  // Derive indices from the already-correct monthGZ string (solar-term based)
+  // rather than from sMonth (Gregorian), which is wrong near month boundaries.
+  int mGanIdx = 0, mZhiIdx = 0;
+  for (int i = 0; i < 10; i++) {
+    if (strncmp(monthGZ, tianGan[i], strlen(tianGan[i])) == 0) { mGanIdx = i; break; }
   }
-  int mGanIdx = (monthGanBase2 + sMonth - 1) % 10;
-  int mZhiIdx = (sMonth + 1) % 12;
+  for (int i = 0; i < 12; i++) {
+    if (strncmp(monthGZ + strlen(tianGan[mGanIdx]), diZhi[i], strlen(diZhi[i])) == 0) { mZhiIdx = i; break; }
+  }
   {
     drawSystemText("月柱：", colLabel, secY + 32, 22);
     drawSystemText(monthGZ, colGZ, secY + 32, 22);
@@ -1832,6 +1829,12 @@ void drawCalendar() {
     }
   }
   
+  // Note for non-Beijing timezones
+  if (timeConfig.gmtOffset != 28800) {
+    secY += 25;
+    drawSystemText("節氣依當地時間，與北京或差一天", 20, secY, 18, EPD_MID_GRAY);
+  }
+  
   } // end hasLunar - all lunar-dependent almanac sections
 
   // Solar term line (for pre-1900 dates, show solar term info)
@@ -1851,11 +1854,6 @@ void drawCalendar() {
       xp += drawNumberBitmaps(daysToNext, xp, secYSolar, 20);
       drawSystemText("天", xp, secYSolar, 20);
     }
-  }
-
-  // Note for non-Beijing timezones: solar term dates may differ by one day
-  if (timeConfig.gmtOffset != 28800) {
-    drawSystemText("節氣依當地時間，與北京或差一天", 20, 940, 18, EPD_LIGHT_GRAY);
   }
 
   M5.Display.endWrite();

@@ -34,7 +34,7 @@ size_t OFR_fread(void *ptr, size_t size, size_t nmemb, FT_FILE *stream) {
 }
 
 int OFR_fseek(FT_FILE *stream, long int offset, int whence) {
-  return ((File *)stream)->seek(offset, (SeekMode)whence);
+  return ((File *)stream)->seek(offset, (SeekMode)whence) ? 0 : -1;
 }
 
 long int OFR_ftell(FT_FILE *stream) {
@@ -540,6 +540,22 @@ void scanFontFiles() {
     }
   }
   
+  // Sort bin sizes within each font (smallest to largest)
+  for (int i = 0; i < fontFileCount; i++) {
+    for (int a = 0; a < fontBinCount[i] - 1; a++) {
+      for (int b = a + 1; b < fontBinCount[i]; b++) {
+        if (fontBinSizes[i][a] > fontBinSizes[i][b]) {
+          String tmpFile = fontBinFiles[i][a];
+          fontBinFiles[i][a] = fontBinFiles[i][b];
+          fontBinFiles[i][b] = tmpFile;
+          uint8_t tmpSz = fontBinSizes[i][a];
+          fontBinSizes[i][a] = fontBinSizes[i][b];
+          fontBinSizes[i][b] = tmpSz;
+        }
+      }
+    }
+  }
+  
   // Add embedded ET Book as virtual entry (from firmware, no SD file)
   if (fontFileCount < MAX_FONT_FILES) {
     fontFileList[fontFileCount] = "ETBook-embedded";
@@ -629,6 +645,8 @@ bool loadBinaryFont(const char* fontPath) {
   }
   memcpy(g_binFont.familyName, &header[9], 64);
   memcpy(g_binFont.styleName, &header[73], 64);
+  g_binFont.familyName[63] = '\0';
+  g_binFont.styleName[63] = '\0';
   
   Serial.println("=== Binary Font Header ===");
   Serial.printf("Characters: %d\n", g_binFont.charCount);
@@ -753,8 +771,8 @@ struct CachedGlyph {
   uint16_t bitmapSize;
   uint16_t width;
   uint16_t height;
-  int8_t offsetX;  // draw offset from cell origin
-  int8_t offsetY;
+  int16_t offsetX;  // draw offset from cell origin
+  int16_t offsetY;
   bool occupied;
 };
 static CachedGlyph* glyphCache = nullptr;
@@ -807,13 +825,41 @@ static CachedGlyph* cacheFind(uint32_t unicode) {
   return nullptr;
 }
 
-static void cacheInsert(uint32_t unicode, const uint8_t* bitmap, uint16_t bitmapSize, uint16_t w, uint16_t h, int8_t ox = 0, int8_t oy = 0) {
+static void cacheInsert(uint32_t unicode, const uint8_t* bitmap, uint16_t bitmapSize, uint16_t w, uint16_t h, int16_t ox = 0, int16_t oy = 0) {
   if (!glyphCache || !glyphBitmapPool) return;
   if (glyphPoolUsed + bitmapSize > GLYPH_POOL_SIZE) {
-    // Pool full — evict entire cache (ring-buffer reset) so new glyphs can always be cached.
-    // Better than silently dropping: avoids repeated SD reads for uncached characters.
-    for (int i = 0; i < GLYPH_CACHE_SIZE; i++) glyphCache[i].occupied = false;
-    glyphPoolUsed = 0;
+    // Pool full — evict oldest half of cached bitmaps and compact the rest.
+    // Glyphs whose bitmap falls in the first half of the pool are evicted;
+    // remaining glyphs have their pointers adjusted after memmove.
+    size_t evictBefore = glyphPoolUsed / 2;
+    // Find actual cut point: the smallest bitmap offset >= evictBefore
+    size_t cutPoint = glyphPoolUsed;
+    for (int i = 0; i < GLYPH_CACHE_SIZE; i++) {
+      if (!glyphCache[i].occupied) continue;
+      size_t off = glyphCache[i].bitmap - glyphBitmapPool;
+      if (off >= evictBefore && off < cutPoint) cutPoint = off;
+    }
+    if (cutPoint >= glyphPoolUsed) {
+      // No good cut point found — full evict
+      for (int i = 0; i < GLYPH_CACHE_SIZE; i++) glyphCache[i].occupied = false;
+      glyphPoolUsed = 0;
+    } else {
+      // Evict glyphs in [0, cutPoint), keep glyphs in [cutPoint, glyphPoolUsed)
+      for (int i = 0; i < GLYPH_CACHE_SIZE; i++) {
+        if (!glyphCache[i].occupied) continue;
+        size_t off = glyphCache[i].bitmap - glyphBitmapPool;
+        if (off < cutPoint) {
+          glyphCache[i].occupied = false;
+        } else {
+          glyphCache[i].bitmap -= cutPoint;  // adjust pointer after memmove
+        }
+      }
+      size_t remaining = glyphPoolUsed - cutPoint;
+      memmove(glyphBitmapPool, glyphBitmapPool + cutPoint, remaining);
+      glyphPoolUsed = remaining;
+      Serial.printf("Glyph cache: partial evict, freed %uKB, kept %uKB\n",
+                     (unsigned)(cutPoint / 1024), (unsigned)(remaining / 1024));
+    }
   }
 
   uint32_t idx = (unicode * 2654435761u) & (GLYPH_CACHE_SIZE - 1);
@@ -1126,8 +1172,8 @@ bool drawOFRCharCached(uint32_t unicode, int x, int y, uint16_t color, int fontS
   // Crop to tight bounds
   int cropW = maxX - minX + 1;
   int cropH = maxY - minY + 1;
-  int8_t offsetX = (int8_t)(minX - cellX);   // offset relative to cell left edge
-  int8_t offsetY = (int8_t)(minY);            // offset relative to cell top (y=0)
+  int16_t offsetX = (int16_t)(minX - cellX);   // offset relative to cell left edge
+  int16_t offsetY = (int16_t)(minY);            // offset relative to cell top (y=0)
 
   // Convert cropped region to 1-bit packed bitmap
   int bitmapSize = (cropW * cropH + 7) / 8;
@@ -1464,6 +1510,7 @@ bool loadSDLabels() {
   // Parse entries — pointers directly into sdLabelData buffer
   uint8_t* ptr = sdLabelData + 8;
   uint8_t* end = sdLabelData + fileSize;
+  int actualLoaded = 0;
   for (int i = 0; i < sdLabelCount; i++) {
     if (ptr + 2 > end) break;
     uint16_t textLen;
@@ -1482,7 +1529,9 @@ bool loadSDLabels() {
     int bitmapSize = ((sdLabelEntries[i].w + 1) / 2) * sdLabelEntries[i].h;
     if (ptr + bitmapSize > end) break;
     ptr += bitmapSize;
+    actualLoaded++;
   }
+  sdLabelCount = actualLoaded;
 
   Serial.printf("SD labels: loaded %d entries (%d KB)\n", sdLabelCount, (int)(fileSize / 1024));
   return true;

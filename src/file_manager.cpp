@@ -5,7 +5,7 @@
 static String formatSize(size_t bytes) {
   if (bytes < 1024) return String(bytes) + " B";
   if (bytes < 1024 * 1024) return String(bytes / 1024) + " KB";
-  return String(bytes / (1024 * 1024)) + "." + String((bytes / (1024 * 102)) % 10) + " MB";
+  return String(bytes / (1024 * 1024)) + "." + String((bytes % (1024 * 1024)) * 10 / (1024 * 1024)) + " MB";
 }
 
 void loadFileManagerDir() {

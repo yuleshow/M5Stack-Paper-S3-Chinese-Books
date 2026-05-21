@@ -564,6 +564,14 @@ void drawClock() {
 
 void drawWebServerSetup() {
   Serial.println("Drawing web server setup screen...");
+
+  if (currentBookIsEpub && epubFullText) {
+    free(epubFullText);
+    epubFullText = nullptr;
+    epubFullTextLen = 0;
+  }
+  freeGlyphCache();
+  unloadBinaryFont();
   
   M5.Display.setEpdMode(epd_mode_t::epd_quality);
   M5.Display.startWrite();
@@ -589,11 +597,21 @@ void drawWebServerSetup() {
     M5.Display.setTextSize(1.5);
     M5.Display.setTextColor(TFT_BLACK);
     M5.Display.setCursor(25, 185);
-    M5.Display.print("IP: http://");
-    M5.Display.print(WiFi.localIP().toString());
+    if (WiFi.status() == WL_CONNECTED) {
+      M5.Display.print("IP: http://");
+      M5.Display.print(WiFi.localIP().toString());
+    } else if ((WiFi.getMode() & WIFI_AP) != 0) {
+      M5.Display.print("AP: http://");
+      M5.Display.print(WiFi.softAPIP().toString());
+    } else {
+      M5.Display.print("IP: starting...");
+    }
     
     drawSystemText("在電腦或手機瀏覽器中輸入上方 IP 位址", 20, 270, 20);
     drawSystemText("截圖: /screen", 20, 330, 24);
+    if (WiFi.status() != WL_CONNECTED && (WiFi.getMode() & WIFI_AP) != 0) {
+      drawSystemText("熱點: M5Paper-S3 / m5paper123", 20, 360, 22);
+    }
     M5.Display.setFont(&fonts::Font2);
     M5.Display.setTextSize(1);
     M5.Display.setTextColor(TFT_BLACK);
@@ -604,8 +622,10 @@ void drawWebServerSetup() {
     
     if (WiFi.status() == WL_CONNECTED) {
       drawSystemText("正在啟動伺服器...", 20, 200, 28);
+    } else if ((WiFi.getMode() & WIFI_AP) != 0) {
+      drawSystemText("正在啟動熱點伺服器...", 20, 200, 28);
     } else {
-      drawSystemText("等待 WiFi 連接...", 20, 200, 28);
+      drawSystemText("等待 WiFi 或啟動熱點...", 20, 200, 28);
     }
   } else {
     drawSystemText("狀態： 未啟用", 20, 120, 32);
@@ -921,7 +941,9 @@ void drawSetupMenu() {
     drawSystemText("檔案上傳伺服器", 40, y + 12, 32, TFT_BLACK, cardTextBg);
 
     if (webServerRunning) {
-      String wsInfo = "執行中 - " + WiFi.localIP().toString();
+      String wsAddr = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() :
+                      (((WiFi.getMode() & WIFI_AP) != 0) ? WiFi.softAPIP().toString() : String("starting"));
+      String wsInfo = "執行中 - " + wsAddr;
       drawSystemText(wsInfo.c_str(), 40, y + 50, 22, TFT_BLACK, cardTextBg);
     } else if (webServerEnabled) {
       drawSystemText("已啟用 - 等待連接", 40, y + 50, 22, TFT_BLACK, cardTextBg);

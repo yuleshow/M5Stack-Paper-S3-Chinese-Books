@@ -367,11 +367,11 @@ def convert_ttf_to_bin(ttf_path, output_path, font_size=30, fallback_path=None, 
             # Skip characters that can't be rendered
             continue
         
-        # Default: center glyph in em-square for stable vertical CJK layout.
-        # Bpmf Zihi only: keep native bearings for primary glyphs.
-        if not (keep_native_bearing and glyph_from_primary):
-            bearing_x = (font_size - width) // 2
-            bearing_y = (font_size - height) // 2
+        # Keep native bearings from the font to preserve both horizontal and
+        # vertical alignment (matches OFR/FreeType cdrawString behaviour).
+        # The font's left-side bearing ensures consistent column alignment,
+        # and the native top bearing keeps baseline-consistent vertical positioning.
+        # No override needed — use bearing_x, bearing_y as returned by render_glyph.
         
         # Convert to bitmap bytes
         bitmap_bytes = bitmap_to_bytes(img)

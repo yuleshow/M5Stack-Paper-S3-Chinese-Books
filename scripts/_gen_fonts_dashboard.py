@@ -61,7 +61,7 @@ def render_dashboard():
 gen = render_dashboard()
 
 # --- Load right (Silver) dashboard from pre-rendered cover ---
-sil = Image.open('assets/silver-cover.jpeg').convert('RGB')
+sil = Image.open('assets/silver-cover-2.png').convert('RGB')
 sil = sil.resize((DISP_W, DISP_H), Image.LANCZOS)
 
 # --- Compose side-by-side ---

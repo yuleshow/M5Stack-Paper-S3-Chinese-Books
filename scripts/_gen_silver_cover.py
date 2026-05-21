@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Generate silver_cover_jpg.h from assets/silver-cover.jpeg."""
+"""Generate silver_cover_jpg.h from assets/silver-cover-2.png."""
 import os
 from PIL import Image
 
-src = os.path.join(os.path.dirname(__file__), '..', 'assets', 'silver-cover.jpeg')
+src = os.path.join(os.path.dirname(__file__), '..', 'assets', 'silver-cover-2.png')
 tmp = '/tmp/silver_cover_540x960.jpg'
 dst = os.path.join(os.path.dirname(__file__), '..', 'src', 'silver_cover_jpg.h')
 
@@ -17,7 +17,7 @@ with open(tmp, 'rb') as f:
     data = f.read()
 
 with open(dst, 'w') as f:
-    f.write('// Auto-generated from assets/silver-cover.jpeg\n')
+    f.write('// Auto-generated from assets/silver-cover-2.png\n')
     f.write('// Grayscale optimized for e-ink display (540x960)\n')
     f.write('#pragma once\n\n')
     f.write('#include <pgmspace.h>\n\n')

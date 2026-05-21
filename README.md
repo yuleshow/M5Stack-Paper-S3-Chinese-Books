@@ -91,6 +91,12 @@ A complete traditional Chinese almanac with:
 - Shake the device to draw a slip (accelerometer-based detection)
 - Pre-packed binary format (FSLP) for fast SD card loading
 - Fortune slip images sourced from [www.chance.org.tw](https://www.chance.org.tw)
+- **歌子靈籖** — hidden easter-egg virtual pet named 歌子. Real-time stat decay
+  (flash/sleep persists via `/tamagotchi.dat` on SD), four actions (餵食 / 逗玩 /
+  清掃 / 醫治), sickness and a care-score-driven evolution tree
+  (egg → baby → good/bad child → teen → 士人 / 工匠 / 商賈 / 野人 → elder).
+
+  ![歌子 sprite sheet](output/tamagotchi_sprites.png)
 
 ### 🖼️ Wallpaper Browser ![Feature](https://img.shields.io/badge/Feature-Wallpaper-blue)
 - Browse and display JPG wallpapers from SD card
