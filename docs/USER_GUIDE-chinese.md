@@ -135,18 +135,18 @@ units=metric
 
 ### 方式 A：預編譯韌體
 
-從 [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) 頁面下載韌體。提供兩種版本：
+從 [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) 頁面下載韌體。提供三個檔案：
 
-#### 16 MB 合併韌體（建議）
+#### 合併韌體（建議）
 
-包含 bootloader、分區表及應用程式 — 適用於全新/空白裝置或完整重新燒錄：
+包含 bootloader、分區表及應用程式 — 適用於全新/空白裝置或完整重新燒錄。請選擇符合裝置 Flash 容量的檔案：
 
 ```bash
 pip install esptool  # 如尚未安裝
-esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-*-merged.bin
+esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-*-merged-8MB.bin
 ```
 
-#### 8 MB 純應用程式韌體
+#### 純應用程式韌體
 
 僅包含應用程式韌體。適用於已有有效 bootloader 和分區表的裝置（例如之前曾執行 `pio run -t upload`）：
 

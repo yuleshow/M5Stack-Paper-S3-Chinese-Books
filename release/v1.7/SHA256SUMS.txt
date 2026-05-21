@@ -1,3 +1,3 @@
-331901debc8477eb6a2072f24d7640939a9d4d25ded124a12f7d790db42268c2  M5Paper-S3-Chinese-Books-v1.7-app-only.bin
-0e5b6cf0c070b773a49140eb10ec7f16731c4b0a64b4f1c280d5f35d97796f05  M5Paper-S3-Chinese-Books-v1.7-merged-16MB.bin
-6002a4175e067ec73156a7f11194ff2e4eb411b2e4ae454fd01e30046ce23f6c  M5Paper-S3-Chinese-Books-v1.7-merged-8MB.bin
+129cdc1898aab331ef686a5ccdea446b35de15a95de4d8b9683068534491f8fd  M5Paper-S3-Chinese-Books-v1.7-app-only.bin
+94585a658cda7bc96a95e1b8b6a7fb605f44e24f496f8d635f2d981ce13c4f9d  M5Paper-S3-Chinese-Books-v1.7-merged-16MB.bin
+c3689c97f298b73123bbfc130b5f72c05259f661114387a9e5009aff868c43a6  M5Paper-S3-Chinese-Books-v1.7-merged-8MB.bin

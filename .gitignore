@@ -18,6 +18,10 @@ assets/fonts/*.TTC
 assets/fonts/*.bin
 output/*.bin
 
+# Release artifacts are uploaded to GitHub Releases, not committed
+release/**/*.bin
+release/**/*.zip
+
 # Book files (copyrighted content)
 assets/books/*.txt
 assets/books/*.txt.pos

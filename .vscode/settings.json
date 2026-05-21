@@ -5,5 +5,26 @@
   "C_Cpp.default.systemIncludePath": [
     "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
   ],
-  "C_Cpp.errorSquiggles": "disabled"
+  "C_Cpp.errorSquiggles": "disabled",
+  "files.watcherExclude": {
+    "**/.pio/**": true,
+    "**/build/**": true,
+    "**/dist/**": true,
+    "**/release/**/*.bin": true,
+    "**/release/**/*.zip": true,
+    "**/sd_card/dict/stardict.db": true
+  },
+  "search.exclude": {
+    "**/.pio/**": true,
+    "**/build/**": true,
+    "**/dist/**": true,
+    "**/release/**/*.bin": true,
+    "**/release/**/*.zip": true,
+    "**/sd_card/dict/stardict.db": true
+  },
+  "files.exclude": {
+    "**/.pio": true,
+    "**/release/**/*.bin": true,
+    "**/release/**/*.zip": true
+  }
 }

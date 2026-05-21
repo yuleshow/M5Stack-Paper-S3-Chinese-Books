@@ -166,15 +166,15 @@ pio run -t upload
 
 ### Flash Pre-built Binary
 
-Download binaries from the [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) page. Two versions are provided:
+Download binaries from the [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) page. Three binaries are provided:
 
-**16 MB merged binary** (recommended for fresh/blank devices — includes bootloader + partition table + app):
+**Merged binary** (recommended for fresh/blank devices — includes bootloader + partition table + app). Use the file that matches your device flash size:
 
 ```bash
-esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-*-merged.bin
+esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-*-merged-8MB.bin
 ```
 
-**8 MB app-only binary** (for devices that already have the bootloader and partition table):
+**App-only binary** (for devices that already have the bootloader and partition table):
 
 ```bash
 esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x10000 M5Paper-S3-Chinese-Books-*-app-only.bin

@@ -135,18 +135,18 @@ Place JPG, PNG, or BMP images in `/wallpapers/`.
 
 ### Option A: Pre-built Binary
 
-Download binaries from the [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) page. Two versions are provided:
+Download binaries from the [Releases](https://github.com/yuleshow/M5Stack-Paper-S3-Chinese-Books/releases) page. Three binaries are provided:
 
-#### 16 MB merged binary (recommended)
+#### Merged binary (recommended)
 
-Contains the bootloader, partition table, and application — use this for fresh/blank devices or a full reflash:
+Contains the bootloader, partition table, and application — use this for fresh/blank devices or a full reflash. Choose the file that matches your device flash size:
 
 ```bash
 pip install esptool  # if not already installed
-esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-*-merged.bin
+esptool.py --chip esp32s3 --port /dev/cu.usbmodem* write_flash 0x0 M5Paper-S3-Chinese-Books-*-merged-8MB.bin
 ```
 
-#### 8 MB app-only binary
+#### App-only binary
 
 Contains only the application firmware. Use this if the device already has a valid bootloader and partition table (e.g., from a previous `pio run -t upload`):
 
