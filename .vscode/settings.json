@@ -8,23 +8,43 @@
   "C_Cpp.errorSquiggles": "disabled",
   "files.watcherExclude": {
     "**/.pio/**": true,
+    "**/.pio*/*": true,
     "**/build/**": true,
     "**/dist/**": true,
+    "**/output/**/*.bmp": true,
+    "**/output/**/*.png": true,
+    "**/release/**": true,
     "**/release/**/*.bin": true,
     "**/release/**/*.zip": true,
+    "**/sd_card/books/**": true,
+    "**/sd_card/fonts/**": true,
+    "**/sd_card/fortune_slips/*.bin": true,
     "**/sd_card/dict/stardict.db": true
   },
   "search.exclude": {
     "**/.pio/**": true,
+    "**/.pio*/*": true,
     "**/build/**": true,
     "**/dist/**": true,
+    "**/output/**/*.bmp": true,
+    "**/output/**/*.png": true,
+    "**/release/**": true,
     "**/release/**/*.bin": true,
     "**/release/**/*.zip": true,
+    "**/sd_card/books/**": true,
+    "**/sd_card/fonts/**": true,
+    "**/sd_card/fortune_slips/*.bin": true,
     "**/sd_card/dict/stardict.db": true
   },
   "files.exclude": {
     "**/.pio": true,
+    "**/.pio*": true,
+    "**/build": true,
+    "**/dist": true,
+    "**/release": true,
     "**/release/**/*.bin": true,
-    "**/release/**/*.zip": true
+    "**/release/**/*.zip": true,
+    "**/sd_card/books": true,
+    "**/sd_card/fonts": true
   }
 }
